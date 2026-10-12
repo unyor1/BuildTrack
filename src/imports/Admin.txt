@@ -1,0 +1,327 @@
+Admin
+
+
+3. Admin Page
+The Admin should essentially control the entire system.
+
+A. Admin Dashboard
+Summary Cards
+Don't count the Admin in the user statistics.
+
+Total Engineers
+
+Total Foremen
+
+Total Clients
+
+Total Active Users
+
+Total Projects
+
+Ongoing Projects
+
+Completed Projects
+
+Pending Projects
+
+Total Workforce Today
+
+
+User Filter
+Filter by:
+
+Engineer
+
+Foreman
+
+Client
+
+Pending Approval
+
+Project Progress Chart
+Example:
+
+Project A     █████░░ 75%
+Project B     █░ 50%
+Project C     ██ 90%
+
+Recent Activity Logs
+Include:
+
+User
+
+Role
+
+Activity
+
+Project
+
+Date
+
+Time
+
+
+
+Filters:
+
+Date range
+
+User
+
+Role
+
+Project
+
+Activity type
+
+Activity types:
+
+Login
+
+Logout
+
+Created Project
+
+Updated Progress
+
+Uploaded Blueprint
+
+Assigned Worker
+
+Submit Ticket
+
+4. Admin — User Management
+User Approval
+Table:
+
+User	 Role	Registration Date Status	Action
+
+Before approval:
+
+Admin selects the user's role.
+
+Role options:
+
+Engineer
+
+Foreman
+
+Client
+
+Then:
+
+Approve
+
+Reject
+
+Fingerprint Biometrics Registration
+Add a button:
+
+Register Biometrics
+
+Process:
+
+Select User
+      ↓
+Register Fingerprint
+      ↓
+Verify Fingerprint
+      ↓
+Save Biometric Template
+      ↓
+Biometric Status: Registered
+
+Don't store raw fingerprint images if the biometric device/system supports storing a secure biometric template instead.
+
+User profile can show:
+
+Biometric Status
+● Registered
+
+Fingerprint:
+✓ Left Thumb
+✓ Right Thumb
+
+Last Updated:
+September 30, 2026
+
+5. Admin — Project Management
+Admin can:
+Create Project
+Edit Project
+Archive Project
+Delete Project
+Assign Engineer
+Assign Foreman
+Assign Client
+Upload Blueprint
+Upload project documents
+View project progress
+Create Project
+Fields:
+Project Name
+Project Code
+Client
+Location
+Project Description
+Start Date
+Target Completion Date
+Project Status
+Project Manager/Engineer
+Foreman
+
+6. Project Details Page
+Once the Admin selects a project, go to a dedicated Project Overview Page.
+
+Example:
+
+Valencia Commercial Building
+Project ID: VCS-2026-001
+
+Progress: 68%
+
+Engineer: Juan Dela Cruz
+Foreman: Pedro Santos
+Client: ABC Corporation
+
+Tabs:
+
+Overview
+
+Blueprint
+
+Progress
+
+Workforce
+
+QA/QC
+
+Reports
+
+Activity Logs
+
+This could become the central page of the entire system.
+
+7. Blueprint Management
+This is one of the features that makes your system different from a normal construction-management system.
+
+Blueprint Upload
+Admin/Engineer can:
+
+Upload 2D blueprint
+
+Upload different blueprint versions
+
+Add blueprint title
+
+Add floor/level
+
+Add revision number
+
+Add upload date
+
+Add description
+
+Supported formats could include:
+
+JPG
+
+PNG
+
+PDF
+
+For your web implementation, you can initially focus on PDF/image blueprints.
+
+8. 2D Blueprint Mapping
+This should be one of the main features of BuildTrack.
+
+The Engineer can place clickable areas/markers over the blueprint.
+
+For example:
+
+        FLOOR PLAN
+
+ ┌─────────────────────────────┐
+ │                             │
+ │   ROOM A       ROOM B       │
+ │    🟢           🟡          │
+ │                             │
+ │───────────────┐             │
+ │   ROOM C      │   ROOM D    │
+ │      🔵       │      🔴     │
+ │               │             │
+ └─────────────────────────────┘
+
+Each marker represents a construction activity/location.
+
+Example:
+
+Room A
+
+Activity: Wall Installation
+
+Status: Completed
+
+Progress: 100%
+
+QA: Passed
+
+Room B
+
+Activity: Electrical Installation
+
+Status: In Progress
+
+Progress: 65%
+
+QA: Pending
+
+9. Blueprint Progress Tracking
+Users can click an area of the blueprint.
+
+Show:
+
+Location
+2nd Floor — Room 201
+
+Construction Activity
+Electrical Installation
+
+Progress
+75%
+
+Status
+🟡 In Progress
+
+
+QA Status
+Pending Inspection
+
+Photos
+Before / During / After
+
+Issues
+1 unresolved issue
+
+This connects the blueprint directly to actual project progress.
+
+10. Blueprint Version Control
+Very useful for an actual construction environment.
+Example:
+Blueprint Versions
+Rev 01 — Jan 10
+Rev 03 — Mar 15 — Current
+The system should identify the current version.
+
+
+Revision number
+
+Date uploaded
+
+Uploaded by
+
+Reason for revision
+
+Previous version
+
+Current version

@@ -1,0 +1,10 @@
+{
+  "description": "Provides a user-friendly platform with a landing page, secure registration, and login features to streamline user access and engagement.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}

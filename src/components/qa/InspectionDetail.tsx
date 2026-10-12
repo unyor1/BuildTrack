@@ -1,0 +1,381 @@
+import { useEffect, useMemo, useRef, useState } from "react"
+import Modal from "../Modal"
+import { buttonPrimary, buttonSecondary, inputClass } from "../ui/PageParts"
+import { SkeletonList } from "../ui/Skeleton"
+import { Chip, EvidenceStrip, HoldChip, ScoreBar, SeverityChip } from "./QaBits"
+import { useAuth } from "../../lib/auth"
+import { useConfirm } from "../../lib/confirm"
+import { printHtml } from "../../lib/printReport"
+import {
+  inspectionStatusLabels, inspectionTone, measureVerdict, previewScore, qaActions, refNumber, toleranceText, tradeLabels, useInspectionItems, useQaPhotos,
+  type Defect, type Inspection, type InspectionItem, type ItemResult, type QaPhoto, type Weights,
+} from "../../lib/qa"
+import { inspectionReportHtml } from "../../lib/qaPrint"
+import { useToast } from "../../lib/toast"
+
+const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString("en-PH", { timeZone: "Asia/Manila", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }) : "-")
+
+const edge: Record<ItemResult, string> = { pending: "border-l-line", pass: "border-l-green-600", fail: "border-l-red-600", na: "border-l-gray-400" }
+const resultChip: Record<ItemResult, string> = {
+  pending: "bg-surface-muted text-fg-muted",
+  pass: "bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200",
+  fail: "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200",
+  na: "bg-gray-200 text-gray-700 dark:bg-gray-700/60 dark:text-gray-200",
+}
+const resultWord: Record<ItemResult, string> = { pending: "Pending", pass: "Pass", fail: "Fail", na: "N/A" }
+
+type SaveItem = (input: { itemId: string; result: ItemResult; measured: number | null; remarks: string }) => Promise<string>
+
+function ItemRow({ item, index, editable, photos, projectId, onSave, onPhotosChanged }: { item: InspectionItem; index: number; editable: boolean; photos: QaPhoto[]; projectId: string; onSave: SaveItem; onPhotosChanged: () => void | Promise<void> }) {
+  const [remarks, setRemarks] = useState(item.remarks ?? "")
+  const [value, setValue] = useState(item.measured_value === null ? "" : String(item.measured_value))
+  const [pending, setPending] = useState<ItemResult | null>(null)
+  const [problem, setProblem] = useState("")
+  const [saving, setSaving] = useState(false)
+  const remarksBox = useRef<HTMLTextAreaElement>(null)
+  const valueBox = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    setRemarks(item.remarks ?? "")
+    setValue(item.measured_value === null ? "" : String(item.measured_value))
+    setPending(null)
+    setProblem("")
+  }, [item.result, item.remarks, item.measured_value])
+
+  const shown = pending ?? item.result
+  const myPhotos = photos.filter((photo) => photo.item_id === item.id)
+  const number = value.trim() === "" ? null : Number(value)
+  const verdict = measureVerdict(item, number)
+
+  const commit = async (result: ItemResult, text = remarks, measured = number) => {
+    setSaving(true)
+    setProblem("")
+    const message = await onSave({ itemId: item.id, result, measured, remarks: text.trim() })
+    setSaving(false)
+    if (message) setProblem(message)
+  }
+
+  const choose = (result: ItemResult) => {
+    setProblem("")
+    if (result === "pending") return void commit("pending", "", null)
+    if (item.kind === "measure" && result !== "na") {
+      if (number === null || !Number.isFinite(number)) {
+        setProblem("Enter the measured value first.")
+        valueBox.current?.focus()
+        return
+      }
+      const decided = measureVerdict(item, number) ?? result
+      if (decided === "fail") {
+        setPending("fail")
+        setTimeout(() => remarksBox.current?.focus(), 0)
+        return
+      }
+      return void commit(decided)
+    }
+    if (result === "fail" || result === "na") {
+      setPending(result)
+      setTimeout(() => remarksBox.current?.focus(), 0)
+      return
+    }
+    void commit("pass")
+  }
+
+  const saveRemarks = () => {
+    const result = pending ?? item.result
+    if (result === "pending" || result === "pass") return
+    if (result === "fail" && remarks.trim().length < 5) return setProblem("Say what is wrong (at least 5 characters).")
+    if (result === "na" && remarks.trim().length < 3) return setProblem("Say why this item does not apply.")
+    void commit(result)
+  }
+
+  const onValueCommit = () => {
+    if (!editable || item.kind !== "measure" || value.trim() === "") return
+    if (number === null || !Number.isFinite(number)) return setProblem("The measured value must be a number.")
+    if (number === item.measured_value && item.result !== "pending") return
+    const decided = measureVerdict(item, number)
+    if (decided === "pass") void commit("pass")
+    else if (decided === "fail") {
+      setPending("fail")
+      setTimeout(() => remarksBox.current?.focus(), 0)
+    }
+  }
+
+  const needsPhoto = item.requires_photo && myPhotos.length === 0 && (shown === "pass" || shown === "fail")
+  const showRemarks = shown === "fail" || shown === "na" || Boolean(item.remarks)
+
+  return (
+    <li className={`rounded-xl border border-l-4 border-line bg-surface p-3 ${edge[shown]}`}>
+      <div className="flex flex-wrap items-start gap-3">
+        <span className="mt-0.5 flex h-6 w-6 flex-none items-center justify-center rounded-full bg-surface-muted text-xs font-extrabold text-fg-muted">{index + 1}</span>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold">{item.text}</p>
+          <div className="mt-1 flex flex-wrap items-center gap-1.5">
+            <SeverityChip severity={item.severity} />
+            {item.hold_point ? <HoldChip /> : null}
+            {item.requires_photo ? <Chip tone="bg-surface-muted text-fg-muted" title="A photo is required as evidence">Photo required</Chip> : null}
+            {item.reference ? <span className="text-xs text-fg-muted">{item.reference}</span> : null}
+          </div>
+          {item.kind === "measure" ? (
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+              <label htmlFor={`m-${item.id}`} className="font-bold text-fg-muted">Measured</label>
+              {editable ? (
+                <input
+                  id={`m-${item.id}`}
+                  ref={valueBox}
+                  inputMode="decimal"
+                  value={value}
+                  onChange={(event) => { setValue(event.target.value); setProblem("") }}
+                  onBlur={onValueCommit}
+                  onKeyDown={(event) => { if (event.key === "Enter") onValueCommit() }}
+                  className={`${inputClass} !w-28 !py-1 tabular-nums ${verdict === "fail" ? "!border-red-600" : verdict === "pass" ? "!border-green-600" : ""}`}
+                  aria-describedby={`t-${item.id}`}
+                />
+              ) : (
+                <strong className="tabular-nums">{item.measured_value ?? "-"}</strong>
+              )}
+              {item.unit ? <span className="text-fg-muted">{item.unit}</span> : null}
+              <span id={`t-${item.id}`} className="text-fg-muted">Required: {toleranceText(item)}</span>
+              {editable && verdict ? <span className={`font-extrabold ${verdict === "pass" ? "text-green-700 dark:text-green-400" : "text-red-700 dark:text-red-400"}`}>{verdict === "pass" ? "Within tolerance" : "Out of tolerance"}</span> : null}
+            </div>
+          ) : null}
+        </div>
+        {editable ? (
+          <div role="group" aria-label={`Result for item ${index + 1}`} className="flex flex-none overflow-hidden rounded-lg border border-line text-xs font-extrabold">
+            {(["pass", "fail", "na"] as const).map((result) => (
+              <button
+                key={result}
+                type="button"
+                disabled={saving}
+                aria-pressed={shown === result}
+                onClick={() => (shown === result && item.result === result ? choose("pending") : choose(result))}
+                className={`px-3 py-1.5 transition disabled:opacity-60 ${shown === result ? (result === "pass" ? "bg-green-600 text-white" : result === "fail" ? "bg-red-600 text-white" : "bg-gray-600 text-white") : "bg-surface text-fg hover:bg-surface-muted"}`}
+              >
+                {resultWord[result]}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <Chip tone={resultChip[item.result]}>{resultWord[item.result]}</Chip>
+        )}
+      </div>
+
+      {showRemarks ? (
+        <div className="mt-2 pl-9">
+          {editable ? (
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
+              <label className="sr-only" htmlFor={`r-${item.id}`}>{shown === "na" ? "Why this does not apply" : "What is wrong"}</label>
+              <textarea id={`r-${item.id}`} ref={remarksBox} rows={2} maxLength={500} value={remarks} onChange={(event) => { setRemarks(event.target.value); setProblem("") }} placeholder={shown === "na" ? "Why this does not apply" : "What is wrong, and where"} className={`${inputClass} flex-1`} />
+              {pending || remarks.trim() !== (item.remarks ?? "") ? <button type="button" className={buttonPrimary + " !py-1.5 sm:self-start"} disabled={saving} onClick={saveRemarks}>{saving ? "Saving..." : "Save"}</button> : null}
+            </div>
+          ) : (
+            <p className="whitespace-pre-wrap rounded-lg bg-surface-muted px-3 py-2 text-sm">{item.remarks}</p>
+          )}
+        </div>
+      ) : null}
+
+      {problem ? <p role="alert" className="mt-2 pl-9 text-xs font-bold text-danger-fg">{problem}</p> : null}
+      {needsPhoto && editable ? <p className="mt-2 pl-9 text-xs font-bold text-amber-800 dark:text-amber-300">This item needs a photo before the inspection can be completed.</p> : null}
+
+      {editable || myPhotos.length ? (
+        <div className="mt-2 pl-9">
+          <EvidenceStrip projectId={projectId} photos={myPhotos} target={{ itemId: item.id }} canAdd={editable} canRemove={() => editable} onChanged={onPhotosChanged} label={`Item ${index + 1}`} compact />
+        </div>
+      ) : null}
+    </li>
+  )
+}
+
+// One inspection: the request, the checklist with results and photos, the score and the sign-off. The inspector (an engineer of the
+// project) records results here; everyone else on the team reads them.
+export default function InspectionDetail({
+  inspection,
+  project,
+  weights,
+  threshold,
+  defects,
+  canInspect,
+  canRequest,
+  nameOf,
+  onClose,
+  onChanged,
+  onOpenDefect,
+  onOpenInspection,
+}: {
+  inspection: Inspection
+  project: { id: string; name: string; code: string; location?: string | null }
+  weights: Weights
+  threshold: number
+  defects: Defect[]
+  canInspect: boolean
+  canRequest: boolean
+  nameOf: (id: string | null) => string
+  onClose: () => void
+  onChanged: () => void | Promise<void>
+  onOpenDefect?: (defect: Defect) => void
+  onOpenInspection?: (id: string) => void
+}) {
+  const { profile } = useAuth()
+  const toast = useToast()
+  const confirm = useConfirm()
+  const { items, setItems, loading, error, reload: reloadItems } = useInspectionItems(inspection.id)
+  const { photos, reload: reloadPhotos } = useQaPhotos({ inspectionId: inspection.id })
+  const [summary, setSummary] = useState("")
+  const [busy, setBusy] = useState(false)
+  const [reason, setReason] = useState("")
+  const [asking, setAsking] = useState<"cancel" | "reinspect" | null>(null)
+
+  const done = inspection.status === "passed" || inspection.status === "conditional" || inspection.status === "failed"
+  const isInspector = inspection.status === "in_progress" && inspection.inspector_id === profile?.id && canInspect
+  const usedWeights = inspection.weights ?? weights
+  const usedThreshold = inspection.threshold ?? threshold
+  const preview = useMemo(() => previewScore(items, usedWeights, usedThreshold), [items, usedWeights, usedThreshold])
+  const mine = defects.filter((defect) => defect.inspection_id === inspection.id)
+  const photosMissing = items.filter((item) => item.requires_photo && (item.result === "pass" || item.result === "fail") && !photos.some((photo) => photo.item_id === item.id)).length
+  const ref = refNumber("ir", inspection.number)
+
+  const save: SaveItem = async ({ itemId, result, measured, remarks }) => {
+    const outcome = await qaActions.saveItem({ itemId, result, measured, remarks })
+    if (!outcome.ok) return outcome.message
+    setItems((current) => current.map((item) => (item.id === itemId ? { ...item, result: outcome.data, measured_value: measured, remarks: remarks || null } : item)))
+    void reloadItems()
+    return ""
+  }
+
+  const start = async () => {
+    setBusy(true)
+    const outcome = await qaActions.start(inspection.id)
+    setBusy(false)
+    if (!outcome.ok) return toast.error("Could not start", outcome.message)
+    toast.success("Inspection started", ref)
+    await onChanged()
+  }
+
+  const complete = async () => {
+    if (preview.pending) return toast.error("Every item needs a result", `${preview.pending} still pending`)
+    if (photosMissing) return toast.error("Photos are missing", `${photosMissing} item${photosMissing === 1 ? "" : "s"} need a photo`)
+    const expected = preview.result === "passed" ? "PASSED" : preview.result === "conditional" ? "CONDITIONAL (items to fix, work may continue)" : "FAILED"
+    const ok = await confirm({
+      title: `Sign off ${ref}?`,
+      message: `Result: ${expected} with ${preview.score ?? 0}%. ${preview.failed ? `${preview.failed} non-conformance report${preview.failed === 1 ? "" : "s"} will be raised for the contractor. ` : ""}Results cannot be changed after sign-off.`,
+      confirmLabel: "Complete inspection",
+    })
+    if (!ok) return
+    setBusy(true)
+    const outcome = await qaActions.complete(inspection.id, summary.trim())
+    setBusy(false)
+    if (!outcome.ok) return toast.error("Could not complete", outcome.message)
+    const r = outcome.data
+    toast.success(`${ref} ${r.result}`, `${r.score}%${r.defects ? ` - ${r.defects} NCR${r.defects === 1 ? "" : "s"} raised` : ""}`)
+    await onChanged()
+  }
+
+  const submitReason = async () => {
+    setBusy(true)
+    const outcome = asking === "cancel" ? await qaActions.cancel(inspection.id, reason.trim()) : await qaActions.reinspect(inspection.id, reason.trim())
+    setBusy(false)
+    if (!outcome.ok) return toast.error(asking === "cancel" ? "Not cancelled" : "Not requested", outcome.message)
+    toast.success(asking === "cancel" ? "Inspection cancelled" : "Re-inspection requested", asking === "cancel" ? ref : "The engineer is notified")
+    setAsking(null)
+    setReason("")
+    await onChanged()
+    if (asking === "reinspect" && outcome.ok && onOpenInspection) onOpenInspection(outcome.data as string)
+  }
+
+  const print = () => {
+    if (!printHtml(inspectionReportHtml({ inspection, items, defects: mine, project, nameOf }))) toast.error("Could not open the print dialog")
+  }
+
+  const footer = (
+    <>
+      {done || inspection.status === "cancelled" ? <button type="button" className={buttonSecondary} onClick={print}>Print / PDF</button> : null}
+      {(inspection.status === "failed" || inspection.status === "conditional") && canRequest ? <button type="button" className={buttonSecondary} onClick={() => setAsking("reinspect")}>Request re-inspection</button> : null}
+      {(inspection.status === "requested" || inspection.status === "in_progress") && canRequest ? <button type="button" className={buttonSecondary} onClick={() => setAsking("cancel")}>Cancel inspection</button> : null}
+      {inspection.status === "requested" && canInspect ? <button type="button" className={buttonPrimary} disabled={busy} onClick={() => void start()}>{busy ? "Starting..." : "Start inspection"}</button> : null}
+      {isInspector ? <button type="button" className={buttonPrimary} disabled={busy || loading} onClick={() => void complete()}>{busy ? "Signing off..." : "Complete inspection"}</button> : null}
+      <button type="button" className={buttonSecondary} onClick={onClose}>Close</button>
+    </>
+  )
+
+  return (
+    <Modal title={`${ref}  ${inspection.title}`} description={`${tradeLabels[inspection.trade]}${inspection.location ? ` • ${inspection.location}` : ""}`} size="2xl" onClose={onClose} footer={footer}>
+      <div className="space-y-4">
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <Chip tone={inspectionTone[inspection.status]}>{inspectionStatusLabels[inspection.status]}</Chip>
+          {inspection.reinspection_of ? <Chip tone="bg-fuchsia-100 text-fuchsia-900 dark:bg-fuchsia-900/40 dark:text-fuchsia-200">Re-inspection</Chip> : null}
+          <span className="text-fg-muted">Requested by {nameOf(inspection.requested_by)} • {when(inspection.requested_at)}</span>
+          {inspection.inspector_id ? <span className="text-fg-muted">• Inspector {nameOf(inspection.inspector_id)}</span> : null}
+          {inspection.completed_at ? <span className="text-fg-muted">• Signed off {when(inspection.completed_at)}</span> : null}
+        </div>
+        {inspection.standards.length ? <p className="text-xs text-fg-muted"><strong>Standards:</strong> {inspection.standards.join(", ")}</p> : null}
+        {inspection.request_note ? <p className="rounded-lg bg-surface-muted px-3 py-2 text-sm"><strong>Note from the requester:</strong> {inspection.request_note}</p> : null}
+
+        {items.length ? (
+          <div className="rounded-xl border border-line bg-surface p-3">
+            <ScoreBar score={done ? inspection.score : preview.score} threshold={usedThreshold} label={done ? "Final score" : "Score so far"} />
+            <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-fg-muted">
+              <span><strong className="text-fg">{preview.passed}</strong> pass</span>
+              <span><strong className="text-fg">{preview.failed}</strong> fail</span>
+              <span><strong className="text-fg">{preview.na}</strong> N/A</span>
+              {preview.pending ? <span><strong className="text-fg">{preview.pending}</strong> still to judge</span> : null}
+              {!done && preview.result ? <span className="ml-auto font-extrabold text-fg">Expected result: {inspectionStatusLabels[preview.result]}</span> : null}
+              {preview.criticalFailed ? <span className="font-extrabold text-red-700 dark:text-red-400">A critical item failed</span> : null}
+              {preview.holdFailed ? <span className="font-extrabold text-red-700 dark:text-red-400">A hold point failed</span> : null}
+            </div>
+          </div>
+        ) : null}
+
+        {inspection.status === "requested" && !canInspect ? <p className="rounded-lg bg-sky-50 px-3 py-2 text-sm text-sky-900 dark:bg-sky-900/30 dark:text-sky-100">Waiting for the engineer. The checklist below is what will be inspected, so the work can be made ready.</p> : null}
+        {inspection.status === "in_progress" && !isInspector ? <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:bg-amber-900/30 dark:text-amber-100">{canInspect ? `${nameOf(inspection.inspector_id)} is inspecting. Only the inspector can record results.` : "The engineer is inspecting now."}</p> : null}
+
+        {loading ? (
+          <SkeletonList rows={5} label="Loading the checklist" />
+        ) : error ? (
+          <p role="alert" className="rounded-lg bg-danger-soft px-4 py-2 text-sm text-danger-fg">{error}</p>
+        ) : (
+          <ol className="space-y-2">
+            {items.map((item, index) => (
+              <ItemRow key={item.id} item={item} index={index} editable={isInspector} photos={photos} projectId={inspection.project_id} onSave={save} onPhotosChanged={reloadPhotos} />
+            ))}
+          </ol>
+        )}
+
+        {isInspector ? (
+          <div>
+            <label className="mb-1 block text-xs font-extrabold uppercase tracking-wider text-fg-muted" htmlFor="qa-summary">Inspector's summary (optional)</label>
+            <textarea id="qa-summary" rows={3} maxLength={1000} value={summary} onChange={(event) => setSummary(event.target.value)} className={inputClass} placeholder="Overall finding, instructions to the contractor, conditions for proceeding" />
+          </div>
+        ) : inspection.summary ? (
+          <div className="rounded-lg bg-surface-muted px-3 py-2 text-sm"><p className="text-xs font-extrabold uppercase tracking-wider text-fg-muted">Inspector's summary</p><p className="mt-1 whitespace-pre-wrap">{inspection.summary}</p></div>
+        ) : null}
+
+        {mine.length ? (
+          <div>
+            <h3 className="mb-2 text-xs font-extrabold uppercase tracking-wider text-fg-muted">Non-conformances raised</h3>
+            <ul className="space-y-1.5">
+              {mine.map((defect) => (
+                <li key={defect.id}>
+                  <button type="button" onClick={() => onOpenDefect?.(defect)} disabled={!onOpenDefect} className="flex w-full items-center gap-2 rounded-lg border border-line bg-surface px-3 py-2 text-left text-sm hover:bg-surface-muted disabled:cursor-default">
+                    <strong className="tabular-nums">{refNumber("ncr", defect.number)}</strong>
+                    <span className="min-w-0 flex-1 truncate">{defect.title}</span>
+                    <SeverityChip severity={defect.severity} />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+
+        {asking ? (
+          <div className="rounded-xl border border-brand bg-surface p-3">
+            <label className="mb-1 block text-sm font-bold" htmlFor="qa-reason">{asking === "cancel" ? "Why is this inspection cancelled?" : "What was done to correct the failed items?"}</label>
+            <textarea id="qa-reason" rows={2} maxLength={500} value={reason} onChange={(event) => setReason(event.target.value)} className={inputClass} placeholder={asking === "cancel" ? "At least 5 characters" : "Optional: tell the engineer what changed"} />
+            <div className="mt-2 flex justify-end gap-2">
+              <button type="button" className={buttonSecondary} onClick={() => { setAsking(null); setReason("") }}>Back</button>
+              <button type="button" className={buttonPrimary} disabled={busy || (asking === "cancel" && reason.trim().length < 5)} onClick={() => void submitReason()}>{busy ? "Sending..." : asking === "cancel" ? "Cancel the inspection" : "Request re-inspection"}</button>
+            </div>
+          </div>
+        ) : null}
+      </div>
+    </Modal>
+  )
+}

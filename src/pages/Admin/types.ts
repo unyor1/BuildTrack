@@ -1,0 +1,7 @@
+export type AdminPageKey = "dashboard" | "user-management" | "biometrics" | "project-management" | "blueprint-upload" | "blueprint-mapping" | "blueprint-progress" | "blueprint-version" | "project-overview" | "invites" | "audit-log" | "settings" | "access-review" | "backup" | "qa-checklists"
+
+export type AdminNavigate = (page: AdminPageKey, search?: string) => void
+
+export type AdminPageProps = {
+  onNavigate: AdminNavigate
+}

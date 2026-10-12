@@ -1,0 +1,8 @@
+# 2026-10-12: Corporate design pass (presentation polish)
+
+UI only, no database or Edge Function change.
+
+- **Design system (M5 block at the end of `src/index.css`)**: refined light tokens (`--fg`, `--fg-muted`, `--line`, `--surface-muted`), shadow tokens, and one look for the legacy classes: page header with divider, 16 px cards, KPI tiles (label + icon row, 28 px tabular numbers), brand gradient primary buttons, brand-filled tabs, bordered status pills, tables with rounded frame and row hover, brand focus rings, brand progress bars, biometric step colours. Page headings inside `main` were regular weight because of the Tailwind reset; they are now 800.
+- **Shared parts**: `PageHead`, `StatCard`, `EmptyState`, `buttonPrimary`, `buttonSecondary`, `buttonDanger`, `inputClass` restyled; 12 pages that had copied the old button strings now use the new ones. `ProjectCard` gets a blueprint-grid banner, lift on hover, and its actions on their own footer row. Tab bars in QA, reports, issue register and site logs share one style.
+- **Pages**: Admin Project Overview shows real project health instead of the sample preview (`ProjectOverviewSample.tsx` deleted); team list with avatars and role pills. Foreman "Site Plan & Daily Work" rebuilt with real parts only (plan + shortcuts), its sample table removed. Client overview starts with the project, the project list moves below. Admin dashboard copy tightened, attendance note removed, KPI grid 3 / 6 columns. Blueprint Mapping has a status legend.
+- **Checked**: every route of all roles at 375 px and 1440 px (no errors, no sideways scroll, one `h1`, nothing under 11 px), light and dark mode screenshots of the main pages. `pnpm check` passes.

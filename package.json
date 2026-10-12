@@ -1,0 +1,37 @@
+{
+  "name": "figma-make-app",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "format": "oxfmt",
+    "functions:deploy": "npx supabase functions deploy admin-users --project-ref ruimjlhsfpaezkgfphsz --use-api && npx supabase functions deploy impersonate --project-ref ruimjlhsfpaezkgfphsz --use-api && npx supabase functions deploy send-notifications --project-ref ruimjlhsfpaezkgfphsz --use-api && npx supabase functions deploy oauth-gate --project-ref ruimjlhsfpaezkgfphsz --use-api",
+    "test:sql": "node supabase/tests/run-sql-tests.mjs",
+    "db:status": "node scripts/db-migrate.mjs status",
+    "db:apply": "node scripts/db-migrate.mjs apply",
+    "test:lib": "node scripts/test-lib.mjs",
+    "check": "tsc --noEmit && pnpm test:lib && pnpm test:sql && pnpm build"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.117.3",
+    "pdfjs-dist": "^6.4.299",
+    "qrcode-generator": "^2.0.4",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8",
+    "@tailwindcss/vite": "^4.0.0",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^6.0.0",
+    "oxfmt": "^0.2.0",
+    "tailwindcss": "^4.0.0",
+    "typescript": "^5.7.0",
+    "vite": "^8.0.5"
+  }
+}
