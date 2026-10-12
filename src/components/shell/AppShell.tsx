@@ -11,6 +11,8 @@ import logo from "../../assets/valencia/logo-source.png"
 
 export type ShellNavItem = { key: string; label: string; icon: AdminIconName; badge?: number }
 export type ShellNavGroup = { label: string; items: ShellNavItem[] }
+// Each workspace has its own identity (accent, sidebar, page headers); the colours live in index.css under [data-persona].
+export type ShellPersona = "admin" | "engineer" | "foreman" | "client" | "user"
 
 const roleName: Record<AppRole, string> = { super_admin: "Super Admin", admin: "Administrator", engineer: "Engineer", foreman: "Foreman", client: "Client", user: "Basic account" }
 const COLLAPSE_KEY = "buildtrack.sidebar.collapsed"
@@ -42,7 +44,7 @@ function Avatar({ size = 36 }: { size?: number }) {
   return profile?.avatar_url ? (
     <img src={profile.avatar_url} alt="" referrerPolicy="no-referrer" style={{ width: size, height: size }} className="flex-none rounded-full object-cover ring-2 ring-white/20" />
   ) : (
-    <span style={{ width: size, height: size }} className="flex flex-none items-center justify-center rounded-full bg-gradient-to-br from-[#9E1F93] to-[#d66bd0] text-xs font-extrabold text-white ring-2 ring-white/20" aria-hidden="true">{initials(name)}</span>
+    <span style={{ width: size, height: size }} className="bt-avatar flex flex-none items-center justify-center rounded-full text-xs font-extrabold text-white ring-2 ring-white/20" aria-hidden="true">{initials(name)}</span>
   )
 }
 
@@ -112,6 +114,7 @@ function UserMenu({ onPrivacy, onMyData }: { onPrivacy: () => void; onMyData: ()
 // One premium layout for every signed-in workspace: a dark navigation rail (collapsible), a frosted top bar with search (Ctrl+K), a
 // notification bell and an account menu, a phone drawer and a bottom tab bar. Each role only supplies its navigation and context.
 export default function AppShell({
+  persona,
   workspace,
   groups,
   active,
@@ -123,6 +126,7 @@ export default function AppShell({
   topExtra,
   children,
 }: {
+  persona: ShellPersona
   workspace: string
   groups: ShellNavGroup[]
   active: string
@@ -186,10 +190,10 @@ export default function AppShell({
                     onClick={() => go(item.key)}
                     aria-current={isActive ? "page" : undefined}
                     title={compact ? item.label : undefined}
-                    className={`group relative flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-[13px] font-semibold transition ${compact ? "justify-center" : ""} ${isActive ? "bg-gradient-to-r from-[#9E1F93]/60 via-[#9E1F93]/25 to-transparent text-white" : "text-white/80 hover:bg-white/[0.07] hover:text-white"}`}
+                    className={`group relative flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-[13px] font-semibold transition ${compact ? "justify-center" : ""} ${isActive ? "bt-nav-active text-white" : "text-white/80 hover:bg-white/[0.07] hover:text-white"}`}
                   >
-                    {isActive ? <span className="absolute inset-y-2 left-0 w-[3px] rounded-full bg-gradient-to-b from-[#F18B00] to-[#d66bd0]" aria-hidden="true" /> : null}
-                    <span className={`h-[18px] w-[18px] flex-none [&>svg]:h-[18px] [&>svg]:w-[18px] ${isActive ? "text-[#ffb347]" : "text-white/65 group-hover:text-white"}`}><AdminIcon name={item.icon} /></span>
+                    {isActive ? <span className="bt-nav-bar absolute inset-y-2 left-0 w-[3px] rounded-full" aria-hidden="true" /> : null}
+                    <span className={`h-[18px] w-[18px] flex-none [&>svg]:h-[18px] [&>svg]:w-[18px] ${isActive ? "bt-persona-light" : "text-white/65 group-hover:text-white"}`}><AdminIcon name={item.icon} /></span>
                     {!compact ? <span className="min-w-0 flex-1 truncate">{item.label}</span> : null}
                     {item.badge ? (
                       compact ? <span className="absolute right-2 top-1.5 h-2.5 w-2.5 rounded-full bg-[#F18B00] ring-2 ring-[#15101a]" aria-label={`${item.badge} waiting`} /> : <span className="min-w-[22px] rounded-full bg-[#F18B00] px-1.5 py-0.5 text-center text-[11px] font-extrabold leading-none text-black">{item.badge > 99 ? "99+" : item.badge}</span>
@@ -207,7 +211,7 @@ export default function AppShell({
   const brand = (compact: boolean) => (
     <div className={`flex items-center gap-3 px-4 py-4 ${compact ? "justify-center" : ""}`}>
       <img src={logo} alt="Valencia Construction Services" className="h-10 w-10 flex-none rounded-full border-2 border-white/25 object-cover" />
-      {!compact ? <div className="min-w-0 leading-tight"><p className="truncate text-[15px] font-extrabold tracking-tight text-white">BuildTrack</p><p className="truncate text-[11px] font-semibold text-white/60">Valencia Construction Services</p></div> : null}
+      {!compact ? <div className="min-w-0 leading-tight"><p className="truncate text-[15px] font-extrabold tracking-tight text-white">BuildTrack</p><p className="bt-persona-light truncate text-[11px] font-extrabold uppercase tracking-[0.12em]">{workspace}</p></div> : null}
     </div>
   )
 
@@ -218,7 +222,7 @@ export default function AppShell({
           <div title={project ? `${project.code} • ${project.name}` : projectEmpty} className="mx-auto flex h-10 w-10 items-center justify-center rounded-xl bg-white/10 text-[11px] font-extrabold text-white/80">{project ? project.code.slice(-3) : "-"}</div>
         ) : (
           <div className="rounded-xl border border-white/10 bg-white/[0.06] p-3">
-            <p className="text-[11px] font-extrabold uppercase tracking-wider text-[#F18B00]">Active project</p>
+            <p className="bt-persona-light text-[11px] font-extrabold uppercase tracking-wider">Active project</p>
             {project ? <><p className="mt-1 truncate text-sm font-bold text-white">{project.name}</p><p className="truncate text-xs text-white/60">{project.code}{project.sub ? ` • ${project.sub}` : ""}</p></> : <p className="mt-1 text-xs text-white/60">{projectEmpty}</p>}
           </div>
         )
@@ -230,10 +234,10 @@ export default function AppShell({
     </div>
   )
 
-  const railClasses = "bg-[radial-gradient(120%_55%_at_0%_0%,rgba(158,31,147,0.38),transparent_60%),linear-gradient(180deg,#19121d,#0f0b12)]"
+  const railClasses = "bt-rail"
 
   return (
-    <div className="min-h-dvh bg-surface-muted text-fg" style={{ ["--bt-side" as string]: side }}>
+    <div data-persona={persona} className="bt-workspace min-h-dvh bg-surface-muted text-fg" style={{ ["--bt-side" as string]: side }}>
       <a href="#main" className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-[200] focus:rounded-lg focus:bg-brand focus:px-4 focus:py-2 focus:text-sm focus:font-bold focus:text-white">Skip to content</a>
 
       {/* Desktop rail */}
@@ -254,11 +258,11 @@ export default function AppShell({
       </div>
 
       <div className="min-w-0 overflow-x-clip lg:pl-[var(--bt-side)] lg:transition-[padding] lg:duration-200">
-        <header className="sticky top-0 z-30 flex h-16 items-center gap-2 border-b border-line bg-surface/85 px-3 backdrop-blur-xl sm:px-5 lg:px-8">
+        <header className="bt-topbar sticky top-0 z-30 flex h-16 items-center gap-2 border-b border-line bg-surface/85 px-3 backdrop-blur-xl sm:px-5 lg:px-8">
           <button type="button" onClick={() => setDrawer(true)} aria-label="Open menu" className="grid h-10 w-10 place-items-center rounded-xl hover:bg-surface-muted lg:hidden"><span className="h-5 w-5 [&>svg]:h-5 [&>svg]:w-5"><AdminIcon name="menu" /></span></button>
           <button type="button" onClick={() => setCollapsed(!collapsed)} aria-label={collapsed ? "Expand the sidebar" : "Collapse the sidebar"} aria-pressed={collapsed} className="hidden h-10 w-10 place-items-center rounded-xl text-fg-muted hover:bg-surface-muted hover:text-fg lg:grid"><span className="h-5 w-5 [&>svg]:h-5 [&>svg]:w-5"><AdminIcon name="panel" /></span></button>
           <div className="min-w-0 flex-1 leading-tight">
-            <p className="truncate text-[11px] font-extrabold uppercase tracking-wider text-brand-text">{workspace}</p>
+            <p className="bt-persona-text truncate text-[11px] font-extrabold uppercase tracking-wider">{workspace}</p>
             <p className="truncate text-base font-extrabold sm:text-lg">{current?.label ?? "BuildTrack"}</p>
           </div>
           {topExtra}
@@ -279,9 +283,9 @@ export default function AppShell({
       </div>
 
       {tabs.length ? (
-        <nav aria-label="Quick navigation" className="fixed inset-x-0 bottom-0 z-40 flex border-t border-white/10 bg-[#15101a]/95 pb-[env(safe-area-inset-bottom)] text-white shadow-[0_-8px_24px_-12px_rgba(0,0,0,0.6)] backdrop-blur-xl lg:hidden">
+        <nav aria-label="Quick navigation" className="bt-tabbar fixed inset-x-0 bottom-0 z-40 flex border-t border-white/10 pb-[env(safe-area-inset-bottom)] text-white shadow-[0_-8px_24px_-12px_rgba(0,0,0,0.6)] backdrop-blur-xl lg:hidden">
           {tabs.map((item) => (
-            <button key={item.key} type="button" aria-current={active === item.key ? "page" : undefined} onClick={() => go(item.key)} className={`relative flex min-h-14 flex-1 flex-col items-center justify-center gap-0.5 text-[11px] font-bold ${active === item.key ? "text-[#F18B00]" : "text-white/80"}`}>
+            <button key={item.key} type="button" aria-current={active === item.key ? "page" : undefined} onClick={() => go(item.key)} className={`relative flex min-h-14 flex-1 flex-col items-center justify-center gap-0.5 text-[11px] font-bold ${active === item.key ? "bt-persona-light" : "text-white/80"}`}>
               <span className="h-5 w-5 [&>svg]:h-5 [&>svg]:w-5"><AdminIcon name={item.icon} /></span>
               {item.label.split(" ")[0]}
               {item.badge ? <span className="absolute right-[28%] top-1.5 min-w-[16px] rounded-full bg-[#F18B00] px-1 text-center text-[11px] font-extrabold leading-4 text-black">{item.badge}</span> : null}

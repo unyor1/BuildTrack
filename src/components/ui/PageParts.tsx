@@ -4,18 +4,18 @@ import type { ReactNode } from "react"
 
 export function PageHead({ eyebrow, title, description, actions }: { eyebrow?: string; title: string; description?: string; actions?: ReactNode }) {
   return (
-    <div className="mb-5 flex flex-wrap items-end justify-between gap-3 border-b border-line pb-4">
+    <div className="bt-pagehead mb-5 flex flex-wrap items-end justify-between gap-3 border-b border-line pb-4">
       <div className="min-w-0">
-        {eyebrow ? <p className="mb-1.5 text-[11.5px] font-extrabold uppercase tracking-[0.12em] text-brand-text">{eyebrow}</p> : null}
-        <h1 className="text-2xl font-extrabold tracking-tight text-fg sm:text-[32px] sm:leading-tight">{title}</h1>
-        {description ? <p className="mt-1.5 max-w-3xl text-[13.5px] leading-relaxed text-fg-muted">{description}</p> : null}
+        {eyebrow ? <p className="bt-pagehead__eyebrow mb-1.5 text-[11.5px] font-extrabold uppercase tracking-[0.12em] text-brand-text">{eyebrow}</p> : null}
+        <h1 className="bt-pagehead__title text-2xl font-extrabold tracking-tight text-fg sm:text-[32px] sm:leading-tight">{title}</h1>
+        {description ? <p className="bt-pagehead__desc mt-1.5 max-w-3xl text-[13.5px] leading-relaxed text-fg-muted">{description}</p> : null}
       </div>
       {actions ? <div className="flex flex-wrap gap-2">{actions}</div> : null}
     </div>
   )
 }
 
-const toneBar = { brand: "bg-brand", green: "bg-green-600", amber: "bg-amber-500", red: "bg-red-600", sky: "bg-sky-500", gray: "bg-gray-400" }
+const toneBar = { brand: "bt-persona-bar", green: "bg-green-600", amber: "bg-amber-500", red: "bg-red-600", sky: "bg-sky-500", gray: "bg-gray-400" }
 
 export function StatCard({ label, value, note, tone = "brand", onClick }: { label: string; value: ReactNode; note?: ReactNode; tone?: keyof typeof toneBar; onClick?: () => void }) {
   const body = (
@@ -26,7 +26,7 @@ export function StatCard({ label, value, note, tone = "brand", onClick }: { labe
       {note ? <span className="mt-2 block text-xs leading-snug text-fg-muted">{note}</span> : null}
     </>
   )
-  const base = "relative block w-full overflow-hidden rounded-2xl border border-line bg-surface px-5 py-4 text-left shadow-[var(--bt-shadow)]"
+  const base = "bt-stat relative block w-full overflow-hidden rounded-2xl border border-line bg-surface px-5 py-4 text-left shadow-[var(--bt-shadow)]"
   return onClick ? (
     <button type="button" onClick={onClick} className={`${base} transition hover:-translate-y-0.5 hover:shadow-[var(--bt-shadow-hover)]`}>{body}</button>
   ) : (

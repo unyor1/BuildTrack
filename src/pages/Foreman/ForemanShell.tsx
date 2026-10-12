@@ -43,7 +43,8 @@ export default function ForemanShell({
 
   return (
     <AppShell
-      workspace="Foreman workspace"
+      persona="foreman"
+      workspace="Field operations"
       groups={[
         { label: "Today", items: [item("dashboard"), item("daily-work"), item("daily-report"), item("photo-documentation")] },
         { label: "Quality", items: [item("quality-control"), item("qa-workflow"), item("issues"), item("corrective-action")] },

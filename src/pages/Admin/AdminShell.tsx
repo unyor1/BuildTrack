@@ -299,7 +299,8 @@ export default function AdminShell({
 
   return (
     <AppShell
-      workspace={profile?.role === "super_admin" ? "Super Admin workspace" : "Admin workspace"}
+      persona="admin"
+      workspace="Control center"
       groups={groups}
       active={activePage}
       onNavigate={(key) => onNavigate(key as AdminPageKey)}

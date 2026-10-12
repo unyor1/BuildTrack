@@ -14,6 +14,7 @@ export default function UserShell({
 }) {
   return (
     <AppShell
+      persona="user"
       workspace="My account"
       groups={[{ label: "Account", items: [{ key: "home", label: "My account", icon: "home" }] }]}
       active={activePage}

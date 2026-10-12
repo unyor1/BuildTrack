@@ -38,7 +38,8 @@ export default function EngineerShell({
 
   return (
     <AppShell
-      workspace="Engineer workspace"
+      persona="engineer"
+      workspace="Engineering office"
       groups={[
         { label: "Workspace", items: [item("dashboard"), item("projects")] },
         { label: "Plans", items: [item("project-blueprint"), item("annotation")] },

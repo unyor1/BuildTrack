@@ -910,3 +910,106 @@ aside nav { scrollbar-color: rgba(255, 255, 255, .22) transparent; }
 .biometric-step strong { color: var(--fg); }
 .biometric-step small { color: var(--fg-muted); }
 .profile-avatar, .admin-profile__avatar, .user-avatar { color: #fff; background: linear-gradient(135deg, #9e1f93, #d466c9); }
+
+/* ---- M6: one identity per workspace. AppShell sets data-persona; brand magenta stays on the logo and primary buttons. ----
+   admin    = Control center   : plum and magenta, crisp and dense
+   engineer = Engineering office: blueprint blue, drafting grid, technical mono labels
+   foreman  = Field operations  : safety orange, hazard stripe, big touch targets
+   client   = Client portal     : deep teal, calm, editorial serif titles
+   user     = My account        : neutral plum */
+:root, [data-persona="admin"], [data-persona="user"] {
+  --persona: #9e1f93;
+  --persona-2: #d466c9;
+  --persona-light: #ffb347;
+  --persona-text: light-dark(#8f1c85, #e9a3e2);
+  --persona-soft: light-dark(#f9eef8, #2c1a2a);
+  --persona-rail: radial-gradient(120% 55% at 0% 0%, rgba(158, 31, 147, .38), transparent 60%), linear-gradient(180deg, #19121d, #0f0b12);
+  --persona-tabbar: rgba(21, 16, 26, .95);
+}
+[data-persona="engineer"] {
+  --persona: #2563eb;
+  --persona-2: #38bdf8;
+  --persona-light: #7cc4ff;
+  --persona-text: light-dark(#1d4ed8, #9cc0ff);
+  --persona-soft: light-dark(#eaf1ff, #14213d);
+  --persona-rail: linear-gradient(rgba(124, 196, 255, .05) 1px, transparent 1px) 0 0 / 22px 22px, linear-gradient(90deg, rgba(124, 196, 255, .05) 1px, transparent 1px) 0 0 / 22px 22px, radial-gradient(120% 55% at 0% 0%, rgba(37, 99, 235, .45), transparent 60%), linear-gradient(180deg, #0d1628, #070c17);
+  --persona-tabbar: rgba(9, 15, 29, .96);
+}
+[data-persona="foreman"] {
+  --persona: #e07a00;
+  --persona-2: #fbbf24;
+  --persona-light: #ffb347;
+  --persona-text: light-dark(#a8530a, #ffc06b);
+  --persona-soft: light-dark(#fff3e2, #2e2009);
+  --persona-rail: repeating-linear-gradient(-45deg, rgba(241, 139, 0, .9) 0 10px, rgba(17, 13, 8, .95) 10px 20px) 0 0 / 100% 6px no-repeat, radial-gradient(120% 55% at 0% 0%, rgba(241, 139, 0, .30), transparent 60%), linear-gradient(180deg, #1c150c, #0f0b06);
+  --persona-tabbar: rgba(20, 15, 8, .96);
+}
+[data-persona="client"] {
+  --persona: #0f766e;
+  --persona-2: #2dd4bf;
+  --persona-light: #5eead4;
+  --persona-text: light-dark(#0f6b63, #7ee8d6);
+  --persona-soft: light-dark(#e6f6f3, #0f2a27);
+  --persona-rail: radial-gradient(120% 55% at 0% 0%, rgba(20, 184, 166, .32), transparent 60%), radial-gradient(90% 40% at 100% 100%, rgba(158, 31, 147, .22), transparent 70%), linear-gradient(180deg, #0b1a19, #060f0e);
+  --persona-tabbar: rgba(7, 18, 17, .96);
+}
+
+/* Shell parts */
+.bt-rail { background: var(--persona-rail); }
+.bt-tabbar { background: var(--persona-tabbar); }
+.bt-nav-active { background: linear-gradient(90deg, color-mix(in srgb, var(--persona) 62%, transparent), color-mix(in srgb, var(--persona) 22%, transparent) 60%, transparent); }
+.bt-nav-bar { background: linear-gradient(180deg, var(--persona-light), var(--persona-2)); }
+.bt-persona-light { color: var(--persona-light); }
+.bt-persona-text { color: var(--persona-text); }
+.bt-persona-bar { background: linear-gradient(90deg, var(--persona), var(--persona-2)); }
+.bt-avatar { background: linear-gradient(135deg, var(--persona), var(--persona-2)); }
+.bt-topbar { box-shadow: inset 0 3px 0 var(--persona); }
+
+/* Page parts follow the workspace accent */
+.bt-workspace :is(.bt-pagehead__eyebrow, .admin-eyebrow, .engineer-eyebrow) { color: var(--persona-text); }
+.bt-workspace main h2.border-accent, .bt-workspace main .border-l-4.border-accent { border-color: var(--persona); }
+.bt-workspace main h2.text-brand-strong { color: var(--fg); }
+.bt-workspace .admin-kpi__icon:not([class*="--"]) { color: var(--persona-text); background: var(--persona-soft); }
+.bt-workspace .admin-progress:not([class*="--"]) i { background: linear-gradient(90deg, var(--persona), var(--persona-2)); }
+.bt-workspace :is(.bt-pagehead, .admin-page-intro, .engineer-intro, .foreman-intro, .client-intro) { position: relative; }
+
+/* Engineer: page header on a drafting grid, technical mono eyebrow */
+[data-persona="engineer"] :is(.bt-pagehead, .admin-page-intro, .engineer-intro) {
+  padding: 20px 22px; border: 1px solid color-mix(in srgb, var(--persona) 22%, var(--line)); border-radius: 16px;
+  background:
+    linear-gradient(color-mix(in srgb, var(--persona) 9%, transparent) 1px, transparent 1px) 0 0 / 24px 24px,
+    linear-gradient(90deg, color-mix(in srgb, var(--persona) 9%, transparent) 1px, transparent 1px) 0 0 / 24px 24px,
+    linear-gradient(135deg, var(--persona-soft), var(--surface) 70%);
+}
+[data-persona="engineer"] :is(.bt-pagehead__eyebrow, .admin-eyebrow, .engineer-eyebrow) { font-family: "Roboto Mono", ui-monospace, monospace; letter-spacing: .06em; }
+[data-persona="engineer"] :is(.bt-pagehead__eyebrow, .admin-eyebrow, .engineer-eyebrow)::before { content: "// "; opacity: .6; }
+[data-persona="engineer"] .bt-stat { border-radius: 12px; }
+
+/* Foreman: hazard stripe on the header edge, heavier type, bigger touch targets */
+[data-persona="foreman"] :is(.bt-pagehead, .foreman-intro, .admin-page-intro) {
+  padding: 18px 20px 18px 28px; border: 1px solid color-mix(in srgb, var(--persona) 25%, var(--line)); border-radius: 16px;
+  background: linear-gradient(135deg, var(--persona-soft), var(--surface) 65%); overflow: hidden;
+}
+[data-persona="foreman"] :is(.bt-pagehead, .foreman-intro, .admin-page-intro)::before {
+  content: ""; position: absolute; inset: 0 auto 0 0; width: 9px;
+  background: repeating-linear-gradient(-45deg, #f18b00 0 8px, #1c1722 8px 16px);
+}
+[data-persona="foreman"] .bt-pagehead__title { text-transform: uppercase; letter-spacing: -.01em; }
+[data-persona="foreman"] .bt-stat { border-width: 2px; }
+
+/* Client: calm editorial header with serif title */
+[data-persona="client"] :is(.bt-pagehead, .client-intro, .admin-page-intro) {
+  padding: 24px 26px; border: 1px solid color-mix(in srgb, var(--persona) 18%, var(--line)); border-radius: 20px;
+  background: radial-gradient(80% 120% at 100% 0%, color-mix(in srgb, #9e1f93 10%, transparent), transparent 60%), linear-gradient(135deg, var(--persona-soft), var(--surface) 70%);
+}
+[data-persona="client"] :is(.bt-pagehead__title, .client-intro h1) { font-family: "Playfair Display", Georgia, serif; font-weight: 700; letter-spacing: -.01em; }
+[data-persona="client"] .bt-stat { border-radius: 20px; }
+
+/* Admin: clean control-center header (divider only), dense tiles */
+[data-persona="admin"] :is(.bt-pagehead, .admin-page-intro) { border-bottom-width: 2px; border-image: linear-gradient(90deg, var(--persona), var(--persona-2) 30%, var(--line) 30%) 1; }
+
+/* Active tabs take the workspace accent (dark text on the foreman orange keeps 4.5:1) */
+:root, [data-persona] { --persona-on: #fff; }
+[data-persona="foreman"] { --persona-on: #1c1722; }
+.bt-workspace main [role="tab"][aria-selected="true"].bg-brand, .bt-workspace .admin-tabs button.is-active, .bt-workspace .overview-tabs button.is-active { color: var(--persona-on); background: var(--persona); box-shadow: 0 6px 14px -8px color-mix(in srgb, var(--persona) 90%, transparent); }
+.bt-workspace main [role="tab"][aria-selected="true"].bg-brand > span { color: inherit; }

@@ -25,6 +25,7 @@ export default function ClientShell({
   const item = (key: ClientPageKey) => ({ key, ...labels[key] })
   return (
     <AppShell
+      persona="client"
       workspace="Client portal"
       groups={[
         { label: "Your project", items: [item("overview"), item("blueprint"), item("site-logs")] },
