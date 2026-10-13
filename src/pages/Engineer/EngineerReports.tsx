@@ -6,6 +6,8 @@ import { severityLabels, statusLabels } from "../../lib/blueprints"
 import { useConfirm } from "../../lib/confirm"
 import { daysBetween, downloadCsv, isOverdue, byZone, summarize, toCsv } from "../../lib/progress"
 import { printHtml, reportHtml } from "../../lib/printReport"
+import WeeklyReportModal from "../../components/WeeklyReportModal"
+import { useDefects, useInspections } from "../../lib/qa"
 import { getSelectedProjectId } from "../../lib/projects"
 import { useProjectWork } from "../../lib/projectWork"
 import { dailyReportHtml, reportDateLong, useDailyReports, useQuestions, weatherLabels, type DailyReport, type ProjectQuestion } from "../../lib/reports"
@@ -28,6 +30,9 @@ export default function EngineerReports(_: EngineerPageProps) {
   const [tab, setTab] = useState<Tab>(initialTab)
   const [openId, setOpenId] = useState<string | null>(null)
   const [query, setQuery] = useState("")
+  const [weekly, setWeekly] = useState(false)
+  const { defects } = useDefects(projectId)
+  const { inspections } = useInspections(projectId)
 
   const submitted = useMemo(() => {
     const text = query.trim().toLowerCase()
@@ -81,7 +86,12 @@ export default function EngineerReports(_: EngineerPageProps) {
         eyebrow="Reports"
         title="Site logs and reports"
         description="Daily reports from the foreman, questions from the client, and a printable progress report."
-        actions={<button type="button" className={buttonPrimary} onClick={printProgress} disabled={!projectId || work.loading}>Print progress report</button>}
+        actions={
+          <>
+            <button type="button" className={buttonSecondary} onClick={printProgress} disabled={!projectId || work.loading}>Status snapshot</button>
+            <button type="button" className={buttonPrimary} onClick={() => setWeekly(true)} disabled={!projectId || work.loading}>Weekly report</button>
+          </>
+        }
       />
       {!projectId ? null : (
         <>
@@ -141,6 +151,22 @@ export default function EngineerReports(_: EngineerPageProps) {
           )}
         </>
       )}
+      {weekly && work.project ? (
+        <WeeklyReportModal
+          audience="team"
+          project={work.project}
+          pins={work.pins}
+          start={work.project.start_date}
+          end={work.project.end_date}
+          logs={reports}
+          questions={questions}
+          defects={defects}
+          inspections={inspections}
+          nameOf={work.nameOf}
+          sheetOf={work.sheetOf}
+          onClose={() => setWeekly(false)}
+        />
+      ) : null}
     </div>
   )
 }

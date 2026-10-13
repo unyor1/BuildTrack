@@ -3,6 +3,7 @@ import { asPoints, type Pt } from "./geometry"
 import { sanitizeFormat, type TextFormat } from "./textFormat"
 import type { Discipline } from "./projects"
 import { supabase } from "./supabase"
+import type { StampFlag } from "./photoStamp"
 import { fetchAll } from "./paging"
 import { byColumn, byProject, useLiveReload } from "./realtime"
 
@@ -63,7 +64,7 @@ export type Pin = {
   updated_at: string
 }
 
-export type PinPhoto = { id: string; pin_id: string; path: string; caption: string | null; uploaded_by: string | null; created_at: string }
+export type PinPhoto = { id: string; pin_id: string; path: string; caption: string | null; uploaded_by: string | null; created_at: string; taken_at: string | null; stamp_flag: StampFlag | null; distance_m: number | null }
 
 export type TimelineEntry = {
   id: number

@@ -20,6 +20,9 @@ export type Project = {
   lead_engineer_id: string | null
   lead_foreman_id: string | null
   disciplines: Discipline[]
+  site_lat: number | null
+  site_lng: number | null
+  site_radius_m: number
   created_at: string
 }
 

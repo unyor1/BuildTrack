@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react"
 import { prepareImage } from "./sheetImages"
 import { supabase } from "./supabase"
+import { stampFields, type PhotoStamp, type StampFlag } from "./photoStamp"
 import { fetchAll } from "./paging"
 import { byColumn, byProject, useLiveReload, type LiveSource } from "./realtime"
 import type { DefectCategory, DefectStatus, InspectionStatus, ItemResult, QaSeverity, Trade } from "./qaModel"
@@ -109,7 +110,7 @@ export type Defect = {
 }
 
 export type DefectEvent = { id: number; defect_id: string; actor_id: string | null; kind: "raised" | "edited" | "status" | "rejected" | "closed"; from_status: string | null; to_status: string | null; note: string | null; created_at: string }
-export type QaPhoto = { id: string; project_id: string; inspection_id: string | null; item_id: string | null; defect_id: string | null; path: string; caption: string | null; uploaded_by: string | null; created_at: string }
+export type QaPhoto = { id: string; project_id: string; inspection_id: string | null; item_id: string | null; defect_id: string | null; path: string; caption: string | null; uploaded_by: string | null; created_at: string; taken_at: string | null; stamp_flag: StampFlag | null; distance_m: number | null }
 
 export type QaSummary = {
   staff: boolean
@@ -270,7 +271,7 @@ export type PhotoTarget = { inspectionId?: string; itemId?: string; defectId?: s
 
 // Shrinks the picture, stores it in the private `qa-evidence` bucket inside the project folder and records it. The database
 // refuses it if the inspection is not in progress or the defect is closed; the stored file is then removed again.
-export async function uploadQaPhoto(projectId: string, target: PhotoTarget, file: File, caption?: string): Promise<void> {
+export async function uploadQaPhoto(projectId: string, target: PhotoTarget, file: File, caption?: string, stamp?: PhotoStamp | null): Promise<void> {
   const image = await prepareImage(file)
   const folder = target.itemId ? `item-${target.itemId}` : target.inspectionId ? `ir-${target.inspectionId}` : `ncr-${target.defectId}`
   const path = `${projectId}/${folder}/${Date.now()}-${crypto.randomUUID().slice(0, 8)}.${image.ext}`
@@ -283,6 +284,7 @@ export async function uploadQaPhoto(projectId: string, target: PhotoTarget, file
     defect_id: target.defectId ?? null,
     path,
     caption: caption?.trim() || null,
+    ...stampFields(stamp),
   })
   if (error) {
     await supabase.storage.from("qa-evidence").remove([path])

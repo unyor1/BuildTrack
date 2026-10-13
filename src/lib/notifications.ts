@@ -29,6 +29,7 @@ async function refreshReminders() {
   }
   await supabase.rpc("generate_due_notifications")
   await supabase.rpc("generate_defect_reminders")
+  await supabase.rpc("generate_escalations") // engineers: late-work digest; admins: serious cases only (0038)
 }
 
 // The signed-in user's latest notifications. Polls once a minute while the tab is visible and again on focus.
@@ -142,6 +143,8 @@ export const notificationKinds: Record<string, { label: string; tone: string }> 
   "qa.defect_rejected": { label: "Sent back", tone: "bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-200" },
   "qa.defect_due": { label: "NCR due", tone: "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200" },
   "qa.defect_overdue": { label: "NCR overdue", tone: "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200" },
+  "alert.overdue": { label: "Running late", tone: "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200" },
+  "alert.escalation": { label: "Escalation", tone: "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200" },
 }
 
 // Whether the person also wants an email copy of their notifications (default yes; the row is created the first time they choose).

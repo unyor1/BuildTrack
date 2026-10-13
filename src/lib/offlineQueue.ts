@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react"
+import { stampFields } from "./photoStamp"
 import { MAX_ATTEMPTS, backoffSeconds, kindLabel, sendOrder, summarizeQueue, verdictFor, type QueueItem, type QueueKind } from "./offlineModel"
 import { supabase } from "./supabase"
 
@@ -84,7 +85,7 @@ async function send(item: QueueItem): Promise<Failure> {
     if (item.kind === "pin_photo") {
       const upload = await supabase.storage.from("pin-photos").upload(p.path, p.blob as Blob, { contentType: "image/jpeg", upsert: false })
       if (upload.error && !/already exists|duplicate/i.test(upload.error.message)) return { message: upload.error.message }
-      const { error } = await supabase.from("pin_photos").insert({ pin_id: p.pinId, project_id: p.projectId, path: p.path })
+      const { error } = await supabase.from("pin_photos").insert({ pin_id: p.pinId, project_id: p.projectId, path: p.path, ...stampFields(p.stamp) })
       if (error) {
         if (error.code !== "23505") await supabase.storage.from("pin-photos").remove([p.path])
         return { message: error.message, code: error.code }

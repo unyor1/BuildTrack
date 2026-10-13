@@ -9,7 +9,8 @@ export const escapeHtml = (value: unknown): string =>
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;")
 
-export type PrintSection = { heading: string; body?: string; rows?: Array<[string, string]>; table?: { head: string[]; rows: string[][] } }
+// `html` is trusted markup built by our own code (for example a chart); every value in it must already be escaped.
+export type PrintSection = { heading: string; body?: string; rows?: Array<[string, string]>; table?: { head: string[]; rows: string[][] }; html?: string }
 
 export function reportHtml(input: { title: string; subtitle: string; meta: Array<[string, string]>; sections: PrintSection[] }): string {
   const meta = input.meta.map(([label, value]) => `<div><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`).join("")
@@ -20,7 +21,7 @@ export function reportHtml(input: { title: string; subtitle: string; meta: Array
       const table = section.table
         ? `<table><thead><tr>${section.table.head.map((cell) => `<th>${escapeHtml(cell)}</th>`).join("")}</tr></thead><tbody>${section.table.rows.map((row) => `<tr>${row.map((cell) => `<td>${escapeHtml(cell)}</td>`).join("")}</tr>`).join("")}</tbody></table>`
         : ""
-      return `<section><h2>${escapeHtml(section.heading)}</h2>${body}${rows}${table}</section>`
+      return `<section><h2>${escapeHtml(section.heading)}</h2>${body}${rows}${table}${section.html ?? ""}</section>`
     })
     .join("")
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${escapeHtml(input.title)}</title><style>

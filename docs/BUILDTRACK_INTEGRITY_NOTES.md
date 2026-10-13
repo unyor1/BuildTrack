@@ -29,7 +29,7 @@ Severity: **High** = a ghost project or fake completion could pass; **Medium** =
 | # | Loophole | Severity | Current behaviour (checked in code) |
 |---|---|---|---|
 | L1 | **Collusion**: the contractor's foreman and the verifying engineer agree to fake progress | High | The system records whatever both confirm. No independent check exists. |
-| L2 | **Photos are not proven to be live or on site** | High | Pickers use `capture="environment"`, which is only a hint: a gallery photo, an old photo or one from another site can be uploaded. No GPS or device-time is recorded. |
+| L2 | **Photos are not proven to be live or on site** (MITIGATED 2026-10-13, 0039: time / GPS stamp checked against the site, flagged, never blocked; still fakeable by a determined person) | High | Pickers use `capture="environment"`, which is only a hint: a gallery photo, an old photo or one from another site can be uploaded. No GPS or device-time is recorded. |
 | L3 | **Evidence can be deleted after verification** (FIXED 2026-10-13, 0033) | High | `pin_photos` delete policy: the uploader (any time) or an admin with `blueprints.manage`. Deletion is not logged and is not blocked after the pin is verified. |
 | L4 | **The contractor controls the system** | High | BuildTrack is run by the construction company; its Super Admin can manage users and data. For public works the owner (government) or an independent body should host it. |
 | L5 | **Progress is not tied to payment** | High | There is no billing or disbursement link, so money can be released whatever BuildTrack says. |
@@ -48,8 +48,8 @@ Effort: S = about a day, M = a few days, L = a week or more.
 
 | # | Feature | Closes | How it would fit BuildTrack | Effort |
 |---|---|---|---|---|
-| F1 | **Live capture only, stamped with GPS and time** | L2 | In-app camera (`getUserMedia`) instead of a file picker for evidence; record GPS (`navigator.geolocation`), accuracy and device time; the database stores them and the server time; flag a large gap between device and server time. | M |
-| F2 | **Geofence the project site** | L2 | Store the site boundary on `projects`; evidence taken outside it is rejected or flagged "off-site". | S (after F1) |
+| F1 | **Live capture only, stamped with GPS and time** (stamp BUILT in 0039; live-camera-only capture is not) | L2 | In-app camera (`getUserMedia`) instead of a file picker for evidence; record GPS (`navigator.geolocation`), accuracy and device time; the database stores them and the server time; flag a large gap between device and server time. | M |
+| F2 | **Geofence the project site** (BUILT as a flag, 0039) | L2 | Store the site boundary on `projects`; evidence taken outside it is rejected or flagged "off-site". | S (after F1) |
 | F3 | **Evidence can never be deleted once used** (BUILT, 0033) | L3 | Change the `pin_photos` policy: no delete after the pin is ready for review / verified (trigger, like the lock rules); "remove" becomes a logged "withdrawn" status, never a real delete; log every removal. | S |
 | F4 | **Fingerprint (hash) of every photo and record** | L10, L3 | Compute SHA-256 of each file on upload and store it; chain record hashes (each row includes the previous hash) so any later change is detectable; export the chain for auditors. | M |
 | F5 | **Independent inspector role** | L1, L6 | New role (third party or auditor, not employed by the contractor); high-value or milestone items need their sign-off in addition to the engineer's. | M |

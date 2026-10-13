@@ -7,6 +7,8 @@ import { buildPdf } from "../src/lib/pdf.ts"
 import { symbolByKey, symbolGroups, symbolLibrary } from "../src/lib/symbols.ts"
 import { addDays, byZone, csvEscape, daysBetween, isDueSoon, isOverdue, projectHealth, sCurve, scheduleElapsed, summarize, toCsv } from "../src/lib/progress.ts"
 import { fetchAll } from "../src/lib/paging.ts"
+import { metres, stampFields, stampLabel, stampSummary } from "../src/lib/photoStamp.ts"
+import { buildWeekly, headline, periodPresets, sCurveSvg, weeklyReportHtml } from "../src/lib/weeklyReport.ts"
 import { escapeHtml, reportHtml } from "../src/lib/printReport.ts"
 import { reportableDates } from "../src/lib/reportFormat.ts"
 import { buildZip, crc32, safeEntryName, textBytes } from "../src/lib/zipWriter.ts"
@@ -703,7 +705,7 @@ test("identity form rules: age on a date, details problems in order, ID types, p
   assert.equal(maskedId("ab12"), "•••• AB12")
 })
 test("privacy notice: every scope says what is collected, why, who sees it and how long", () => {
-  assert.match(PRIVACY_VERSION, /^\d{4}-\d{2}$/)
+  assert.match(PRIVACY_VERSION, /^\d{4}-\d{2}(-\d{2})?$/)
   for (const [scope, notice] of Object.entries(privacyScopes)) {
     assert.ok(notice.title.length > 5 && notice.collects.length > 0 && notice.purpose.length > 20 && notice.access.length > 10 && notice.keptFor.length > 10, scope)
   }
@@ -770,5 +772,133 @@ test("privacy notice: every scope says what is collected, why, who sees it and h
     assert.equal(capped.data.length, 3000)
   })
 }
+
+// ---- Weekly report ----
+{
+  // Period Mon 2026-03-02 .. Sun 2026-03-08; "today" is Wed 2026-03-04 (inside the period). 10 work items + 1 note.
+  const pin = (id, over = {}) => ({ id, title: "Item " + id, blueprint_id: "b1", category: "progress", status: "not_started", due_date: null, verified_at: null, assigned_to: null, ...over })
+  const pins = [
+    pin("a", { status: "verified", due_date: "2026-02-20", verified_at: "2026-02-25T03:00:00Z" }), // before the period
+    pin("b", { status: "verified", due_date: "2026-03-03", verified_at: "2026-03-03T02:00:00Z" }), // inside
+    pin("c", { status: "verified", due_date: "2026-03-04", verified_at: "2026-03-04T10:00:00Z" }), // inside (today)
+    pin("d", { status: "for_review", due_date: "2026-03-02" }),
+    pin("e", { status: "issue", due_date: "2026-03-01" }),
+    pin("f", { status: "in_progress", due_date: "2026-03-06", assigned_to: "u1" }), // due next 7 days
+    pin("g", { status: "not_started", due_date: "2026-03-10" }), // due exactly today + 6
+    pin("h", { status: "not_started", due_date: "2026-03-20" }), // later
+    pin("i", { status: "not_started" }),
+    pin("j", { status: "not_started" }),
+    pin("n", { category: "note", status: "verified", verified_at: "2026-03-03T02:00:00Z", due_date: "2026-03-01" }), // notes are not work
+  ]
+  const defects = [
+    { status: "open", severity: "critical", due_date: "2026-03-01", raised_at: "2026-03-03T01:00:00Z", closed_at: null },
+    { status: "closed", severity: "minor", due_date: "2026-03-05", raised_at: "2026-02-20T01:00:00Z", closed_at: "2026-03-04T05:00:00Z" },
+    { status: "open", severity: "major", due_date: "2026-03-30", raised_at: "2026-02-10T01:00:00Z", closed_at: null },
+  ]
+  const inspections = [
+    { status: "passed", completed_at: "2026-03-03T04:00:00Z" },
+    { status: "failed", completed_at: "2026-03-04T04:00:00Z" },
+    { status: "passed", completed_at: "2026-02-20T04:00:00Z" }, // before the period
+    { status: "requested", completed_at: null },
+  ]
+  const logs = [
+    { report_date: "2026-03-02", status: "submitted", workers_count: 10, work_done: "Rebar tied on level 2", delays: "Rain in the afternoon", safety: null },
+    { report_date: "2026-03-03", status: "submitted", workers_count: 14, work_done: "Formwork", delays: null, safety: "Near miss at the stairs" },
+    { report_date: "2026-03-04", status: "draft", workers_count: 99, work_done: "Draft, not counted", delays: null, safety: null },
+    { report_date: "2026-02-27", status: "submitted", workers_count: 20, work_done: "Before the period", delays: null, safety: null },
+  ]
+  const questions = [
+    { created_at: "2026-03-03T01:00:00Z", answered_at: "2026-03-04T01:00:00Z" },
+    { created_at: "2026-03-04T01:00:00Z", answered_at: null },
+    { created_at: "2026-02-01T01:00:00Z", answered_at: "2026-02-02T01:00:00Z" },
+  ]
+  const week = buildWeekly({ from: "2026-03-02", to: "2026-03-08", today: "2026-03-04", projectStart: "2026-02-01", projectEnd: "2026-04-01", pins, defects, inspections, logs, questions })
+
+  test("weekly: progress counts only work (notes excluded), dated by the verification day in Manila", () => {
+    assert.equal(week.total, 10)
+    assert.equal(week.progress.atStart, 10) // only item a (1 of 10) was verified before Mon
+    assert.equal(week.progress.now, 30) // a, b, c verified by today
+    assert.equal(week.progress.change, 20)
+    assert.deepEqual(week.verifiedThisPeriod.map((row) => row.id), ["b", "c"])
+  })
+  test("weekly: planned is the share due by today (the period end is in the future), gap is verified minus planned", () => {
+    assert.equal(week.progress.planned, 50) // a, b, c, d, e due on or before 2026-03-04
+    assert.equal(week.progress.gap, -20)
+    assert.match(headline(week), /moved up 20 points to 30%, 20 points behind the plan \(50% planned/)
+  })
+  test("weekly: attention and look-ahead", () => {
+    assert.equal(week.waitingReview, 1)
+    assert.equal(week.issues, 1)
+    assert.equal(week.overdue, 2) // open items due before today: d (03-02) and e (03-01); f is not due yet
+    assert.deepEqual(week.dueNext.map((row) => row.id), ["f", "g"]) // within 7 days after today, soonest first, not h
+  })
+  test("weekly: quality counts inspections completed in the period and the defect register state", () => {
+    assert.deepEqual(week.qa, { inspectionsDone: 2, passed: 1, failed: 1, ncrOpened: 1, ncrClosed: 1, ncrOpen: 2, ncrOverdue: 1, ncrCritical: 1 })
+    assert.equal(buildWeekly({ from: "2026-03-02", to: "2026-03-08", today: "2026-03-04", projectStart: null, projectEnd: null, pins, logs, questions }).qa, null)
+  })
+  test("weekly: site logs use submitted reports in the period only; questions are counted by day", () => {
+    assert.equal(week.logs.count, 2)
+    assert.equal(week.logs.workersAverage, 12)
+    assert.equal(week.logs.delays.length, 1)
+    assert.equal(week.logs.safety.length, 1)
+    assert.deepEqual(week.questions, { asked: 2, answered: 1, waiting: 1 })
+  })
+  test("weekly: preset periods and an empty project", () => {
+    assert.deepEqual(periodPresets("2026-03-04"), { last7: { from: "2026-02-26", to: "2026-03-04" }, thisWeek: { from: "2026-03-02", to: "2026-03-04" }, lastWeek: { from: "2026-02-23", to: "2026-03-01" } })
+    const empty = buildWeekly({ from: "2026-03-02", to: "2026-03-08", today: "2026-03-04", projectStart: null, projectEnd: null, pins: [], logs: [], questions: [] })
+    assert.equal(empty.total, 0)
+    assert.equal(empty.progress.now, 0)
+    assert.equal(empty.curve, null)
+  })
+  test("weekly: the print layout escapes everything, hides internal sections from the client, and draws the chart", () => {
+    const names = { project: { code: "P-1", name: "Tower <b>X</b>", location: null }, nameOf: (id) => (id ? "Foreman <i>F</i>" : "Unassigned"), sheetOf: () => "Level 1 & 2" }
+    const team = weeklyReportHtml(week, names, "team")
+    const client = weeklyReportHtml(week, names, "client")
+    assert.match(team, /Weekly progress report/)
+    assert.doesNotMatch(team, /Tower <b>X<\/b>/)
+    assert.match(team, /Tower &lt;b&gt;X&lt;\/b&gt;/)
+    assert.match(team, /<svg/)
+    assert.match(team, /Needs attention/)
+    assert.match(team, /Quality/)
+    assert.match(team, /Safety notes/)
+    assert.match(client, /Weekly progress summary/)
+    assert.doesNotMatch(client, /Needs attention|Safety notes|Defect reports|critical/)
+    assert.match(sCurveSvg(week.curve), /stroke="#9e1f93"/)
+  })
+}
+
+// ---- Photo stamp ----
+test("stamp: only the phone's claim is sent (time, position, accuracy), rounded, never the flag or the distance", () => {
+  assert.deepEqual(stampFields(null), {})
+  assert.deepEqual(stampFields({ taken_at: "2026-03-04T01:00:00.000Z" }), { taken_at: "2026-03-04T01:00:00.000Z" })
+  assert.deepEqual(stampFields({ taken_at: "t", lat: 14.67600049, lng: 120.9830049, accuracy_m: 12.6 }), { taken_at: "t", lat: 14.676, lng: 120.983005, accuracy_m: 13 })
+  assert.deepEqual(stampFields({ taken_at: "t", lat: 14.6, accuracy_m: 5 }), { taken_at: "t" }) // half a position is dropped
+  assert.equal("stamp_flag" in stampFields({ taken_at: "t", lat: 1, lng: 1 }), false)
+})
+test("stamp: distances read naturally", () => {
+  assert.equal(metres(0), "0 m")
+  assert.equal(metres(999), "999 m")
+  assert.equal(metres(2345), "2.3 km")
+  assert.equal(metres(12_400), "12 km")
+})
+test("stamp: every database flag has a clear label; photos from before the stamp show nothing", () => {
+  const label = (flag, distance = null) => stampLabel({ stamp_flag: flag, distance_m: distance, taken_at: null })
+  assert.equal(label("at_site", 40).tone, "good")
+  assert.match(label("at_site", 40).detail, /40 m from its centre/)
+  assert.equal(label("away_from_site", 2345).text, "Away from site · 2.3 km")
+  assert.equal(label("away_from_site", 2345).tone, "bad")
+  assert.equal(label("no_location").tone, "warn")
+  assert.equal(label("no_site_set").tone, "muted")
+  assert.equal(label("clock_ahead").tone, "bad")
+  assert.equal(label("old_photo").tone, "bad")
+  assert.equal(label(null), null)
+})
+test("stamp: the summary line counts failures and missing locations, and is empty when all is well or unstamped", () => {
+  const photo = (flag) => ({ stamp_flag: flag, distance_m: null, taken_at: null })
+  assert.equal(stampSummary([photo("at_site"), photo("at_site")]), "")
+  assert.equal(stampSummary([photo(null), photo(null)]), "")
+  assert.equal(stampSummary([photo("at_site"), photo("away_from_site"), photo("no_location")]), "1 of 3 photos fail the site, time or location check; 1 has no location")
+  assert.equal(stampSummary([photo("old_photo")]), "1 of 1 photo fails the site, time or location check")
+})
 
 console.log(`\n${passed} passed${process.exitCode ? ", some FAILED" : ""}`)

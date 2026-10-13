@@ -1,6 +1,6 @@
 // Data privacy notice text (Data Privacy Act of 2012, RA 10173). One place for the wording so every screen says the same thing.
 // The version is stored with each consent: change it when the notice changes and people are asked again where it matters.
-export const PRIVACY_VERSION = "2026-10"
+export const PRIVACY_VERSION = "2026-10-13"
 
 export type PrivacyScope = "registration" | "identity" | "profile" | "admin_account" | "whitelist" | "client_report" | "general"
 
@@ -15,8 +15,8 @@ export type ScopeNotice = {
 export const privacyScopes: Record<PrivacyScope, ScopeNotice> = {
   general: {
     title: "How BuildTrack handles personal data",
-    collects: ["Your name, email, phone number, company and job title", "Your activity in the app (reports, photos, comments, approvals)", "Your device and sign-in details needed to keep the account secure"],
-    purpose: "To run construction projects: assign work, record progress and quality, keep an audit trail, and keep the system secure.",
+    collects: ["Your name, email, phone number, company and job title", "Your activity in the app (reports, photos, comments, approvals)", "When you add a site photo: your phone's time and, only if you allow it, its GPS position and accuracy, to show the photo was taken at the project site", "Your device and sign-in details needed to keep the account secure"],
+    purpose: "To run construction projects: assign work, record progress and quality, keep an audit trail, check that evidence photos come from the site, and keep the system secure.",
     access: "Your project team and the administrators of Valencia Construction Services, only as far as their role needs.",
     keptFor: "While your account is active and as long as project records must be kept for legal, contractual or safety reasons.",
   },

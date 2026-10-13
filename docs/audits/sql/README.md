@@ -38,6 +38,8 @@ One document per SQL file in `supabase/`. Same sections every time so changes ar
 | [0033_evidence_lock](0033_evidence_lock.md) | `supabase/migrations/0033_evidence_lock.sql` (+ `0035_history_photo_removed.sql`, `0037_evidence_check_visibility.sql`) | Applied (connector) |
 | [0034_realtime](0034_realtime.md) | `supabase/migrations/0034_realtime.sql` | Applied (connector) |
 | [0036_rls_performance](0036_rls_performance.md) | `supabase/migrations/0036_rls_performance.sql` | Applied (connector) |
+| [0038_escalation_alerts](0038_escalation_alerts.md) | `supabase/migrations/0038_escalation_alerts.sql` | Applied (connector) |
+| [0039_photo_stamp](0039_photo_stamp.md) | `supabase/migrations/0039_photo_stamp.sql` | Applied (connector) |
 | [seed_super_admin](seed_super_admin.md) | `supabase/seeds/seed_super_admin.sql` | Done (1 Super Admin exists) |
 
 ## Document template (copy for every new migration)

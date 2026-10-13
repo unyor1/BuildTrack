@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, type FormEvent } from "react"
 import { Skeleton, SkeletonList } from "../ui/Skeleton"
 import BeforeAfter from "../BeforeAfter"
+import StampChip from "../StampChip"
+import { captureStamp, stampFields, stampSummary } from "../../lib/photoStamp"
 import {
   categoryLabels,
   compressPhoto,
@@ -231,6 +233,7 @@ function Thumb({ photo, onRemove }: { photo: PinPhoto; onRemove?: () => void }) 
         <Skeleton className="h-24 w-full" />
       )}
       {photo.caption ? <figcaption className="truncate text-[11px] text-fg-muted">{photo.caption}</figcaption> : null}
+      <div className="mt-0.5"><StampChip photo={photo} /></div>
       {onRemove ? <button type="button" aria-label="Remove photo" onClick={onRemove} className="absolute right-1 top-1 rounded bg-black/60 px-1.5 text-xs text-white hover:bg-black/80">&times;</button> : null}
     </figure>
   )
@@ -250,6 +253,7 @@ export function PinPhotos({ pin, canAdd, canRemoveAny, meId, onChanged, columns 
     if (!files?.length) return
     setBusy(true)
     let added = 0
+    const stamp = await captureStamp() // the phone's time and (if allowed) position, checked against the site by the database
     for (const file of Array.from(files).slice(0, 5)) {
       if (!file.type.startsWith("image/")) {
         toast.error("Not an image", `${file.name} was skipped.`)
@@ -261,7 +265,7 @@ export function PinPhotos({ pin, canAdd, canRemoveAny, meId, onChanged, columns 
         // No signal: keep the compressed photo on this device; it is uploaded when the connection is back.
         const keepOffline = async () => {
           if (!profile) throw new Error("You are signed out.")
-          await enqueue({ userId: profile.id, kind: "pin_photo", label: pin.title, payload: { projectId: pin.project_id, pinId: pin.id, path, blob } })
+          await enqueue({ userId: profile.id, kind: "pin_photo", label: pin.title, payload: { projectId: pin.project_id, pinId: pin.id, path, blob, stamp } })
           setSavedOffline((count) => count + 1)
           toast.info("Photo saved on this device", "It will be uploaded when you are back online.")
         }
@@ -275,7 +279,7 @@ export function PinPhotos({ pin, canAdd, canRemoveAny, meId, onChanged, columns 
           continue
         }
         if (upload.error) throw new Error(upload.error.message)
-        const { error } = await supabase.from("pin_photos").insert({ pin_id: pin.id, project_id: pin.project_id, path })
+        const { error } = await supabase.from("pin_photos").insert({ pin_id: pin.id, project_id: pin.project_id, path, ...stampFields(stamp) })
         if (error) {
           await supabase.storage.from("pin-photos").remove([path])
           throw new Error(error.message)
@@ -321,6 +325,7 @@ export function PinPhotos({ pin, canAdd, canRemoveAny, meId, onChanged, columns 
           </div>
         </>
       )}
+      {stampSummary(photos) ? <p role="status" className="rounded-lg bg-amber-100 px-2.5 py-1.5 text-xs font-semibold text-amber-950 dark:bg-amber-900/40 dark:text-amber-100">Check these photos: {stampSummary(photos)}.</p> : null}
       {evidence && photos.length ? (
         <p className="flex items-start gap-1.5 text-xs text-fg-muted">
           <svg className="mt-0.5 flex-none" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V8a4 4 0 0 1 8 0v3" /></svg>

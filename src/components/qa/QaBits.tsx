@@ -5,6 +5,8 @@ import { removeQaPhoto, uploadQaPhoto, qaSeverityLabels, severityTone, type Phot
 import { useConfirm } from "../../lib/confirm"
 import { errorText, useToast } from "../../lib/toast"
 import { buttonSecondary } from "../ui/PageParts"
+import StampChip from "../StampChip"
+import { captureStamp, stampSummary } from "../../lib/photoStamp"
 
 export function Chip({ tone, children, title }: { tone: string; children: React.ReactNode; title?: string }) {
   return <span title={title} className={`inline-flex items-center whitespace-nowrap rounded-md px-2 py-0.5 text-[11px] font-extrabold uppercase tracking-wide ${tone}`}>{children}</span>
@@ -74,7 +76,8 @@ export function EvidenceStrip({
     if (!files?.length) return
     setBusy(true)
     try {
-      for (const file of Array.from(files).slice(0, 6)) await uploadQaPhoto(projectId, target, file)
+      const stamp = await captureStamp() // the phone's time and (if allowed) position, checked against the site by the database
+      for (const file of Array.from(files).slice(0, 6)) await uploadQaPhoto(projectId, target, file, undefined, stamp)
       toast.success(files.length > 1 ? "Photos added" : "Photo added")
       await onChanged()
     } catch (error) {
@@ -100,6 +103,7 @@ export function EvidenceStrip({
           <Thumb photo={photo} className={size} />
         </button>
       ))}
+      {stampSummary(photos) ? <p role="status" className="w-full rounded-lg bg-amber-100 px-2.5 py-1.5 text-xs font-semibold text-amber-950 dark:bg-amber-900/40 dark:text-amber-100">Check these photos: {stampSummary(photos)}.</p> : null}
       {canAdd ? (
         <>
           <button type="button" disabled={busy} onClick={() => input.current?.click()} aria-label={`Add a photo: ${label}`} className={`flex ${size} flex-col items-center justify-center rounded-lg border border-dashed border-line text-fg-muted transition hover:border-brand hover:bg-brand-soft hover:text-brand-text disabled:opacity-60`}>
@@ -123,6 +127,7 @@ export function EvidenceStrip({
           }
         >
           <Thumb photo={viewing} className="mx-auto max-h-[70vh] w-auto max-w-full rounded-lg" />
+          <div className="mt-2 flex justify-center"><StampChip photo={viewing} /></div>
         </Modal>
       ) : null}
     </div>

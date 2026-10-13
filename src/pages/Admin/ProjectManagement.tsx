@@ -20,6 +20,7 @@ import { supabase } from "../../lib/supabase"
 import { SkeletonCardGrid } from "../../components/ui/Skeleton"
 import { useConfirm } from "../../lib/confirm"
 import { useToast } from "../../lib/toast"
+import { captureStamp } from "../../lib/photoStamp"
 
 type Form = {
   id?: string
@@ -36,6 +37,9 @@ type Form = {
   lead_engineer_id: string
   lead_foreman_id: string
   disciplines: Discipline[]
+  site_lat: string
+  site_lng: string
+  site_radius_m: string
 }
 type FieldErrors = Partial<Record<keyof Form, string>>
 
@@ -53,6 +57,9 @@ const emptyForm: Form = {
   lead_engineer_id: "",
   lead_foreman_id: "",
   disciplines: [],
+  site_lat: "",
+  site_lng: "",
+  site_radius_m: "150",
 }
 
 const field = "mt-1 w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-fg"
@@ -70,6 +77,14 @@ function validate(form: Form): FieldErrors {
   if (form.manager_name.length > 120) errors.manager_name = "Keep the name under 120 characters."
   if (form.client_name.length > 120) errors.client_name = "Keep the client name under 120 characters."
   if (form.start_date && form.end_date && form.end_date < form.start_date) errors.end_date = "End date must be on or after the start date."
+  const lat = form.site_lat.trim()
+  const lng = form.site_lng.trim()
+  if (lat || lng) {
+    if (!lat || !lng || Number.isNaN(Number(lat)) || Number.isNaN(Number(lng))) errors.site_lat = "Enter both the latitude and the longitude as numbers, or leave both empty."
+    else if (Math.abs(Number(lat)) > 90 || Math.abs(Number(lng)) > 180) errors.site_lat = "Latitude is between -90 and 90 and longitude between -180 and 180."
+  }
+  const radius = Number(form.site_radius_m)
+  if (!Number.isInteger(radius) || radius < 20 || radius > 5000) errors.site_radius_m = "Use a whole number of metres from 20 to 5,000."
   return errors
 }
 
@@ -160,6 +175,9 @@ export default function ProjectManagement(_props: AdminPageProps) {
             lead_engineer_id: project.lead_engineer_id ?? "",
             lead_foreman_id: project.lead_foreman_id ?? "",
             disciplines: project.disciplines ?? [],
+            site_lat: project.site_lat === null || project.site_lat === undefined ? "" : String(project.site_lat),
+            site_lng: project.site_lng === null || project.site_lng === undefined ? "" : String(project.site_lng),
+            site_radius_m: String(project.site_radius_m ?? 150),
           }
         : emptyForm,
     )
@@ -193,6 +211,9 @@ export default function ProjectManagement(_props: AdminPageProps) {
       lead_engineer_id: form.lead_engineer_id || null,
       lead_foreman_id: form.lead_foreman_id || null,
       disciplines: form.disciplines,
+      site_lat: form.site_lat.trim() ? Number(form.site_lat) : null,
+      site_lng: form.site_lng.trim() ? Number(form.site_lng) : null,
+      site_radius_m: Number(form.site_radius_m),
     }
     const { data, error: saveError } = form.id
       ? await supabase.from("projects").update(row).eq("id", form.id).select("id")
@@ -243,6 +264,15 @@ export default function ProjectManagement(_props: AdminPageProps) {
     setBusy(false)
     if (removeError) return setShareError(dbMessage(removeError))
     await Promise.all([loadPeople(), reload()]) // removing a lead from the team also clears them as lead
+  }
+
+  // Fills the site coordinates from the phone or laptop the admin is using, standing on the site.
+  const fillFromHere = async () => {
+    if (!form) return
+    const here = await captureStamp(10_000)
+    if (here.lat === undefined || here.lng === undefined) return toast.error("Could not read your location", "Allow location access for this site, or type the coordinates.")
+    setForm({ ...form, site_lat: here.lat.toFixed(6), site_lng: here.lng.toFixed(6) })
+    toast.success("Location filled in", `Accuracy about ${Math.round(here.accuracy_m ?? 0)} m. Save the project to keep it.`)
   }
 
   const errorText = (key: keyof Form) => (errors[key] ? <span className="mt-1 block text-xs font-normal text-danger-fg">{errors[key]}</span> : null)
@@ -430,6 +460,18 @@ export default function ProjectManagement(_props: AdminPageProps) {
                 {errorText("end_date")}
               </label>
             </div>
+            <fieldset className="rounded-xl border border-line p-3">
+              <legend className="px-1 text-sm font-bold">Site location <span className="font-normal text-fg-muted">(optional)</span></legend>
+              <p className="text-xs text-fg-muted">When set, every photo added on site is checked against it: the phone's position must be within the radius. Photos are never blocked; they are marked "At the site" or "Away from site". Stand on the site and press the button, or type the coordinates.</p>
+              <div className="mt-2 grid gap-3 sm:grid-cols-3">
+                <label className="block text-sm font-semibold">Latitude<input className={field} inputMode="decimal" value={form.site_lat} onChange={(e) => setForm({ ...form, site_lat: e.target.value })} placeholder="14.676000" /></label>
+                <label className="block text-sm font-semibold">Longitude<input className={field} inputMode="decimal" value={form.site_lng} onChange={(e) => setForm({ ...form, site_lng: e.target.value })} placeholder="120.983000" /></label>
+                <label className="block text-sm font-semibold">Radius (metres)<input className={field} inputMode="numeric" value={form.site_radius_m} onChange={(e) => setForm({ ...form, site_radius_m: e.target.value })} /></label>
+              </div>
+              {errorText("site_lat")}
+              {errorText("site_radius_m")}
+              <button type="button" className="mt-2 text-sm font-bold text-brand-text hover:underline" onClick={() => void fillFromHere()}>Use my current location</button>
+            </fieldset>
             <div className="flex items-center justify-between pt-2">
               {form.id ? (
                 <button type="button" className="text-sm font-semibold text-brand-text hover:underline" onClick={() => { setShareError(""); setShareQuery(""); setShareId(form.id!); setForm(null) }}>

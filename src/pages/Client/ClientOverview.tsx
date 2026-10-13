@@ -1,13 +1,14 @@
-import { useMemo } from "react"
+import { useMemo, useState } from "react"
 import AssignedProjects from "../../components/AssignedProjects"
 import SCurveChart from "../../components/SCurveChart"
+import WeeklyReportModal from "../../components/WeeklyReportModal"
 import { EmptyState, Meter, PageHead, StatCard, buttonPrimary, buttonSecondary } from "../../components/ui/PageParts"
 import { SkeletonCardGrid } from "../../components/ui/Skeleton"
 import { useQaSummary } from "../../lib/qa"
 import { byZone, scheduleElapsed, summarize } from "../../lib/progress"
 import { getSelectedProjectId } from "../../lib/projects"
 import { useProjectWork } from "../../lib/projectWork"
-import { reportDateLong, useDailyReports, weatherLabels } from "../../lib/reports"
+import { reportDateLong, useDailyReports, useQuestions, weatherLabels } from "../../lib/reports"
 import type { ClientPageProps } from "./types"
 
 const longDate = (iso: string | null) => (iso ? new Date(iso.length === 10 ? iso + "T00:00:00" : iso).toLocaleDateString("en-PH", { day: "numeric", month: "long", year: "numeric" }) : "Not set")
@@ -17,6 +18,8 @@ export default function ClientOverview({ onNavigate }: ClientPageProps) {
   const projectId = getSelectedProjectId()
   const work = useProjectWork(projectId)
   const { reports } = useDailyReports(projectId)
+  const { questions } = useQuestions(projectId)
+  const [weekly, setWeekly] = useState(false)
   const { summary: quality } = useQaSummary(projectId)
   const totals = useMemo(() => summarize(work.pins, work.today), [work.pins, work.today])
   const areas = useMemo(() => byZone(work.blueprints, work.pins, work.today).filter((zone) => zone.totals.total > 0).sort((a, b) => b.totals.percentVerified - a.totals.percentVerified), [work.blueprints, work.pins, work.today])
@@ -37,6 +40,7 @@ export default function ClientOverview({ onNavigate }: ClientPageProps) {
             description="Only work that the engineer has checked and approved counts as done."
             actions={
               <>
+                <button type="button" className={buttonSecondary} onClick={() => setWeekly(true)} disabled={totals.total === 0}>Weekly summary</button>
                 <button type="button" className={buttonSecondary} onClick={() => onNavigate("blueprint")}>View plans</button>
                 <button type="button" className={buttonPrimary} onClick={() => onNavigate("communication")}>Ask the team</button>
               </>
@@ -128,6 +132,9 @@ export default function ClientOverview({ onNavigate }: ClientPageProps) {
         </>
       )}
       {projectId ? <div className="mt-8"><AssignedProjects title="All your projects" /></div> : null}
+      {weekly && work.project ? (
+        <WeeklyReportModal audience="client" project={work.project} pins={work.pins} start={work.project.start_date} end={work.project.end_date} logs={reports} questions={questions} nameOf={work.nameOf} sheetOf={work.sheetOf} onClose={() => setWeekly(false)} />
+      ) : null}
     </div>
   )
 }
