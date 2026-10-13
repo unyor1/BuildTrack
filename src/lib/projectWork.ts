@@ -7,7 +7,7 @@ import { useProject, useProjectTeam } from "./projects"
 export function useProjectWork(projectId: string | null) {
   const { project, loading: projectLoading, notFound } = useProject(projectId)
   const { blueprints, loading: sheetsLoading, reload: reloadSheets } = useBlueprints(projectId)
-  const { pins, setPins, loading: pinsLoading, error, reload: reloadPins } = useProjectPins(projectId)
+  const { pins, setPins, loading: pinsLoading, error, reload: reloadPins } = useProjectPins(projectId, true)
   const { team } = useProjectTeam(projectId)
 
   const lookups = useMemo(() => {

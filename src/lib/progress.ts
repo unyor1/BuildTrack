@@ -5,8 +5,10 @@ import type { Blueprint, Pin, PinSeverity, PinStatus } from "./blueprints"
 export const STATUSES: PinStatus[] = ["not_started", "in_progress", "for_review", "issue", "verified"]
 
 // Calendar date in Manila as YYYY-MM-DD (deadlines are plain dates, so compare them as text).
+// One formatter for the whole app: creating one per call made the S-curve slow on big projects (load test).
+const manilaDay = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Manila", year: "numeric", month: "2-digit", day: "2-digit" })
 export function manilaToday(now = new Date()): string {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Manila", year: "numeric", month: "2-digit", day: "2-digit" }).format(now)
+  return manilaDay.format(now)
 }
 
 export function daysBetween(fromDate: string, toDate: string): number {
@@ -95,4 +97,46 @@ export function downloadCsv(filename: string, csv: string) {
   link.click()
   link.remove()
   setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
+// ---------- S-curve (planned vs verified, cumulative) ----------
+// Planned: share of the work items whose due date has passed by each date, i.e. the plan the engineer set on the pins.
+// Verified: share verified by then (items verified now, dated by their verification; un-verifying removes an item).
+// Notes are not work. Items without a due date count in the total but never as planned; `undated` lets the screen say so.
+export type SCurvePoint = { date: string; planned: number; verified: number | null }
+export type SCurveData = { points: SCurvePoint[]; total: number; undated: number; todayIndex: number }
+
+export const addDays = (date: string, days: number) =>
+  new Date(Date.UTC(+date.slice(0, 4), +date.slice(5, 7) - 1, +date.slice(8, 10)) + days * 86_400_000).toISOString().slice(0, 10)
+
+const countUpTo = (sorted: string[], date: string) => {
+  let n = 0
+  while (n < sorted.length && sorted[n] <= date) n++
+  return n
+}
+
+export function sCurve(
+  pins: Pick<Pin, "category" | "status" | "due_date" | "verified_at">[],
+  start: string | null,
+  end: string | null,
+  today: string,
+  maxPoints = 40,
+): SCurveData | null {
+  const work = pins.filter((pin) => pin.category !== "note")
+  if (!work.length) return null
+  const due = work.map((pin) => pin.due_date?.slice(0, 10)).filter((value): value is string => Boolean(value)).sort()
+  const done = work.filter((pin) => pin.status === "verified" && pin.verified_at).map((pin) => manilaToday(new Date(pin.verified_at as string))).sort()
+  const from = [start, due[0], done[0], today].filter((value): value is string => Boolean(value)).sort()[0]
+  let to = [end, due[due.length - 1], today].filter((value): value is string => Boolean(value)).sort().reverse()[0]
+  if (to <= from) to = addDays(from, 1)
+  const span = daysBetween(from, to)
+  const step = Math.max(1, Math.ceil(span / Math.max(1, maxPoints - 1)))
+  const dates: string[] = []
+  for (let day = 0; day < span; day += step) dates.push(addDays(from, day))
+  dates.push(to)
+  if (!dates.includes(today)) dates.push(today)
+  dates.sort()
+  const pct = (count: number) => Math.round((count / work.length) * 1000) / 10
+  const points = dates.map((date) => ({ date, planned: pct(countUpTo(due, date)), verified: date <= today ? pct(countUpTo(done, date)) : null }))
+  return { points, total: work.length, undated: work.length - due.length, todayIndex: dates.indexOf(today) }
 }

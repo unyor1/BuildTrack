@@ -1,5 +1,6 @@
 import { useMemo } from "react"
 import AssignedProjects from "../../components/AssignedProjects"
+import SCurveChart from "../../components/SCurveChart"
 import { EmptyState, Meter, PageHead, StatCard, buttonPrimary, buttonSecondary } from "../../components/ui/PageParts"
 import { SkeletonCardGrid } from "../../components/ui/Skeleton"
 import { useQaSummary } from "../../lib/qa"
@@ -65,6 +66,12 @@ export default function ClientOverview({ onNavigate }: ClientPageProps) {
                 <StatCard label="Being worked on" value={totals.in_progress} tone="amber" note="In progress now" />
                 <StatCard label="Waiting for approval" value={totals.for_review} tone="amber" note="Done, being checked" />
               </div>
+
+              <section className="mb-5 rounded-2xl border border-line bg-surface p-5 shadow-sm" aria-labelledby="client-curve">
+                <h2 id="client-curve" className="text-base font-extrabold">Plan against approved work</h2>
+                <p className="mb-3 text-xs text-fg-muted">The dashed line is what the team planned to finish by each date. The solid line is the work the engineer has checked and approved.</p>
+                <SCurveChart pins={work.pins} start={work.project?.start_date ?? null} end={work.project?.end_date ?? null} today={work.today} />
+              </section>
 
               {quality && quality.inspections.passed + quality.inspections.conditional + quality.inspections.failed + quality.defects.open + quality.defects.closed > 0 ? (
                 <section className="mb-5" aria-label="Quality checks">

@@ -35,6 +35,9 @@ One document per SQL file in `supabase/`. Same sections every time so changes ar
 | [0029_google_registration_gate](0029_google_registration_gate.md) | `supabase/migrations/0029_google_registration_gate.sql` | Applied (connector) |
 | [0030_identity_verification_privacy](0030_identity_verification_privacy.md) | `supabase/migrations/0030_identity_verification_privacy.sql` (+ `0031_privacy_consent_pending.sql`) | Applied (connector) |
 | [0032_data_requests](0032_data_requests.md) | `supabase/migrations/0032_data_requests.sql` | Applied (connector) |
+| [0033_evidence_lock](0033_evidence_lock.md) | `supabase/migrations/0033_evidence_lock.sql` (+ `0035_history_photo_removed.sql`, `0037_evidence_check_visibility.sql`) | Applied (connector) |
+| [0034_realtime](0034_realtime.md) | `supabase/migrations/0034_realtime.sql` | Applied (connector) |
+| [0036_rls_performance](0036_rls_performance.md) | `supabase/migrations/0036_rls_performance.sql` | Applied (connector) |
 | [seed_super_admin](seed_super_admin.md) | `supabase/seeds/seed_super_admin.sql` | Done (1 Super Admin exists) |
 
 ## Document template (copy for every new migration)

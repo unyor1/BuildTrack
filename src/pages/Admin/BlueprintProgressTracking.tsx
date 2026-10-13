@@ -1,5 +1,6 @@
 import { useMemo } from "react"
 import AdminProjectSelect, { useAdminProject } from "../../components/AdminProjectSelect"
+import SCurveChart from "../../components/SCurveChart"
 import { EmptyState, Meter, StatCard } from "../../components/ui/PageParts"
 import { SkeletonCardGrid } from "../../components/ui/Skeleton"
 import { byZone, scheduleElapsed, summarize } from "../../lib/progress"
@@ -43,6 +44,9 @@ export default function BlueprintProgressTracking(_: AdminPageProps) {
                 <Meter value={totals.percentVerified} tone="green" label="Verified share" />
               </div>
             ) : null}
+          </Panel>
+          <Panel title="Planned vs verified (S-curve)">
+            <SCurveChart pins={work.pins} start={project?.start_date ?? null} end={project?.end_date ?? null} today={work.today} />
           </Panel>
           <Panel title="By sheet">
             <div className="admin-table-wrap">

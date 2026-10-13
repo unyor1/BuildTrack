@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { supabase } from "./supabase"
+import { useLiveReload } from "./realtime"
 
 export type AppNotification = {
   id: string
@@ -63,6 +64,9 @@ export function useNotifications() {
       window.removeEventListener("focus", onFocus)
     }
   }, [reload])
+
+  // New notifications arrive at once (Row Level Security: only the person's own rows are sent).
+  useLiveReload([{ table: "notifications" }], () => void reload())
 
   const markRead = useCallback(async (ids: string[]) => {
     if (!ids.length) return

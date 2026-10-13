@@ -1,10 +1,13 @@
 import { useEffect, useState } from "react"
 import { supabase } from "./supabase"
+import { useLiveReload } from "./realtime"
 
 // Live counts for sidebar badges (what the database says, never fixed numbers). Row Level Security limits them to the
-// signed-in person's projects. Refreshed when the page changes, on focus and every minute.
+// signed-in person's projects. Refreshed live when a pin changes, when the page changes, on focus and every minute.
 export function usePinCounts(refreshKey: string) {
   const [counts, setCounts] = useState({ review: 0, issue: 0 })
+  const [tick, setTick] = useState(0)
+  useLiveReload([{ table: "pins" }], () => setTick((value) => value + 1))
   useEffect(() => {
     let active = true
     const load = async () => {
@@ -22,6 +25,6 @@ export function usePinCounts(refreshKey: string) {
       window.clearInterval(timer)
       window.removeEventListener("focus", load)
     }
-  }, [refreshKey])
+  }, [refreshKey, tick])
   return counts
 }

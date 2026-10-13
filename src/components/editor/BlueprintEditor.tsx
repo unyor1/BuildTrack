@@ -576,6 +576,9 @@ export default function BlueprintEditor({ projectId, role, canEdit, onExit }: { 
     if (!blueprint) return
     const name = blueprint.title
     const revisionCount = blueprint.blueprint_revisions.length
+    // Evidence lock (0033): work that was sent for review or verified keeps its record, so its sheet stays too.
+    const evidence = sheetPins.filter((pin) => pin.status === "for_review" || pin.status === "verified" || pin.verified_at).length
+    if (evidence) return toast.error("This sheet holds evidence", `${evidence} work item${evidence === 1 ? " was" : "s were"} sent for review or verified. That record stays, so the sheet cannot be deleted. Upload a new revision instead.`)
     if (!(await confirm({
       title: `Delete the sheet "${name}"?`,
       message: `Its ${revisionCount} revision${revisionCount === 1 ? "" : "s"}, ${sheetPins.length} pin${sheetPins.length === 1 ? "" : "s"} (with their photos and comments) and ${annotations.length} drawn item${annotations.length === 1 ? "" : "s"} are removed for everyone. This cannot be undone.`,

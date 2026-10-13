@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from "react"
 import { prepareImage } from "./sheetImages"
 import { supabase } from "./supabase"
+import { fetchAll } from "./paging"
+import { byProject, useLiveReload } from "./realtime"
 import type { DefectCategory, QaSeverity, SnagStatus, Trade, Urgency } from "./qaModel"
 
 // Client reports ("snags"): the database decides who sees what (a client sees only their own, staff of the project see all).
@@ -34,15 +36,16 @@ export function useSnags(projectId: string | null) {
       setLoading(false)
       return
     }
-    const { data, error: loadError } = await supabase.from("client_snags").select("*").eq("project_id", projectId).order("number", { ascending: false }).limit(200)
+    const { data, error: loadError } = await fetchAll<Snag>((from, to) => supabase.from("client_snags").select("*").eq("project_id", projectId).order("number", { ascending: false }).range(from, to))
     setError(loadError ? "Could not load the reports. Check your connection and try again." : "")
-    if (!loadError) setSnags((data as Snag[] | null) ?? [])
+    if (!loadError) setSnags(data)
     setLoading(false)
   }, [projectId])
   useEffect(() => {
     setLoading(Boolean(projectId))
     void reload()
   }, [reload, projectId])
+  useLiveReload(byProject("client_snags", projectId), reload)
   return { snags, loading, error, reload }
 }
 

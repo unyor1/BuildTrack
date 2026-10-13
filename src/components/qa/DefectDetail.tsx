@@ -1,13 +1,15 @@
 import { useEffect, useState } from "react"
 import Modal from "../Modal"
+import BeforeAfter from "../BeforeAfter"
 import { buttonPrimary, buttonSecondary, inputClass } from "../ui/PageParts"
 import { Chip, EvidenceStrip, SeverityChip } from "./QaBits"
 import { useConfirm } from "../../lib/confirm"
 import { printHtml } from "../../lib/printReport"
 import {
   categories, categoryLabels, defaultDueDate, defectStatusLabels, defectTone, dueState, dueText, qaActions, qaSeverityHelp, qaSeverityLabels, refNumber, severities, tradeLabels, useDefectEvents, useQaPhotos,
-  type Defect, type DefectCategory, type DefectStatus, type QaSeverity,
+  type Defect, type DefectCategory, type DefectStatus, type QaPhoto, type QaSeverity,
 } from "../../lib/qa"
+import { supabase } from "../../lib/supabase"
 import { defectReportHtml } from "../../lib/qaPrint"
 import { useToast } from "../../lib/toast"
 
@@ -46,6 +48,20 @@ export default function DefectDetail({
   const confirm = useConfirm()
   const { events, reload: reloadEvents } = useDefectEvents(defect.id)
   const { photos, reload: reloadPhotos } = useQaPhotos({ defectId: defect.id })
+  // Before / after: the photo taken when the inspection found the problem (if any) against the latest photo of the fix.
+  const [found, setFound] = useState<QaPhoto | null>(null)
+  useEffect(() => {
+    if (!defect.inspection_item_id) return setFound(null)
+    let active = true
+    supabase.from("qa_photos").select("*").eq("item_id", defect.inspection_item_id).order("created_at").limit(1).then(({ data }) => {
+      if (active) setFound(((data as QaPhoto[] | null) ?? [])[0] ?? null)
+    })
+    return () => {
+      active = false
+    }
+  }, [defect.inspection_item_id])
+  const compareBefore = found ?? (photos.length > 1 ? photos[0] : null)
+  const compareAfter = photos.length ? photos[photos.length - 1] : null
   const [root, setRoot] = useState(defect.root_cause ?? "")
   const [corrective, setCorrective] = useState(defect.corrective_action ?? "")
   const [preventive, setPreventive] = useState(defect.preventive_action ?? "")
@@ -164,6 +180,11 @@ export default function DefectDetail({
           )}
           <div className="mt-3">
             <p className={label}>Evidence</p>
+            {compareBefore && compareAfter && compareBefore.id !== compareAfter.id ? (
+              <div className="mb-2 max-w-md">
+                <BeforeAfter bucket="qa-evidence" labels={[found ? "Found at inspection" : "First photo", closed ? "Closed" : "Latest"]} before={{ path: compareBefore.path, at: compareBefore.created_at, caption: compareBefore.caption }} after={{ path: compareAfter.path, at: compareAfter.created_at, caption: compareAfter.caption }} />
+              </div>
+            ) : null}
             <EvidenceStrip projectId={defect.project_id} photos={photos} target={{ defectId: defect.id }} canAdd={!closed && (canWork || canVerify)} canRemove={() => !closed} onChanged={reloadPhotos} label={`${ref} evidence`} />
           </div>
         </section>

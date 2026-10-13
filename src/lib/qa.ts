@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from "react"
 import { prepareImage } from "./sheetImages"
 import { supabase } from "./supabase"
+import { fetchAll } from "./paging"
+import { byColumn, byProject, useLiveReload, type LiveSource } from "./realtime"
 import type { DefectCategory, DefectStatus, InspectionStatus, ItemResult, QaSeverity, Trade } from "./qaModel"
 
 export * from "./qaModel"
@@ -118,8 +120,8 @@ export type QaSummary = {
   recent: Array<{ id: string; number: number; title: string; trade: Trade; status: InspectionStatus; score: number | null; completed_at: string | null; requested_at: string }>
 }
 
-// Small loader shared by the hooks: runs the query, keeps loading / error state and exposes reload.
-function useLoad<T>(enabled: boolean, empty: T, fetcher: () => Promise<{ data: T | null; error: boolean }>, deps: unknown[]) {
+// Small loader shared by the hooks: runs the query, keeps loading / error state, exposes reload and reloads on live changes.
+function useLoad<T>(enabled: boolean, empty: T, fetcher: () => Promise<{ data: T | null; error: boolean }>, deps: unknown[], live: LiveSource[] = []) {
   const [data, setData] = useState<T>(empty)
   const [loading, setLoading] = useState(enabled)
   const [error, setError] = useState("")
@@ -141,6 +143,7 @@ function useLoad<T>(enabled: boolean, empty: T, fetcher: () => Promise<{ data: T
     setLoading(enabled)
     void reload()
   }, [reload, enabled])
+  useLiveReload(enabled ? live : [], reload)
   return { data, setData, loading, error, reload }
 }
 
@@ -165,10 +168,11 @@ export function useInspections(projectId: string | null) {
     Boolean(projectId),
     [],
     async () => {
-      const { data: rows, error } = await supabase.from("qa_inspections").select("*").eq("project_id", projectId as string).order("number", { ascending: false }).limit(300)
-      return { data: error ? null : ((rows as Inspection[] | null) ?? []), error: Boolean(error) }
+      const { data: rows, error } = await fetchAll<Inspection>((from, to) => supabase.from("qa_inspections").select("*").eq("project_id", projectId as string).order("number", { ascending: false }).range(from, to))
+      return { data: error ? null : rows, error }
     },
     [projectId],
+    byProject("qa_inspections", projectId),
   )
   return { inspections: data, ...rest }
 }
@@ -182,6 +186,7 @@ export function useInspectionItems(inspectionId: string | null) {
       return { data: error ? null : ((rows as InspectionItem[] | null) ?? []), error: Boolean(error) }
     },
     [inspectionId],
+    byColumn("qa_inspection_items", "inspection_id", inspectionId),
   )
   return { items: data, setItems: setData, ...rest }
 }
@@ -191,10 +196,11 @@ export function useDefects(projectId: string | null) {
     Boolean(projectId),
     [],
     async () => {
-      const { data: rows, error } = await supabase.from("qa_defects").select("*").eq("project_id", projectId as string).order("number", { ascending: false }).limit(500)
-      return { data: error ? null : ((rows as Defect[] | null) ?? []), error: Boolean(error) }
+      const { data: rows, error } = await fetchAll<Defect>((from, to) => supabase.from("qa_defects").select("*").eq("project_id", projectId as string).order("number", { ascending: false }).range(from, to))
+      return { data: error ? null : rows, error }
     },
     [projectId],
+    byProject("qa_defects", projectId),
   )
   return { defects: data, ...rest }
 }
@@ -208,6 +214,7 @@ export function useDefectEvents(defectId: string | null) {
       return { data: error ? null : ((rows as DefectEvent[] | null) ?? []), error: Boolean(error) }
     },
     [defectId],
+    byColumn("qa_defect_events", "defect_id", defectId),
   )
   return { events: data, ...rest }
 }
@@ -229,6 +236,8 @@ export function useQaPhotos(scope: { inspectionId?: string | null; defectId?: st
       return { data: error ? null : ((rows as QaPhoto[] | null) ?? []), error: Boolean(error) }
     },
     [key, Boolean(scope.inspectionId)],
+    // Item photos carry the item, not always the inspection, so an inspection listens to all photos it may read.
+    scope.defectId ? byColumn("qa_photos", "defect_id", scope.defectId) : key ? [{ table: "qa_photos" }] : [],
   )
   return { photos: data, ...rest }
 }
@@ -252,6 +261,7 @@ export function useQaSummary(projectId: string | null) {
     setLoading(Boolean(projectId))
     void reload()
   }, [reload, projectId])
+  useLiveReload([...byProject("qa_inspections", projectId), ...byProject("qa_defects", projectId)], reload)
   return { summary, loading, error, reload }
 }
 

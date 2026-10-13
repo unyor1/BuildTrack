@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { supabase } from "./supabase"
+import { fetchAll } from "./paging"
+import { useLiveReload } from "./realtime"
 import { qaBadge } from "./qaModel"
 import type { Defect, Inspection } from "./qa"
 
@@ -12,16 +14,18 @@ export function useQaLite(refreshKey = "") {
   const [inspections, setInspections] = useState<QaLiteInspection[]>([])
   const [defects, setDefects] = useState<QaLiteDefect[]>([])
   const [loading, setLoading] = useState(true)
+  const [tick, setTick] = useState(0)
+  useLiveReload([{ table: "qa_inspections" }, { table: "qa_defects" }], () => setTick((value) => value + 1))
   useEffect(() => {
     let active = true
     const load = async () => {
       const [ir, ncr] = await Promise.all([
-        supabase.from("qa_inspections").select("id,project_id,number,title,status,pin_id,score,completed_at").in("status", ["requested", "in_progress"]).limit(200),
-        supabase.from("qa_defects").select("id,project_id,number,title,severity,status,due_date,assigned_to").neq("status", "closed").limit(500),
+        fetchAll<QaLiteInspection>((from, to) => supabase.from("qa_inspections").select("id,project_id,number,title,status,pin_id,score,completed_at").in("status", ["requested", "in_progress"]).order("id").range(from, to)),
+        fetchAll<QaLiteDefect>((from, to) => supabase.from("qa_defects").select("id,project_id,number,title,severity,status,due_date,assigned_to").neq("status", "closed").order("id").range(from, to)),
       ])
       if (!active) return
-      setInspections((ir.data as QaLiteInspection[] | null) ?? [])
-      setDefects((ncr.data as QaLiteDefect[] | null) ?? [])
+      setInspections(ir.data)
+      setDefects(ncr.data)
       setLoading(false)
     }
     void load()
@@ -32,7 +36,7 @@ export function useQaLite(refreshKey = "") {
       window.clearInterval(timer)
       window.removeEventListener("focus", load)
     }
-  }, [refreshKey])
+  }, [refreshKey, tick])
   return { inspections, defects, loading }
 }
 

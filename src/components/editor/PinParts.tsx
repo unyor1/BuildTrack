@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from "react"
 import { Skeleton, SkeletonList } from "../ui/Skeleton"
+import BeforeAfter from "../BeforeAfter"
 import {
   categoryLabels,
   compressPhoto,
@@ -8,6 +9,7 @@ import {
   statusDot,
   statusLabels,
   useChecklist,
+  usePinEvidence,
   usePinPhotos,
   usePinTimeline,
   useSignedUrl,
@@ -155,6 +157,7 @@ const describe = (entry: TimelineEntry) => {
   if (entry.kind === "moved") return "moved the pin"
   if (entry.kind === "edited") return "edited the details"
   if (entry.kind === "photo") return `added a photo${entry.note ? `: ${entry.note}` : ""}`
+  if (entry.kind === "photo_removed") return `removed a photo${entry.note && entry.note !== "Photo removed" ? `: ${entry.note}` : ""}`
   if (entry.kind === "checklist") return entry.note ?? "updated the checklist"
   return "commented"
 }
@@ -228,6 +231,7 @@ export function PinPhotos({ pin, canAdd, canRemoveAny, meId, onChanged, columns 
   const confirm = useConfirm()
   const { profile } = useAuth()
   const { photos, reload } = usePinPhotos(pin.id)
+  const evidence = usePinEvidence(pin.id, pin.status)
   const fileInput = useRef<HTMLInputElement>(null)
   const [busy, setBusy] = useState(false)
   const [savedOffline, setSavedOffline] = useState(0)
@@ -300,10 +304,19 @@ export function PinPhotos({ pin, canAdd, canRemoveAny, meId, onChanged, columns 
         </div>
       ) : null}
       {photos.length === 0 ? <p className="text-sm text-fg-muted">No photos yet.</p> : (
-        <div className={`grid gap-2 ${grid}`}>
-          {photos.map((photo) => <Thumb key={photo.id} photo={photo} onRemove={canRemoveAny || photo.uploaded_by === meId ? () => void remove(photo) : undefined} />)}
-        </div>
+        <>
+          {photos.length > 1 ? <BeforeAfter bucket="pin-photos" before={{ path: photos[0].path, at: photos[0].created_at, caption: photos[0].caption }} after={{ path: photos[photos.length - 1].path, at: photos[photos.length - 1].created_at, caption: photos[photos.length - 1].caption }} /> : null}
+          <div className={`grid gap-2 ${grid}`}>
+            {photos.map((photo) => <Thumb key={photo.id} photo={photo} onRemove={!evidence && (canRemoveAny || photo.uploaded_by === meId) ? () => void remove(photo) : undefined} />)}
+          </div>
+        </>
       )}
+      {evidence && photos.length ? (
+        <p className="flex items-start gap-1.5 text-xs text-fg-muted">
+          <svg className="mt-0.5 flex-none" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V8a4 4 0 0 1 8 0v3" /></svg>
+          Evidence locked: this work was sent for review, so its photos stay on record. You can still add new ones.
+        </p>
+      ) : null}
     </div>
   )
 }

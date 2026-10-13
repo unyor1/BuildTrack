@@ -1,4 +1,5 @@
 import { useMemo } from "react"
+import SCurveChart from "../../components/SCurveChart"
 import ProjectContextBar from "../../components/ProjectContextBar"
 import { EmptyState, Meter, PageHead, StatCard, buttonSecondary } from "../../components/ui/PageParts"
 import { SkeletonCardGrid } from "../../components/ui/Skeleton"
@@ -104,6 +105,12 @@ export default function EngineerProgress({ onNavigate }: EngineerPageProps) {
                 <div className="relative"><Meter value={totals.percentVerified} tone="green" label="Verified share" /><span className="absolute -top-1 h-4 w-0.5 bg-fg" style={{ left: `${elapsed}%` }} title={`Schedule: ${elapsed}%`} /></div>
               </div>
             ) : null}
+          </section>
+
+          <section className="mb-6 rounded-2xl border border-line bg-surface p-5 shadow-sm" aria-labelledby="s-curve-title">
+            <h2 id="s-curve-title" className="text-base font-extrabold">Planned vs verified (S-curve)</h2>
+            <p className="mb-3 text-xs text-fg-muted">Planned follows the due dates on the pins; verified follows your verifications. A widening gap is the early warning.</p>
+            <SCurveChart pins={work.pins} start={work.project?.start_date ?? null} end={work.project?.end_date ?? null} today={work.today} />
           </section>
 
           <section className="mb-6">

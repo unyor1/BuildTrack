@@ -1013,3 +1013,17 @@ aside nav { scrollbar-color: rgba(255, 255, 255, .22) transparent; }
 [data-persona="foreman"] { --persona-on: #1c1722; }
 .bt-workspace main [role="tab"][aria-selected="true"].bg-brand, .bt-workspace .admin-tabs button.is-active, .bt-workspace .overview-tabs button.is-active { color: var(--persona-on); background: var(--persona); box-shadow: 0 6px 14px -8px color-mix(in srgb, var(--persona) 90%, transparent); }
 .bt-workspace main [role="tab"][aria-selected="true"].bg-brand > span { color: inherit; }
+
+/* S-curve chart (components/SCurveChart.tsx). Colours validated for colour-blind separation on each surface. */
+.bt-scurve { --sc-plan: #2563eb; --sc-done: #9e1f93; }
+.dark .bt-scurve { --sc-plan: #5b8def; --sc-done: #cf5cc4; }
+.bt-sc-plan { stroke: var(--sc-plan); }
+.bt-sc-done { stroke: var(--sc-done); }
+.bt-sc-done-fill { fill: var(--sc-done); fill-opacity: .1; }
+.bt-sc-dot { fill: var(--sc-done); stroke: var(--surface); }
+.bt-sc-plan-dot { fill: var(--sc-plan); stroke: var(--surface); }
+.bt-sc-grid { stroke: var(--line); }
+.bt-sc-today { stroke: var(--fg-muted); }
+.bt-sc-cross { stroke: var(--fg); stroke-opacity: .35; }
+.bt-sc-axis { fill: var(--fg-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.bt-workspace main [aria-pressed="true"].bg-brand { color: var(--persona-on); background: var(--persona); border-color: var(--persona); }

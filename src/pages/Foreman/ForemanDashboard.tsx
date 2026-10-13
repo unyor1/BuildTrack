@@ -10,6 +10,8 @@ import { openProject, useProjects } from "../../lib/projects"
 import { useQaLite } from "../../lib/qaLite"
 import { dueState, dueText, qaSeverityLabels, refNumber, severityTone } from "../../lib/qaModel"
 import { supabase } from "../../lib/supabase"
+import { fetchAll } from "../../lib/paging"
+import { useLiveReload } from "../../lib/realtime"
 import ReportModal from "./ReportModal"
 import type { ForemanPageProps } from "./types"
 
@@ -28,18 +30,20 @@ export default function ForemanDashboard({ onNavigate }: ForemanPageProps) {
 
   const load = useCallback(async () => {
     const [pinResult, eventResult] = await Promise.all([
-      supabase.from("pins").select("*").neq("category", "note"),
-      supabase.from("pin_events").select("pin_id").eq("kind", "status").eq("from_status", "for_review").eq("to_status", "in_progress"),
+      fetchAll<Pin>((from, to) => supabase.from("pins").select("*").neq("category", "note").order("id").range(from, to)),
+      fetchAll<{ pin_id: string }>((from, to) => supabase.from("pin_events").select("pin_id").eq("kind", "status").eq("from_status", "for_review").eq("to_status", "in_progress").order("id").range(from, to)),
     ])
-    setFailed(Boolean(pinResult.error))
-    setPins(((pinResult.data as Pin[] | null) ?? []).map((pin) => ({ ...pin, x: Number(pin.x), y: Number(pin.y) })))
-    setSentBack(new Set(((eventResult.data as Array<{ pin_id: string }> | null) ?? []).map((event) => event.pin_id)))
+    setFailed(pinResult.error)
+    setPins(pinResult.data.map((pin) => ({ ...pin, x: Number(pin.x), y: Number(pin.y) })))
+    setSentBack(new Set(eventResult.data.map((event) => event.pin_id)))
     setLoading(false)
   }, [])
 
   useEffect(() => {
     void load()
   }, [load])
+  // The engineer verifies or sends work back: the foreman's list follows at once.
+  useLiveReload([{ table: "pins" }], () => void load())
 
   // ?pin=<id> (from a QR code or a shared link) opens that pin's report dialog once.
   const wanted = useRef(new URLSearchParams(window.location.search).get("pin"))

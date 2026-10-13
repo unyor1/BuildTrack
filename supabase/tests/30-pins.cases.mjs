@@ -139,15 +139,14 @@ export default async function ({ db, ids, as, asOwner, test, expectOk, expectFai
     if ((await field(ids.pin1, "verified_by")) !== null) throw new Error("verified_by not cleared")
   })
 
-  await test("Verified pins: Engineer cannot delete them, admin with blueprints.manage can", async () => {
+  await test("Verified pins are evidence: neither the Engineer nor an admin with blueprints.manage can delete them (0033)", async () => {
     const pin = await newPin("eng1", "Slab pour check")
     await as("eng1", "aal2")
     await expectOk("update public.pins set status = 'verified' where id = $1", [pin])
     const del = await db.query("delete from public.pins where id = $1 returning id", [pin])
     if (del.rows.length) throw new Error("engineer deleted a verified pin")
     await as("admin", "aal2")
-    const ok = await db.query("delete from public.pins where id = $1 returning id", [pin])
-    if (ok.rows.length !== 1) throw new Error("admin could not delete")
+    await expectFail("delete from public.pins where id = $1", [pin], /evidence/)
   })
 
   await test("Engineer can delete an unverified pin", async () => {
@@ -206,7 +205,7 @@ export default async function ({ db, ids, as, asOwner, test, expectOk, expectFai
     if ((await events(ids.pin1, "photo")) !== 1) throw new Error("photo event missing")
   })
 
-  await test("Photos: Client sees them, cannot add; outsiders see nothing; uploader and admin can delete, others cannot", async () => {
+  await test("Photos: Client sees them, cannot add; outsiders see nothing; evidence photos cannot be deleted by anyone", async () => {
     await as("client1")
     if ((await count("select count(*) n from public.pin_photos where pin_id = $1", [ids.pin1])) !== 1) throw new Error("client cannot see photo")
     await as("client1", "aal2")
@@ -216,9 +215,11 @@ export default async function ({ db, ids, as, asOwner, test, expectOk, expectFai
     await as("fore2", "aal2")
     const bad = await db.query("delete from public.pin_photos where id = $1 returning id", [ids.photo1])
     if (bad.rows.length) throw new Error("another foreman deleted the photo")
+    // pin1 was verified earlier, so its photo is evidence: even the uploader and an admin cannot delete it (0033).
     await as("fore1", "aal2")
-    const ok = await db.query("delete from public.pin_photos where id = $1 returning id", [ids.photo1])
-    if (ok.rows.length !== 1) throw new Error("uploader could not delete own photo")
+    await expectFail("delete from public.pin_photos where id = $1", [ids.photo1], /evidence/)
+    await as("admin", "aal2")
+    await expectFail("delete from public.pin_photos where id = $1", [ids.photo1], /evidence/)
   })
 
   await test("pin-photos bucket: private, images only, 8 MB; project folder rules for upload, view and delete", async () => {
@@ -242,14 +243,20 @@ export default async function ({ db, ids, as, asOwner, test, expectOk, expectFai
   })
 
   // ---- Cascades and audit ----
-  await test("Deleting a blueprint removes its pins, events and photos", async () => {
+  await test("Deleting a blueprint removes its pins, events and photos; a blueprint holding evidence cannot be deleted", async () => {
     await as("admin", "aal2")
-    const pin = await newPin("eng1", "Cascade pin")
+    await expectFail("delete from public.blueprints where id = $1", [bpId], /evidence/)
+    await as("eng1", "aal2")
+    const spare = (await db.query("insert into public.blueprints (project_id, title) values ($1, 'Spare plan') returning id", [P1])).rows[0].id
+    const pin = (await db.query("insert into public.pins (project_id, blueprint_id, x, y, title) values ($1, $2, 10, 10, 'Cascade pin') returning id", [P1, spare])).rows[0].id
+    await as("fore1", "aal2")
+    await expectOk(photoSql, [pin, P1, `${P1}/${pin}/draft.jpg`])
     await as("admin", "aal2")
-    await db.query("delete from public.blueprints where id = $1", [bpId])
+    await db.query("delete from public.blueprints where id = $1", [spare])
     await asOwner()
-    if ((await count("select count(*) n from public.pins where blueprint_id = $1", [bpId])) !== 0) throw new Error("pins remain")
+    if ((await count("select count(*) n from public.pins where blueprint_id = $1", [spare])) !== 0) throw new Error("pins remain")
     if ((await count("select count(*) n from public.pin_events where pin_id = $1", [pin])) !== 0) throw new Error("events remain")
+    if ((await count("select count(*) n from public.pin_photos where pin_id = $1", [pin])) !== 0) throw new Error("photos remain")
   })
 
   await test("Pin changes are audited", async () => {

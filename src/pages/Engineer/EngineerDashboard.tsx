@@ -9,6 +9,8 @@ import { openProject, phaseLabels, statusColor, statusLabels, useProjects } from
 import { useQaLite, type QaLiteDefect, type QaLiteInspection } from "../../lib/qaLite"
 import { refNumber, severityTone } from "../../lib/qaModel"
 import { supabase } from "../../lib/supabase"
+import { fetchAll } from "../../lib/paging"
+import { useLiveReload } from "../../lib/realtime"
 import type { EngineerPageProps } from "./types"
 
 type LitePin = Pick<Pin, "id" | "project_id" | "title" | "status" | "severity" | "category" | "due_date" | "updated_at" | "assigned_to">
@@ -22,22 +24,21 @@ export default function EngineerDashboard({ onNavigate }: EngineerPageProps) {
   const [failed, setFailed] = useState(false)
   const today = manilaToday()
   const qa = useQaLite("dashboard")
+  const [tick, setTick] = useState(0)
+  useLiveReload([{ table: "pins" }], () => setTick((value) => value + 1))
 
   useEffect(() => {
     let active = true
-    supabase
-      .from("pins")
-      .select("id,project_id,title,status,severity,category,due_date,updated_at,assigned_to")
-      .then(({ data, error }) => {
-        if (!active) return
-        setFailed(Boolean(error))
-        setPins((data as LitePin[] | null) ?? [])
-        setPinsLoading(false)
-      })
+    fetchAll<LitePin>((from, to) => supabase.from("pins").select("id,project_id,title,status,severity,category,due_date,updated_at,assigned_to").order("id").range(from, to)).then(({ data, error }) => {
+      if (!active) return
+      setFailed(error)
+      setPins(data)
+      setPinsLoading(false)
+    })
     return () => {
       active = false
     }
-  }, [])
+  }, [tick])
 
   const totals = useMemo(() => summarize(pins, today), [pins, today])
   const projectName = useMemo(() => new Map(projects.map((project) => [project.id, project])), [projects])

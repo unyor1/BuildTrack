@@ -6,6 +6,8 @@ import { useAuth } from "../../lib/auth"
 import { isOverdue, manilaToday } from "../../lib/progress"
 import { useProjects } from "../../lib/projects"
 import { supabase } from "../../lib/supabase"
+import { fetchAll } from "../../lib/paging"
+import { useLiveReload } from "../../lib/realtime"
 import ReportModal from "./ReportModal"
 import type { ForemanPageProps } from "./types"
 
@@ -24,12 +26,12 @@ export default function ForemanCorrectiveAction(_: ForemanPageProps) {
 
   const load = useCallback(async () => {
     const [pinResult, sentBack] = await Promise.all([
-      supabase.from("pins").select("*").neq("category", "note"),
-      supabase.from("pin_events").select("pin_id").eq("kind", "status").eq("from_status", "for_review").eq("to_status", "in_progress"),
+      fetchAll<Pin>((from, to) => supabase.from("pins").select("*").neq("category", "note").order("id").range(from, to)),
+      fetchAll<{ pin_id: string }>((from, to) => supabase.from("pin_events").select("pin_id").eq("kind", "status").eq("from_status", "for_review").eq("to_status", "in_progress").order("id").range(from, to)),
     ])
-    setFailed(Boolean(pinResult.error))
-    const all = ((pinResult.data as Pin[] | null) ?? []).map((pin) => ({ ...pin, x: Number(pin.x), y: Number(pin.y) }))
-    const returned = new Set(((sentBack.data as Array<{ pin_id: string }> | null) ?? []).map((row) => row.pin_id))
+    setFailed(pinResult.error)
+    const all = pinResult.data.map((pin) => ({ ...pin, x: Number(pin.x), y: Number(pin.y) }))
+    const returned = new Set(sentBack.data.map((row) => row.pin_id))
     const needed = all.filter((pin) => (pin.assigned_to === profile?.id || pin.assigned_to === null) && (pin.status === "issue" || (pin.status === "in_progress" && returned.has(pin.id))))
     setPins(needed)
     if (needed.length) {
@@ -40,6 +42,8 @@ export default function ForemanCorrectiveAction(_: ForemanPageProps) {
     } else setReasons(new Map())
     setLoading(false)
   }, [profile?.id])
+
+  useLiveReload([{ table: "pins" }], () => void load())
 
   useEffect(() => {
     void load()

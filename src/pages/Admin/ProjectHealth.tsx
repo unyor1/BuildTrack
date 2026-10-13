@@ -5,6 +5,8 @@ import type { Pin } from "../../lib/blueprints"
 import { manilaToday, projectHealth, scheduleElapsed, summarize, type Health } from "../../lib/progress"
 import { openProject, type Project } from "../../lib/projects"
 import { supabase } from "../../lib/supabase"
+import { fetchAll } from "../../lib/paging"
+import { useLiveReload } from "../../lib/realtime"
 import { Panel, StatusBadge } from "./AdminShell"
 
 type LitePin = Pick<Pin, "project_id" | "status" | "severity" | "category" | "due_date">
@@ -26,26 +28,26 @@ export default function ProjectHealth({ projects }: { projects: Project[] }) {
   const [defects, setDefects] = useState<LiteDefect[]>([])
   const [inspections, setInspections] = useState<LiteInspection[]>([])
   const today = manilaToday()
+  const [tick, setTick] = useState(0)
+  useLiveReload([{ table: "pins" }, { table: "qa_defects" }, { table: "qa_inspections" }], () => setTick((value) => value + 1), 800)
 
   useEffect(() => {
     let active = true
-    Promise.all([supabase.from("qa_defects").select("project_id,status,severity,due_date").limit(2000), supabase.from("qa_inspections").select("project_id,status,reinspection_of").limit(2000)]).then(([ncr, ir]) => {
+    Promise.all([
+      fetchAll<LiteDefect>((from, to) => supabase.from("qa_defects").select("project_id,status,severity,due_date").order("id").range(from, to)),
+      fetchAll<LiteInspection>((from, to) => supabase.from("qa_inspections").select("project_id,status,reinspection_of").order("id").range(from, to)),
+      fetchAll<LitePin>((from, to) => supabase.from("pins").select("project_id,status,severity,category,due_date").order("id").range(from, to)),
+    ]).then(([ncr, ir, pinRows]) => {
       if (!active) return
-      setDefects((ncr.data as LiteDefect[] | null) ?? [])
-      setInspections((ir.data as LiteInspection[] | null) ?? [])
+      setDefects(ncr.data)
+      setInspections(ir.data)
+      setFailed(pinRows.error)
+      setPins(pinRows.data)
     })
-    supabase
-      .from("pins")
-      .select("project_id,status,severity,category,due_date")
-      .then(({ data, error }) => {
-        if (!active) return
-        setFailed(Boolean(error))
-        setPins((data as LitePin[] | null) ?? [])
-      })
     return () => {
       active = false
     }
-  }, [])
+  }, [tick])
 
   const rows = useMemo(
     () =>

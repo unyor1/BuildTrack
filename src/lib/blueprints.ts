@@ -3,6 +3,8 @@ import { asPoints, type Pt } from "./geometry"
 import { sanitizeFormat, type TextFormat } from "./textFormat"
 import type { Discipline } from "./projects"
 import { supabase } from "./supabase"
+import { fetchAll } from "./paging"
+import { byColumn, byProject, useLiveReload } from "./realtime"
 
 export type PinStatus = "not_started" | "in_progress" | "for_review" | "issue" | "verified"
 export type PinCategory = "progress" | "quality" | "safety" | "note"
@@ -66,7 +68,7 @@ export type PinPhoto = { id: string; pin_id: string; path: string; caption: stri
 export type TimelineEntry = {
   id: number
   created_at: string
-  kind: "created" | "moved" | "edited" | "status" | "comment" | "photo" | "checklist"
+  kind: "created" | "moved" | "edited" | "status" | "comment" | "photo" | "checklist" | "photo_removed"
   from_status: PinStatus | null
   to_status: PinStatus | null
   note: string | null
@@ -291,8 +293,9 @@ export function usePins(blueprintId: string | null) {
   return { pins, setPins, loading, error, reload }
 }
 
-// All pins of a project (used for the sheet strip counts and the pin list; switching sheets needs no refetch).
-export function useProjectPins(projectId: string | null) {
+// All pins of a project (used for the sheet strip counts and the pin list; switching sheets needs no refetch). Every row is read
+// (paged), so progress never stops at 1,000 pins. `live` reloads on database changes; the editor leaves it off (optimistic edits).
+export function useProjectPins(projectId: string | null, live = false) {
   const [pins, setPins] = useState<Pin[]>([])
   const [loading, setLoading] = useState(Boolean(projectId))
   const [error, setError] = useState("")
@@ -303,9 +306,9 @@ export function useProjectPins(projectId: string | null) {
       setLoading(false)
       return
     }
-    const { data, error: loadError } = await supabase.from("pins").select("*").eq("project_id", projectId).order("created_at", { ascending: true })
+    const { data, error: loadError } = await fetchAll<Pin>((from, to) => supabase.from("pins").select("*").eq("project_id", projectId).order("created_at", { ascending: true }).order("id").range(from, to))
     setError(loadError ? "Could not load pins. Check your connection and try again." : "")
-    setPins(((data as Pin[] | null) ?? []).map((pin) => ({ ...pin, x: Number(pin.x), y: Number(pin.y) })))
+    setPins(data.map((pin) => ({ ...pin, x: Number(pin.x), y: Number(pin.y) })))
     setLoading(false)
   }, [projectId])
 
@@ -313,6 +316,7 @@ export function useProjectPins(projectId: string | null) {
     setLoading(Boolean(projectId))
     void reload()
   }, [reload, projectId])
+  useLiveReload(live ? byProject("pins", projectId) : [], reload)
 
   return { pins, setPins, loading, error, reload }
 }
@@ -417,6 +421,7 @@ export function usePinTimeline(pinId: string | null) {
     setLoading(Boolean(pinId))
     void reload()
   }, [reload, pinId])
+  useLiveReload(byColumn("pin_events", "pin_id", pinId), reload)
 
   return { entries, loading, reload }
 }
@@ -435,8 +440,27 @@ export function usePinPhotos(pinId: string | null) {
   useEffect(() => {
     void reload()
   }, [reload])
+  useLiveReload(byColumn("pin_photos", "pin_id", pinId), reload)
 
   return { photos, reload }
+}
+
+// Evidence lock (0033): once a pin was sent for review or verified (now or ever), it and its photos cannot be deleted.
+// The database decides; this only lets the screen hide buttons that would be refused.
+export function usePinEvidence(pinId: string | null, status: Pin["status"] | null) {
+  const [locked, setLocked] = useState(false)
+  useEffect(() => {
+    if (!pinId) return setLocked(false)
+    if (status === "for_review" || status === "verified") return setLocked(true)
+    let active = true
+    supabase.rpc("pin_has_evidence", { p_pin: pinId }).then(({ data }) => {
+      if (active) setLocked(data === true)
+    })
+    return () => {
+      active = false
+    }
+  }, [pinId, status])
+  return locked
 }
 
 // Private files need a short-lived signed link. Cached so panning/zooming never re-requests it.

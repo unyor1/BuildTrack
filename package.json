@@ -13,6 +13,7 @@
     "db:status": "node scripts/db-migrate.mjs status",
     "db:apply": "node scripts/db-migrate.mjs apply",
     "test:lib": "node scripts/test-lib.mjs",
+    "test:load": "node scripts/load-test.mjs",
     "check": "tsc --noEmit && pnpm test:lib && pnpm test:sql && pnpm build"
   },
   "dependencies": {

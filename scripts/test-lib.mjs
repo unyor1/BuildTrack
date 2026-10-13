@@ -5,7 +5,8 @@ import { alignMoves, distributeMoves, fitImageBox, resizeFromCorner, resizedBox,
 import { angleFromCenter, arrowHeadPx, cloudPath, constrainAngle, dimensionTickPx, normalizeAngle, rectCorners, snapAngle, toLocalAxes } from "../src/lib/shapes.ts"
 import { buildPdf } from "../src/lib/pdf.ts"
 import { symbolByKey, symbolGroups, symbolLibrary } from "../src/lib/symbols.ts"
-import { byZone, csvEscape, daysBetween, isDueSoon, isOverdue, projectHealth, scheduleElapsed, summarize, toCsv } from "../src/lib/progress.ts"
+import { addDays, byZone, csvEscape, daysBetween, isDueSoon, isOverdue, projectHealth, sCurve, scheduleElapsed, summarize, toCsv } from "../src/lib/progress.ts"
+import { fetchAll } from "../src/lib/paging.ts"
 import { escapeHtml, reportHtml } from "../src/lib/printReport.ts"
 import { reportableDates } from "../src/lib/reportFormat.ts"
 import { buildZip, crc32, safeEntryName, textBytes } from "../src/lib/zipWriter.ts"
@@ -709,5 +710,65 @@ test("privacy notice: every scope says what is collected, why, who sees it and h
   assert.match(privacyScopes.identity.access, /audit log/)
   assert.match(privacyScopes.identity.keptFor, /deleted/)
 })
+
+// ---- S-curve (planned vs verified) ----
+{
+  const pin = (category, status, due_date, verified_at = null) => ({ category, status, due_date, verified_at })
+  const pins = [
+    pin("progress", "verified", "2026-01-10", "2026-01-09T03:00:00Z"),
+    pin("progress", "verified", "2026-01-20", "2026-01-25T03:00:00Z"),
+    pin("quality", "in_progress", "2026-01-30"),
+    pin("progress", "not_started", null),
+    pin("note", "not_started", "2026-01-05"),
+  ]
+  const curve = sCurve(pins, "2026-01-01", "2026-02-01", "2026-01-26", 40)
+  test("sCurve ignores notes and counts items without a due date in the total only", () => {
+    assert.equal(curve.total, 4)
+    assert.equal(curve.undated, 1)
+  })
+  test("sCurve planned is cumulative by due date; verified by verification date (Manila), never in the future", () => {
+    const at = (date) => curve.points.find((point) => point.date === date)
+    assert.equal(at("2026-01-26").planned, 50)
+    assert.equal(at("2026-01-26").verified, 50)
+    assert.equal(at("2026-02-01").planned, 75)
+    assert.equal(at("2026-02-01").verified, null)
+    assert.equal(curve.points[curve.todayIndex].date, "2026-01-26")
+    for (let i = 1; i < curve.points.length; i++) assert.ok(curve.points[i].planned >= curve.points[i - 1].planned, "planned never drops")
+  })
+  test("sCurve spans project start to end (and stretches to late due dates or today), with a bounded number of points", () => {
+    assert.equal(curve.points[0].date, "2026-01-01")
+    assert.equal(curve.points[curve.points.length - 1].date, "2026-02-01")
+    const late = sCurve([pin("progress", "not_started", "2026-06-30")], "2026-01-01", "2026-02-01", "2026-01-15", 20)
+    assert.equal(late.points[late.points.length - 1].date, "2026-06-30")
+    assert.ok(late.points.length <= 22)
+    assert.equal(sCurve([pin("note", "verified", null)], null, null, "2026-01-01"), null)
+    assert.equal(addDays("2026-02-28", 1), "2026-03-01")
+  })
+}
+
+// ---- Paging: every row is read, page by page ----
+{
+  const asked = []
+  const fake = (rows, failAt = -1) => (from, to) => {
+    asked.push([from, to])
+    if (from === failAt) return Promise.resolve({ data: null, error: { message: "boom" } })
+    return Promise.resolve({ data: Array.from({ length: Math.max(0, Math.min(to, rows - 1) - from + 1) }, (_, i) => from + i), error: null })
+  }
+  const big = await fetchAll(fake(2500), 1000)
+  const exact = await fetchAll(fake(2000), 1000)
+  const failed = await fetchAll(fake(2500, 1000), 1000)
+  const capped = await fetchAll(fake(5000), 1000, 3000)
+  test("fetchAll reads past the 1,000-row page limit and stops on a short page", () => {
+    assert.equal(big.data.length, 2500)
+    assert.equal(big.error, false)
+    assert.deepEqual(asked.slice(0, 3), [[0, 999], [1000, 1999], [2000, 2999]])
+    assert.equal(exact.data.length, 2000)
+  })
+  test("fetchAll reports an error and a hard cap", () => {
+    assert.equal(failed.error, true)
+    assert.equal(failed.data.length, 1000)
+    assert.equal(capped.data.length, 3000)
+  })
+}
 
 console.log(`\n${passed} passed${process.exitCode ? ", some FAILED" : ""}`)

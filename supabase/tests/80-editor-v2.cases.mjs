@@ -202,10 +202,13 @@ export default async function ({ db, ids, as, asOwner, test, expectOk, expectFai
     const withPin = (await history()).map((r) => r.summary).join(" | ") // the pin still exists: its timeline is part of the history
     for (const expected of [/Added pin "Column C9"/, /Pin "Column C9" is now for review/]) if (!expected.test(withPin)) throw new Error(`history is missing ${expected}`)
     await as("eng1", "aal2")
-    await expectOk("delete from public.pins where id = $1", [ids.pinA])
+    // Column C9 went "for review", so it is evidence and stays (0033); a pin that never left "not started" can be deleted.
+    await expectFail("delete from public.pins where id = $1", [ids.pinA], /evidence/)
+    const temp = (await db.query("insert into public.pins (project_id, blueprint_id, x, y, title) values ($1, $2, 60, 60, 'Temporary marker') returning id", [P1, bp])).rows[0].id
+    await expectOk("delete from public.pins where id = $1", [temp])
     const rows = await history()
     const text = rows.map((r) => r.summary).join(" | ")
-    for (const expected of [/Added a text box: "Verify slab thickness"/, /Added a freehand drawing/, /Added a highlight/, /Added a polyline/, /Added a area outline|Added a area/, /Locked a text box/, /Unlocked a text box/, /Moved a freehand drawing/, /Brought an item to the front/, /Sent an item to the back/, /Locked every item on the sheet/, /Locked the base layer/, /Unlocked the base layer/, /Deleted pin "Column C9"/]) {
+    for (const expected of [/Added a text box: "Verify slab thickness"/, /Added a freehand drawing/, /Added a highlight/, /Added a polyline/, /Added a area outline|Added a area/, /Locked a text box/, /Unlocked a text box/, /Moved a freehand drawing/, /Brought an item to the front/, /Sent an item to the back/, /Locked every item on the sheet/, /Locked the base layer/, /Unlocked the base layer/, /Deleted pin "Temporary marker"/]) {
       if (!expected.test(text)) throw new Error(`history is missing ${expected}\n${text}`)
     }
     if (rows[0].actor_name !== "eng1" && rows[0].actor_name !== "eng1@test.local") throw new Error(`actor missing: ${rows[0].actor_name}`)
@@ -232,15 +235,20 @@ export default async function ({ db, ids, as, asOwner, test, expectOk, expectFai
     await expectFail("select public.guard_annotation_lock()", [], /permission denied/)
   })
 
-  await test("Deleting a whole sheet still works when it holds locked items (cascade is not blocked)", async () => {
-    await as("eng1", "aal2")
-    await expectOk("select public.set_sheet_items_locked($1, true)", [bp])
-    ids.pinB = (await db.query("insert into public.pins (project_id, blueprint_id, x, y, title, locked) values ($1, $2, 20, 20, 'Locked pin', true) returning id", [P1, bp])).rows[0].id
+  await test("Deleting a whole sheet still works when it holds locked items (cascade is not blocked), unless it holds evidence", async () => {
+    // bp holds Column C9, which went "for review": it is evidence, so the sheet stays (0033).
     await as("admin", "aal2")
-    const del = await db.query("delete from public.blueprints where id = $1 returning id", [bp])
+    await expectFail("delete from public.blueprints where id = $1", [bp], /evidence/)
+    await as("eng1", "aal2")
+    const spare = (await db.query("insert into public.blueprints (project_id, title) values ($1, 'Locked spare') returning id", [P1])).rows[0].id
+    await expectOk("insert into public.blueprint_annotations (project_id, blueprint_id, kind, x, y, w, color, text) values ($1, $2, 'text', 5, 5, 30, 'orange', 'Draft note')", [P1, spare])
+    await expectOk("select public.set_sheet_items_locked($1, true)", [spare])
+    ids.pinB = (await db.query("insert into public.pins (project_id, blueprint_id, x, y, title, locked) values ($1, $2, 20, 20, 'Locked pin', true) returning id", [P1, spare])).rows[0].id
+    await as("admin", "aal2")
+    const del = await db.query("delete from public.blueprints where id = $1 returning id", [spare])
     if (del.rows.length !== 1) throw new Error("admin could not delete the sheet")
     await asOwner()
-    if ((await count("select count(*) n from public.blueprint_annotations where blueprint_id = $1", [bp])) !== 0) throw new Error("annotations survived")
-    if ((await count("select count(*) n from public.sheet_history where blueprint_id = $1", [bp])) !== 0) throw new Error("history survived the sheet")
+    if ((await count("select count(*) n from public.blueprint_annotations where blueprint_id = $1", [spare])) !== 0) throw new Error("annotations survived")
+    if ((await count("select count(*) n from public.sheet_history where blueprint_id = $1", [spare])) !== 0) throw new Error("history survived the sheet")
   })
 }
