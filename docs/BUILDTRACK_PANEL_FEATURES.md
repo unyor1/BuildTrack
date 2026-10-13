@@ -4,7 +4,7 @@ Notes from 2026-10-12. What to show, what to add, and what to leave as future wo
 
 Status words: **Built** = works today. **To add** = not built yet.
 
-**Update 2026-10-13: all five items in section 2 are built** (migrations 0033-0037, see `docs/audits/2026-10-13-panel-features.md`).
+**Update 2026-10-13: all five items in section 2 are built; also built from the follow-up list: weekly progress report, late-work alerts, photo time / place stamp, project search in Ctrl+K, defect trends. Not built: quantities on pins (needs partial progress per pin to be useful), client weekly email digest (needs the email secrets and cron).** (migrations 0033-0037, see `docs/audits/2026-10-13-panel-features.md`).
 
 ---
 

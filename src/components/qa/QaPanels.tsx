@@ -1,3 +1,4 @@
+import DefectTrends from "./DefectTrends"
 import { useMemo, useState } from "react"
 import Modal from "../Modal"
 import { EmptyState, Meter, StatCard, buttonPrimary, buttonSecondary, inputClass } from "../ui/PageParts"
@@ -72,6 +73,8 @@ export function OverviewPanel({ ws, mode, onOpenInspection, onOpenDefect, onGo }
         <StatCard label="Avg days to close" value={s.defects.average_days_to_close === null ? "-" : s.defects.average_days_to_close} note={`${s.defects.closed} closed`} tone="brand" />
         <StatCard label="Defects per 100 checks" value={s.items.defects_per_100_items === null ? "-" : s.items.defects_per_100_items} note={`${s.items.failed} of ${s.items.checked} items failed`} tone="brand" />
       </div>
+
+      {mode === "engineer" ? <DefectTrends defects={ws.defects} today={ws.today} /> : null}
 
       <div className="grid gap-5 xl:grid-cols-2">
         <section aria-label="Needs attention" className="rounded-xl border border-line bg-surface p-4">

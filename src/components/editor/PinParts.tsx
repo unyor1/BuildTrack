@@ -225,7 +225,7 @@ function Thumb({ photo, onRemove }: { photo: PinPhoto; onRemove?: () => void }) 
     <figure className="relative">
       {url ? (
         <a href={url} target="_blank" rel="noreferrer">
-          <img src={url} alt={photo.caption ?? "Pin photo"} loading="lazy" className="h-24 w-full rounded-lg border border-line object-cover transition hover:opacity-90" />
+          <img src={url} alt={photo.caption ?? `Pin photo added ${formatStamp(photo.created_at)}`} loading="lazy" className="h-24 w-full rounded-lg border border-line object-cover transition hover:opacity-90" />
         </a>
       ) : failed ? (
         <div className="flex h-24 items-center justify-center rounded-lg border border-line bg-surface-muted text-xs text-fg-muted">Unavailable</div>

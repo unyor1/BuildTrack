@@ -209,3 +209,49 @@ export function fixStageText(status: SnagStatus, stage: string | null): string {
   if (stage === "in_progress") return "The crew is fixing it now."
   return "Accepted. A crew will be assigned to fix it."
 }
+
+// ---------- Trends (for the QA overview) ----------
+type TrendDefect = { raised_at: string; closed_at: string | null; category: DefectCategory; trade: Trade; severity: QaSeverity; status: DefectStatus }
+
+const manilaDay = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Manila", year: "numeric", month: "2-digit", day: "2-digit" })
+const isoDay = (timestamp: string) => manilaDay.format(new Date(timestamp))
+const plusDays = (date: string, days: number) => new Date(Date.UTC(+date.slice(0, 4), +date.slice(5, 7) - 1, +date.slice(8, 10)) + days * 86_400_000).toISOString().slice(0, 10)
+const mondayOf = (date: string) => plusDays(date, -((new Date(date + "T00:00:00Z").getUTCDay() + 6) % 7))
+
+export type TrendWeek = { start: string; end: string; raised: number; closed: number }
+
+// Defect reports raised and closed per calendar week (Monday to Sunday, Manila), for the last `weeks` weeks ending with the week of `today`.
+export function defectTrend(defects: TrendDefect[], today: string, weeks = 8): TrendWeek[] {
+  const last = mondayOf(today)
+  const out: TrendWeek[] = []
+  for (let i = weeks - 1; i >= 0; i--) {
+    const start = plusDays(last, -7 * i)
+    const end = plusDays(start, 6)
+    out.push({
+      start,
+      end,
+      raised: defects.filter((row) => isoDay(row.raised_at) >= start && isoDay(row.raised_at) <= end).length,
+      closed: defects.filter((row) => row.closed_at && isoDay(row.closed_at) >= start && isoDay(row.closed_at) <= end).length,
+    })
+  }
+  return out
+}
+
+export type Breakdown = { key: string; total: number; open: number; critical: number }
+
+// Where defect reports come from: by trade or by category, biggest first (at most `top`; the rest folded into "other").
+export function defectBreakdown(defects: TrendDefect[], by: "trade" | "category", top = 6): Breakdown[] {
+  const map = new Map<string, Breakdown>()
+  for (const row of defects) {
+    const key = row[by]
+    const entry = map.get(key) ?? { key, total: 0, open: 0, critical: 0 }
+    entry.total++
+    if (row.status !== "closed") entry.open++
+    if (row.severity === "critical") entry.critical++
+    map.set(key, entry)
+  }
+  const sorted = [...map.values()].sort((a, b) => b.total - a.total || a.key.localeCompare(b.key))
+  if (sorted.length <= top) return sorted
+  const rest = sorted.slice(top - 1).reduce((sum, row) => ({ key: "other", total: sum.total + row.total, open: sum.open + row.open, critical: sum.critical + row.critical }), { key: "other", total: 0, open: 0, critical: 0 })
+  return [...sorted.slice(0, top - 1), rest]
+}

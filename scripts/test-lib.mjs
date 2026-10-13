@@ -7,6 +7,7 @@ import { buildPdf } from "../src/lib/pdf.ts"
 import { symbolByKey, symbolGroups, symbolLibrary } from "../src/lib/symbols.ts"
 import { addDays, byZone, csvEscape, daysBetween, isDueSoon, isOverdue, projectHealth, sCurve, scheduleElapsed, summarize, toCsv } from "../src/lib/progress.ts"
 import { fetchAll } from "../src/lib/paging.ts"
+import { canSearch, hitPath, searchPattern } from "../src/lib/projectSearchModel.ts"
 import { metres, stampFields, stampLabel, stampSummary } from "../src/lib/photoStamp.ts"
 import { buildWeekly, headline, periodPresets, sCurveSvg, weeklyReportHtml } from "../src/lib/weeklyReport.ts"
 import { escapeHtml, reportHtml } from "../src/lib/printReport.ts"
@@ -20,7 +21,7 @@ import { capsulePlacement, rotatedBounds } from "../src/lib/capsule.ts"
 import { ageOn, detailsProblem, fileProblem, idTypeLabel, idTypes, maskedId } from "../src/lib/identityModel.ts"
 import { PRIVACY_VERSION, privacyScopes } from "../src/lib/privacy.ts"
 import { absoluteLink, appBase, buildEmail } from "../supabase/functions/_shared/emailModel.ts"
-import { fixStageText, pinQualityWarning, qaBadge, checklistProblem, defaultDueDate, dueState, dueText, measureVerdict, previewScore, refNumber, toleranceText } from "../src/lib/qaModel.ts"
+import { defectBreakdown, defectTrend, fixStageText, pinQualityWarning, qaBadge, checklistProblem, defaultDueDate, dueState, dueText, measureVerdict, previewScore, refNumber, toleranceText } from "../src/lib/qaModel.ts"
 import { canMoveLayer, layerChanges, reorderIds, sortByLayer } from "../src/lib/layers.ts"
 
 let passed = 0
@@ -900,5 +901,53 @@ test("stamp: the summary line counts failures and missing locations, and is empt
   assert.equal(stampSummary([photo("at_site"), photo("away_from_site"), photo("no_location")]), "1 of 3 photos fail the site, time or location check; 1 has no location")
   assert.equal(stampSummary([photo("old_photo")]), "1 of 1 photo fails the site, time or location check")
 })
+
+// ---- Project search ----
+test("search: two letters are needed, and what the person typed is matched literally", () => {
+  assert.equal(canSearch("a"), false)
+  assert.equal(canSearch(" ab "), true)
+  assert.equal(searchPattern("  rebar "), "%rebar%")
+  assert.equal(searchPattern("50%_off\\"), "%50\\%\\_off\\\\%")
+})
+test("search: every hit opens a screen that role really has; no screen means no hit", () => {
+  const p = "proj1"
+  assert.equal(hitPath("engineer", "pin", "x", p), "/engineer/annotation?project=proj1&pin=x")
+  assert.equal(hitPath("foreman", "pin", "x", p), "/foreman/dashboard?project=proj1&pin=x")
+  assert.equal(hitPath("client", "pin", "x", p), "/client/blueprint?project=proj1&pin=x")
+  assert.equal(hitPath("engineer", "defect", "d", p), "/engineer/qa?project=proj1&tab=defects&defect=d")
+  assert.equal(hitPath("foreman", "defect", "d", p), "/foreman/issues?project=proj1&defect=d")
+  assert.equal(hitPath("client", "defect", "d", p), null)
+  assert.equal(hitPath("engineer", "inspection", "i", p), "/engineer/qa?project=proj1&tab=inspections&inspection=i")
+  assert.equal(hitPath("foreman", "inspection", "i", p), null)
+  assert.equal(hitPath("client", "log", "l", p), "/client/site-logs?project=proj1")
+  assert.equal(hitPath("foreman", "log", "l", p), "/foreman/daily-report?project=proj1")
+})
+
+// ---- Defect trends ----
+{
+  const row = (raised_at, closed_at, trade = "structural", category = "workmanship", severity = "minor", status = closed_at ? "closed" : "open") => ({ raised_at, closed_at, trade, category, severity, status })
+  const rows = [
+    row("2026-03-02T01:00:00Z", "2026-03-04T01:00:00Z"), // week of Mon 03-02: raised and closed
+    row("2026-03-03T01:00:00Z", null, "structural", "material", "critical"),
+    row("2026-03-08T15:59:00Z", null, "electrical"), // Sun 23:59 Manila is still that week
+    row("2026-03-08T16:01:00Z", null, "electrical"), // Mon 00:01 Manila (UTC+8) starts the next week
+    row("2026-01-05T01:00:00Z", "2026-01-06T01:00:00Z", "plumbing"), // outside the 4-week window
+  ]
+  test("trends: raised and closed per Monday-to-Sunday week in Manila time, oldest first, fixed length", () => {
+    const weeks = defectTrend(rows, "2026-03-11", 4)
+    assert.deepEqual(weeks.map((week) => week.start), ["2026-02-16", "2026-02-23", "2026-03-02", "2026-03-09"])
+    assert.deepEqual(weeks.map((week) => [week.raised, week.closed]), [[0, 0], [0, 0], [3, 1], [1, 0]])
+    assert.equal(defectTrend([], "2026-03-11", 8).length, 8)
+  })
+  test("trends: breakdown by trade or category, biggest first, with open and critical counts, and a tail folded into other", () => {
+    const byTrade = defectBreakdown(rows, "trade")
+    assert.deepEqual(byTrade.map((entry) => [entry.key, entry.total, entry.open, entry.critical]), [["electrical", 2, 2, 0], ["structural", 2, 1, 1], ["plumbing", 1, 0, 0]])
+    assert.deepEqual(defectBreakdown(rows, "category").map((entry) => [entry.key, entry.total]), [["workmanship", 4], ["material", 1]])
+    const many = ["structural", "architectural", "electrical", "plumbing", "mechanical", "fire_protection", "safety", "general"].map((trade) => row("2026-03-02T01:00:00Z", null, trade))
+    const folded = defectBreakdown(many, "trade", 4)
+    assert.equal(folded.length, 4)
+    assert.deepEqual(folded[3], { key: "other", total: 5, open: 5, critical: 0 })
+  })
+}
 
 console.log(`\n${passed} passed${process.exitCode ? ", some FAILED" : ""}`)

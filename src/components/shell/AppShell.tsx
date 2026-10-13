@@ -3,7 +3,10 @@ import { PrivacyNoticeModal } from "../PrivacyNotice"
 import MyDataModal from "../MyDataModal"
 import NotificationBell from "../NotificationBell"
 import AdminIcon, { type AdminIconName } from "../../pages/Admin/AdminIcon"
-import CommandPalette, { type PaletteAction } from "./CommandPalette"
+import CommandPalette, { type PaletteAction, type PaletteSearch } from "./CommandPalette"
+import { searchProject, type SearchRole } from "../../lib/projectSearch"
+import { followLink } from "../../lib/notifications"
+import { getSelectedProjectId } from "../../lib/projects"
 import { useAuth, type AppRole } from "../../lib/auth"
 import { identityStatusLabel, identityTone } from "../../lib/identityModel"
 import { useTheme, type ThemeMode } from "../../lib/theme"
@@ -172,6 +175,15 @@ export default function AppShell({
     { id: "signout", label: "Sign out", icon: "logout", run: () => void signOut() },
   ], [mode, setMode, signOut, canEraseOwn])
 
+  // Search inside the selected project for roles that work in one (admins have no per-project screens for these).
+  const searchRole = profile?.role === "engineer" || profile?.role === "foreman" || profile?.role === "client" ? (profile.role as SearchRole) : null
+  const projectId = palette ? getSelectedProjectId() : null
+  const projectLabel = project?.name ?? null
+  const paletteSearch = useMemo<PaletteSearch | undefined>(
+    () => (searchRole && projectId ? { projectName: projectLabel, run: (text) => searchProject(projectId, text, searchRole), open: (hit) => followLink(hit.path, projectId) } : undefined),
+    [searchRole, projectId, projectLabel],
+  )
+
   const tabs = mobileTabs.map((key) => all.find((item) => item.key === key)).filter((item): item is ShellNavItem => Boolean(item))
   const side = collapsed ? "4.75rem" : "17rem"
 
@@ -295,7 +307,7 @@ export default function AppShell({
         </nav>
       ) : null}
 
-      {palette ? <CommandPalette items={all} actions={actions} onGo={(key) => { setPalette(false); go(key) }} onClose={() => setPalette(false)} /> : null}
+      {palette ? <CommandPalette items={all} actions={actions} onGo={(key) => { setPalette(false); go(key) }} onClose={() => setPalette(false)} search={paletteSearch} /> : null}
       {privacy ? <PrivacyNoticeModal scope="general" onClose={() => setPrivacy(false)} /> : null}
       {myData ? <MyDataModal onClose={() => setMyData(false)} /> : null}
     </div>
