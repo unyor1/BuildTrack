@@ -1,0 +1,73 @@
+# BuildTrack handover
+
+For the teammates who take the project from here. Read [README.md](../README.md) first, then this.
+
+## 1. How the pieces connect
+
+One piece of work travels through the whole system. Follow a pin and you have seen most of it.
+
+```
+Engineer uploads a plan sheet  ->  places a PIN on it (x/y in percent, due date, discipline)
+        |                                   |
+        |                         assigns it to a FOREMAN  ->  notification (bell + email queue)
+        |                                   |
+        |            Foreman reports progress + photos (works offline, syncs later)
+        |                                   |   status: not started -> in progress -> for review
+        v                                   v
+   Verification queue  <----  "for review" pin  ---->  EVIDENCE LOCK: from here on the pin and its photos cannot be deleted
+        |
+   Engineer verifies (or sends back with a reason)
+        |
+        +--> counts as PROGRESS: dashboards, S-curve, client portal, Project Health (all read the same pins)
+        +--> inspection requested -> checklist, measurements, photos -> failed items raise NCRs (due dates by severity)
+                                          |
+                                  Foreman fixes the NCR with a photo -> engineer verifies and closes
+        +--> client sees plain-language progress; a client's "report a problem" can become an NCR
+```
+
+Everything the screens show is read from these tables, so numbers always agree: `pins`, `pin_events` (timeline), `pin_photos`, `qa_inspections` / `qa_inspection_items`, `qa_defects` / `qa_defect_events`, `daily_reports`, `client_snags`, `notifications`.
+
+## 2. Rules the database enforces (not just the screens)
+
+- Roles and status live in `profiles`; the browser is never trusted. Writes go through checked SQL functions (RPC); most tables are read-only to the API.
+- Admins and Super Admins need TOTP (aal2) for every admin action.
+- Row Level Security decides who sees which project. Read policies use `viewable_project_ids()` (fast); copy that pattern for new tables.
+- Evidence lock (0033): submitted or verified work and its photos cannot be deleted.
+- Identity verification gates role requests; privacy consent is recorded; "delete my data" anonymises a person without breaking project records.
+- Every migration has tests (`supabase/tests`). A migration is applied to the live project only after `pnpm test:sql` passes (see CONTRIBUTING).
+
+## 3. Live data and screens that update by themselves
+
+Supabase Realtime is on for 12 work tables (migration 0034). Data hooks call `useLiveReload` (`src/lib/realtime.ts`), so a foreman's report appears in the engineer's queue without a refresh. The blueprint editor deliberately does not (optimistic edits and undo).
+
+Lists use `fetchAll` (`src/lib/paging.ts`) because Supabase returns at most 1,000 rows per request.
+
+## 4. Where to find things
+
+| I want to ... | Look at |
+|---|---|
+| Change what a role's menu shows | `src/pages/<Role>/<Role>Shell.tsx` (navigation only; the layout is `components/shell/AppShell.tsx`) |
+| Change a role's colours or page-header style | The `[data-persona]` block at the end of `src/index.css` |
+| Add a page | CONTRIBUTING, "Add a page" |
+| Understand pin data | `src/lib/blueprints.ts`, `supabase/migrations/0010_pins.sql` |
+| Understand QA rules | `src/lib/qaModel.ts` (pure, tested) and `0025_qa_module.sql`; keep both identical |
+| See who changed what | `docs/audits/` (one note per change) and `docs/audits/migrations-log.md` |
+| Check performance after a change | `pnpm test:load` |
+
+## 5. Status
+
+Built and tested: everything in the README table except biometrics. Live on the BuildTrack Supabase project: migrations 0001-0037, Edge Functions `admin-users`, `impersonate`, `oauth-gate`, `send-notifications`.
+
+Sample data only (each page says so): Admin Biometrics registration, Foreman Biometric attendance. The public landing page still mentions biometric attendance; decide whether to build it, reword the page or hide it.
+
+## 6. Open items only the project owner can do
+
+- **Notification emails:** add `BREVO_API_KEY`, `MAIL_FROM_EMAIL`, `APP_URL` as Supabase secrets and a 5-minute cron (steps in `docs/BUILDTRACK_EMAIL_SETUP.md`). Until then the queue fills and nothing is sent.
+- **Supabase Auth settings:** turn on leaked-password protection, set the sign-up code length to 6, apply the email templates in `supabase/email-templates/`, rotate any key that was ever pasted into a chat.
+- **Google sign-in:** test with a real Google account (register, then login) once.
+- **Privacy:** put the real data-protection contact and the retention period for ID photos in `src/lib/privacy.ts`, then raise `PRIVACY_VERSION`.
+- **Decide biometrics:** build, reword or hide (see 5).
+
+## 7. Ideas that were considered
+
+`docs/BUILDTRACK_PANEL_FEATURES.md` (what to show and add) and `docs/BUILDTRACK_INTEGRITY_NOTES.md` (loopholes and anti-fraud features such as live GPS-stamped photos, an independent inspector role and payment milestones tied to verified work).
