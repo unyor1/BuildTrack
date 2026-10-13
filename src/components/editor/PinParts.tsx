@@ -40,6 +40,16 @@ export function dbMessage(error: { code?: string; message: string }): string {
 // ---------- Progress tracker: Not started > In progress > For review > Verified (an Issue interrupts it) ----------
 const steps: PinStatus[] = ["not_started", "in_progress", "for_review", "verified"]
 
+// White or dark text, whichever reads better on the status colour (WCAG contrast).
+const readableOn = (hex: string) => {
+  const channel = (start: number) => {
+    const v = parseInt(hex.slice(start, start + 2), 16) / 255
+    return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4
+  }
+  const lum = 0.2126 * channel(1) + 0.7152 * channel(3) + 0.0722 * channel(5)
+  return 1.05 / (lum + 0.05) >= (lum + 0.05) / 0.0598 ? "#ffffff" : "#1c1722"
+}
+
 export function ProgressTracker({ status }: { status: PinStatus }) {
   const index = status === "issue" ? 1 : steps.indexOf(status)
   return (
@@ -51,7 +61,7 @@ export function ProgressTracker({ status }: { status: PinStatus }) {
             <li key={step} className="flex flex-1 items-center last:flex-none">
               <span
                 className="flex h-6 w-6 flex-none items-center justify-center rounded-full border-2 text-[11px] font-bold text-white transition-colors"
-                style={{ background: reached ? statusDot[step] : "transparent", borderColor: reached ? statusDot[step] : "var(--line)", color: reached ? "#fff" : "var(--fg-muted)" }}
+                style={{ background: reached ? statusDot[step] : "transparent", borderColor: reached ? statusDot[step] : "var(--line)", color: reached ? readableOn(statusDot[step]) : "var(--fg-muted)" }}
                 aria-current={position === index ? "step" : undefined}
               >
                 {reached ? "✓" : position + 1}

@@ -131,7 +131,7 @@ export default function EngineerProgress({ onNavigate }: EngineerPageProps) {
                     {zone.totals.for_review ? <span className="font-bold text-fuchsia-700 dark:text-fuchsia-300">{zone.totals.for_review} to review</span> : null}
                     {zone.totals.issue ? <span className="font-bold text-red-700 dark:text-red-300">{zone.totals.issue} issue{zone.totals.issue === 1 ? "" : "s"}</span> : null}
                     {zone.totals.overdue ? <span className="font-bold text-red-700 dark:text-red-300">{zone.totals.overdue} overdue</span> : null}
-                    <button type="button" className="ml-auto font-bold text-brand-text hover:underline" onClick={() => followLink(`/engineer/annotation?project=${projectId}`, projectId)}>Open plan</button>
+                    <button type="button" className="ml-auto inline-flex min-h-6 items-center font-bold text-brand-text hover:underline" onClick={() => followLink(`/engineer/annotation?project=${projectId}`, projectId)}>Open plan</button>
                   </div>
                 </article>
               ))}

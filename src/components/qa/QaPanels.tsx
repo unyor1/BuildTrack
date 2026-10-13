@@ -31,7 +31,7 @@ function Table({ head, children, label }: { head: string[]; children: React.Reac
   )
 }
 
-const rowButton = "text-left font-bold text-brand-text underline-offset-2 hover:underline focus-visible:outline-2"
+const rowButton = "inline-flex min-h-6 items-center text-left font-bold text-brand-text underline-offset-2 hover:underline focus-visible:outline-2"
 
 // ---------------------------------------------------------------- Overview
 export function OverviewPanel({ ws, mode, onOpenInspection, onOpenDefect, onGo }: { ws: QaWorkspace; mode: QaMode; onOpenInspection: (id: string) => void; onOpenDefect: (id: string) => void; onGo: (tab: "inspections" | "defects") => void }) {

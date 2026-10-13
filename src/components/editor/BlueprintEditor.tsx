@@ -1215,7 +1215,8 @@ export default function BlueprintEditor({ projectId, role, canEdit, onExit }: { 
         ) : null}
 
         <div className="flex min-w-0 flex-1 flex-col">
-        <main className="relative min-h-0 min-w-0 flex-1">
+        {/* On a phone the sheet and its floating tools form their own layer, so an open panel or drawer is never covered by them */}
+        <main className={`relative min-h-0 min-w-0 flex-1 ${desktop ? "" : "isolate"}`}>
           <h1 className="sr-only">{project ? `${project.name} blueprint editor` : "Blueprint editor"}</h1>
           {projectLoading || loading ? (
             <Skeleton className="h-full w-full rounded-none" />

@@ -191,7 +191,7 @@ export default function EngineerReportIssue({ onNavigate }: EngineerPageProps) {
                           {tab === "open" ? (
                             <>
                               <button type="button" className="rounded-md border border-line px-2.5 py-1 text-xs font-bold hover:bg-surface-muted" onClick={() => setReopening(pin)}>Back to foreman</button>
-                              <button type="button" className="rounded-md bg-green-600 px-2.5 py-1 text-xs font-bold text-white hover:bg-green-700" onClick={() => void close(pin)}>Close</button>
+                              <button type="button" className="rounded-md bg-green-700 px-2.5 py-1 text-xs font-bold text-white hover:bg-green-800" onClick={() => void close(pin)}>Close</button>
                             </>
                           ) : null}
                         </div>
@@ -207,7 +207,7 @@ export default function EngineerReportIssue({ onNavigate }: EngineerPageProps) {
 
       {logging ? <LogIssueModal pins={work.pins} sheetOf={work.sheetOf} onClose={() => setLogging(false)} onDone={async () => { setLogging(false); setTab("open"); await refresh() }} /> : null}
       {reopening ? <BackToForemanModal pin={reopening} onClose={() => setReopening(null)} onDone={async () => { setReopening(null); await refresh() }} /> : null}
-      <p className="mt-6 text-xs text-fg-muted">Tip: foremen and engineers can also mark a pin as an issue directly on the plan. <button type="button" className="font-bold text-brand-text underline" onClick={() => onNavigate("annotation")}>Open the plan</button></p>
+      <p className="mt-6 text-xs text-fg-muted">Tip: foremen and engineers can also mark a pin as an issue directly on the plan. <button type="button" className="inline-flex min-h-6 items-center font-bold text-brand-text underline" onClick={() => onNavigate("annotation")}>Open the plan</button></p>
     </div>
   )
 }

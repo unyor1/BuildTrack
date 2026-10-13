@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react"
+import GetStarted, { type SetupStep } from "../../components/GetStarted"
 import { EmptyState, Meter, PageHead, StatCard, buttonPrimary, buttonSecondary } from "../../components/ui/PageParts"
 import { SkeletonCardGrid } from "../../components/ui/Skeleton"
 import { severityChip, severityLabels, type Pin } from "../../lib/blueprints"
@@ -25,7 +26,22 @@ export default function EngineerDashboard({ onNavigate }: EngineerPageProps) {
   const today = manilaToday()
   const qa = useQaLite("dashboard")
   const [tick, setTick] = useState(0)
-  useLiveReload([{ table: "pins" }], () => setTick((value) => value + 1))
+  const [sheetCounts, setSheetCounts] = useState<Map<string, number> | null>(null)
+  useLiveReload([{ table: "pins" }, { table: "pin_events" }], () => setTick((value) => value + 1))
+
+  // Sheets per project, for the first-run checklist (a few rows, not pins).
+  useEffect(() => {
+    let active = true
+    supabase.from("blueprints").select("project_id").then(({ data }) => {
+      if (!active) return
+      const counts = new Map<string, number>()
+      for (const row of (data as Array<{ project_id: string }> | null) ?? []) counts.set(row.project_id, (counts.get(row.project_id) ?? 0) + 1)
+      setSheetCounts(counts)
+    })
+    return () => {
+      active = false
+    }
+  }, [tick])
 
   useEffect(() => {
     let active = true
@@ -66,6 +82,24 @@ export default function EngineerDashboard({ onNavigate }: EngineerPageProps) {
   const go = (path: string, projectId: string) => followLink(`/engineer/${path}?project=${projectId}`, projectId)
   const first = (profile?.full_name || "Engineer").split(" ")[0]
 
+  // First-run checklist for the first project that is not fully set up. "Done" always comes from the data.
+  const setup = useMemo(() => {
+    if (loading || sheetCounts === null) return null
+    for (const project of projects) {
+      if (project.status === "completed" || project.status === "cancelled") continue
+      const work = pins.filter((pin) => pin.project_id === project.id && pin.category !== "note")
+      const steps: SetupStep[] = [
+        { key: "sheet", title: "Upload the first plan sheet", text: "Export the drawing from AutoCAD as PDF or PNG and upload it. Pins are placed on this sheet.", done: (sheetCounts.get(project.id) ?? 0) > 0, action: { label: "Upload a sheet", run: () => go("project-blueprint", project.id) } },
+        { key: "pins", title: "Mark the work on the plan", text: "Open the plan editor and drop a pin on each piece of work you will track.", done: work.length > 0, action: { label: "Open the plan", run: () => go("annotation", project.id) } },
+        { key: "dates", title: "Give the pins due dates", text: "Due dates draw the planned line of the S-curve, so progress can be compared with the plan.", done: work.some((pin) => Boolean(pin.due_date)), action: { label: "Open the plan", run: () => go("annotation", project.id) } },
+        { key: "foreman", title: "Assign the work to a foreman", text: "The foreman is notified and sees the pin in their list.", done: work.some((pin) => Boolean(pin.assigned_to)), action: { label: "Assignment board", run: () => go("assignments", project.id) } },
+        { key: "verify", title: "Verify the first completed work", text: "When a foreman reports work as done, check it and approve it. Only verified work counts as progress.", done: work.some((pin) => pin.status === "verified"), action: { label: "Verification queue", run: () => go("verification", project.id) } },
+      ]
+      if (steps.some((step) => !step.done)) return { project, steps }
+    }
+    return null
+  }, [loading, sheetCounts, projects, pins])
+
   return (
     <div className="engineer-page">
       <PageHead
@@ -76,6 +110,8 @@ export default function EngineerDashboard({ onNavigate }: EngineerPageProps) {
       />
 
       {failed ? <p role="alert" className="mb-4 rounded-lg bg-danger-soft px-4 py-2 text-sm text-danger-fg">Could not load your pins. Check your connection and refresh.</p> : null}
+
+      {setup ? <GetStarted title={`Set up ${setup.project.name}`} intro="Five steps take a new project from an empty plan to verified progress. Each one is ticked by the system when the work is really done." steps={setup.steps} /> : null}
 
       <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         <StatCard label="Projects" value={loading ? "-" : projects.length} tone="brand" onClick={() => onNavigate("projects")} note="Assigned to you" />

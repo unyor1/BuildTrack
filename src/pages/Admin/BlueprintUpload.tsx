@@ -56,7 +56,7 @@ export default function BlueprintUpload({ onNavigate }: AdminPageProps) {
         <>
           <p className="mb-3 text-sm text-fg">
             <strong>{project.code}</strong> • {project.name}
-            <button className="ml-3 text-brand-text hover:underline" onClick={() => onNavigate("project-overview")}>Project overview</button>
+            <button className="ml-3 inline-flex min-h-6 items-center text-brand-text hover:underline" onClick={() => onNavigate("project-overview")}>Project overview</button>
           </p>
           <SelectedProjectWorkspace key={project.id} role="admin" canEdit={can("blueprints.manage")} />
         </>

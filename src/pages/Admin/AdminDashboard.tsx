@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react"
+import GetStarted from "../../components/GetStarted"
 import { AdminButton, PageIntro, Panel, StatusBadge } from "./AdminShell"
 import AdminIcon, { type AdminIconName } from "./AdminIcon"
 import type { AdminPageProps } from "./types"
@@ -65,6 +66,14 @@ export default function AdminDashboard({ onNavigate }: AdminPageProps) {
     [projects, memberCounts],
   )
 
+  // First-run checklist for a new system: only for admins who manage projects, and gone once everything is in place.
+  const firstProject = projects.find((project) => project.status !== "completed" && project.status !== "cancelled") ?? projects[0]
+  const setupSteps = [
+    { key: "project", title: "Create the first project", text: "Give it a code, a name, the client and the dates. Everything else hangs on a project.", done: projects.length > 0, action: { label: "New project", run: () => onNavigate("project-management") } },
+    { key: "team", title: "Add the people who work on it", text: "Assign an engineer, a foreman and the client. People only ever see the projects they are added to.", done: Boolean(firstProject && ((memberCounts?.get(firstProject.id) ?? 0) > 0 || firstProject.lead_engineer_id)), action: { label: "Manage access", run: () => onNavigate("project-management") } },
+    { key: "invite", title: "Let the team sign up", text: "Pre-approve their emails or create an invitation code, so each person gets the right role the moment they join.", done: (stats?.engineers ?? 0) + (stats?.foremen ?? 0) + (stats?.clients ?? 0) > 0, action: { label: "Invitation codes", run: () => onNavigate("invites") } },
+  ]
+
   const shown = activity.filter((row) => {
     if (filter === "all") return true
     const security = /impersonate|privacy|set_permissions|settings|oauth|disable|enable|role_changed|status_changed/.test(row.action)
@@ -90,6 +99,10 @@ export default function AdminDashboard({ onNavigate }: AdminPageProps) {
 
       {statsError ? (
         <p className="mb-3 rounded-lg bg-danger-soft px-4 py-2 text-sm text-danger-fg">Could not load user counts. Refresh to retry.</p>
+      ) : null}
+
+      {can("projects.manage") && !projectsLoading && !projectsError && memberCounts !== null ? (
+        <GetStarted title="Set up BuildTrack" intro="Three steps take a new system from empty to a team working on a project. Each one is ticked when it is really done." steps={setupSteps} />
       ) : null}
 
       {can("users.approve") ? (

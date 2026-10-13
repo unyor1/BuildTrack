@@ -172,7 +172,7 @@ export default function ForemanDashboard({ onNavigate }: ForemanPageProps) {
       )}
 
       <div className="mt-8"><AssignedProjects title="My projects" /></div>
-      <p className="mt-2 text-xs text-fg-muted">Attendance (biometrics) is the one part still being connected. <button type="button" className="font-bold text-brand-text underline" onClick={() => projects[0] && openProject("foreman", projects[0].id)}>Open the site plan</button></p>
+      <p className="mt-2 text-xs text-fg-muted">Attendance (biometrics) is the one part still being connected. <button type="button" className="inline-flex min-h-6 items-center font-bold text-brand-text underline" onClick={() => projects[0] && openProject("foreman", projects[0].id)}>Open the site plan</button></p>
 
       {reporting ? <ReportModal pin={reporting} onClose={() => setReporting(null)} onSaved={async () => { setReporting(null); await load() }} /> : null}
     </div>
