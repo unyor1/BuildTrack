@@ -3,6 +3,9 @@ import AppStatus from "./components/AppStatus"
 import ErrorBoundary from "./components/ErrorBoundary"
 import { SkeletonCardGrid } from "./components/ui/Skeleton"
 import RouteGuard from "./components/RouteGuard"
+import ProjectWorkspace from "./pages/Admin/ProjectWorkspace"
+import { fieldPagePath, projectPath, projectSections, readProjectRoute, type ProjectSection } from "./lib/projectRoutes"
+import { getSelectedProjectId } from "./lib/projects"
 const LandingPage = lazy(() => import("./pages/Public/LandingPage"))
 const PinLink = lazy(() => import("./pages/Public/PinLink"))
 const LoginPage = lazy(() => import("./pages/Auth/LoginPage"))
@@ -35,8 +38,10 @@ const EngineerProgress = lazy(() => import("./pages/Engineer/EngineerProgress"))
 const EngineerAssignments = lazy(() => import("./pages/Engineer/EngineerAssignments"))
 const EngineerReports = lazy(() => import("./pages/Engineer/EngineerReports"))
 const EngineerQa = lazy(() => import("./pages/Engineer/EngineerQa"))
+const EngineerChecklists = lazy(() => import("./pages/Engineer/EngineerChecklists"))
 import type { EngineerPageKey } from "./pages/Engineer/types"
 import ForemanShell from "./pages/Foreman/ForemanShell"
+const ForemanProjects = lazy(() => import("./pages/Foreman/ForemanProjects"))
 const ForemanDashboard = lazy(() => import("./pages/Foreman/ForemanDashboard"))
 const ForemanBiometricAttendance = lazy(() => import("./pages/Foreman/ForemanBiometricAttendance"))
 const ForemanDailyWorkManagement = lazy(() => import("./pages/Foreman/ForemanDailyWorkManagement"))
@@ -45,7 +50,6 @@ const ForemanPhotoDocumentation = lazy(() => import("./pages/Foreman/ForemanPhot
 const ForemanQualityControl = lazy(() => import("./pages/Foreman/ForemanQualityControl"))
 const ForemanQAWorkflow = lazy(() => import("./pages/Foreman/ForemanQAWorkflow"))
 const ForemanIssueTracking = lazy(() => import("./pages/Foreman/ForemanIssueTracking"))
-const ForemanCorrectiveAction = lazy(() => import("./pages/Foreman/ForemanCorrectiveAction"))
 import type { ForemanPageKey } from "./pages/Foreman/types"
 import UserShell from "./pages/User/UserShell"
 const UserHome = lazy(() => import("./pages/User/UserHome"))
@@ -66,6 +70,8 @@ const withLoading = (node: ReactNode) => (
 export type Page = "home" | "login" | "register" | "pin-link" | `admin/${AdminPageKey}` | `engineer/${EngineerPageKey}` | `foreman/${ForemanPageKey}` | `client/${ClientPageKey}` | `user/${UserPageKey}`
 
 function pageFromPath(): Page {
+  const projectRoute = readProjectRoute(window.location.pathname)
+  if (projectRoute) return `admin/${projectRoute.section}`
   if (window.location.pathname.startsWith("/admin/")) {
     const key = window.location.pathname.replace("/admin/", "") as AdminPageKey
     const validKeys: AdminPageKey[] = [
@@ -103,6 +109,7 @@ function pageFromPath(): Page {
       "assignments",
       "reports",
       "qa",
+      "checklists",
     ]
     if (validKeys.includes(key)) return `engineer/${key}`
   }
@@ -112,6 +119,7 @@ function pageFromPath(): Page {
       "",
     ) as ForemanPageKey
     const validKeys: ForemanPageKey[] = [
+      "projects",
       "dashboard",
       "attendance",
       "daily-work",
@@ -120,8 +128,12 @@ function pageFromPath(): Page {
       "quality-control",
       "qa-workflow",
       "issues",
-      "corrective-action",
     ]
+    // Corrective Action was merged into Corrections (issues): old links and bookmarks still land there.
+    if ((key as string) === "corrective-action") {
+      window.history.replaceState({}, "", `/foreman/issues${window.location.search}`)
+      return "foreman/issues"
+    }
     if (validKeys.includes(key)) return `foreman/${key}`
   }
   if (window.location.pathname.startsWith("/client/")) {
@@ -177,21 +189,25 @@ export default class App extends Component<Record<string, never>, AppState> {
   }
 
   navigateAdmin = (nextPage: AdminPageKey, search = "") => {
-    const path = `/admin/${nextPage}${search}`
+    const projectId = new URLSearchParams(search).has("list") ? null : new URLSearchParams(search).get("project") ?? getSelectedProjectId()
+    const path = nextPage in projectSections && projectId
+      ? projectPath(projectId, nextPage as ProjectSection)
+      : `/admin/${nextPage}${search}`
     window.history.pushState({}, "", path)
     window.scrollTo({ top: 0, behavior: "smooth" })
     this.setState({ page: `admin/${nextPage}` })
   }
 
+  // Every Engineer / Foreman page except the project list carries the selected project, so each project stays separate.
   navigateEngineer = (nextPage: EngineerPageKey) => {
-    const path = `/engineer/${nextPage}`
+    const path = fieldPagePath("engineer", nextPage, getSelectedProjectId())
     window.history.pushState({}, "", path)
     window.scrollTo({ top: 0, behavior: "smooth" })
     this.setState({ page: `engineer/${nextPage}` })
   }
 
   navigateForeman = (nextPage: ForemanPageKey) => {
-    const path = `/foreman/${nextPage}`
+    const path = fieldPagePath("foreman", nextPage, getSelectedProjectId())
     window.history.pushState({}, "", path)
     window.scrollTo({ top: 0, behavior: "smooth" })
     this.setState({ page: `foreman/${nextPage}` })
@@ -250,7 +266,9 @@ export default class App extends Component<Record<string, never>, AppState> {
       }[activePage]
       return (
         <AdminShell activePage={activePage} onNavigate={this.navigateAdmin}>
-          {withLoading(page)}
+          {activePage in projectSections
+            ? <ProjectWorkspace key={`${getSelectedProjectId()}:${activePage}`} activePage={activePage as ProjectSection} onNavigate={this.navigateAdmin}>{withLoading(page)}</ProjectWorkspace>
+            : withLoading(page)}
         </AdminShell>
       )
     }
@@ -271,6 +289,7 @@ export default class App extends Component<Record<string, never>, AppState> {
         assignments: <EngineerAssignments {...pageProps} />,
         reports: <EngineerReports {...pageProps} />,
         qa: <EngineerQa {...pageProps} />,
+        checklists: <EngineerChecklists {...pageProps} />,
       }[activePage]
       return (
         <EngineerShell
@@ -288,6 +307,7 @@ export default class App extends Component<Record<string, never>, AppState> {
       ) as ForemanPageKey
       const pageProps = { onNavigate: this.navigateForeman }
       const page = {
+        projects: <ForemanProjects {...pageProps} />,
         dashboard: <ForemanDashboard {...pageProps} />,
         attendance: <ForemanBiometricAttendance {...pageProps} />,
         "daily-work": <ForemanDailyWorkManagement {...pageProps} />,
@@ -296,7 +316,6 @@ export default class App extends Component<Record<string, never>, AppState> {
         "quality-control": <ForemanQualityControl {...pageProps} />,
         "qa-workflow": <ForemanQAWorkflow {...pageProps} />,
         issues: <ForemanIssueTracking {...pageProps} />,
-        "corrective-action": <ForemanCorrectiveAction {...pageProps} />,
       }[activePage]
       return (
         <ForemanShell activePage={activePage} onNavigate={this.navigateForeman}>

@@ -175,13 +175,15 @@ export function qaBadge(role: "engineer" | "foreman", userId: string | null, ins
   return defects.filter((row) => row.assigned_to === userId && (row.status === "open" || row.status === "in_progress")).length
 }
 
-// A pin should not be verified while its latest inspection failed or a defect is still open; the engineer is warned, not blocked.
+// General QA warning; the authoritative final verification gate is pin_qa_verification_problem (0042).
 export function pinQualityWarning(quality: { inspections: Array<{ status: string }>; defects: Array<{ status: string }> } | null): string {
-  if (!quality) return ""
+  if (!quality) return "Checking QA requirements."
   const latest = quality.inspections.find((row) => row.status === "passed" || row.status === "conditional" || row.status === "failed")
   const open = quality.defects.filter((row) => row.status !== "closed").length
   const parts: string[] = []
   if (latest?.status === "failed") parts.push("its latest inspection FAILED")
+  if (latest?.status === "conditional") parts.push("its latest inspection is CONDITIONAL, not a final Pass")
+  if (!latest) parts.push("no passed inspection is recorded")
   if (quality.inspections.some((row) => row.status === "requested" || row.status === "in_progress")) parts.push("an inspection is still open")
   if (open) parts.push(`${open} defect${open === 1 ? " is" : "s are"} still open`)
   return parts.length ? `Quality check: ${parts.join(", ")}.` : ""

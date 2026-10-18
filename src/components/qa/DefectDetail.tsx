@@ -12,6 +12,12 @@ import {
 import { supabase } from "../../lib/supabase"
 import { defectReportHtml } from "../../lib/qaPrint"
 import { useToast } from "../../lib/toast"
+import { useAuth } from "../../lib/auth"
+import { followLink } from "../../lib/notifications"
+import { submittedChecklistItems, type ChecklistRecord } from "../../lib/qaChecklistModel"
+import { workItemPath } from "../../lib/workItemModel"
+import { PhotoGrid } from "../PhotoGallery"
+import type { PinPhoto } from "../../lib/blueprints"
 
 const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString("en-PH", { timeZone: "Asia/Manila", day: "numeric", month: "short", year: "numeric", hour: "numeric", minute: "2-digit" }) : "-")
 const label = "mb-1 block text-xs font-extrabold uppercase tracking-wider text-fg-muted"
@@ -45,6 +51,7 @@ export default function DefectDetail({
   onOpenInspection?: (inspectionId: string) => void
 }) {
   const toast = useToast()
+  const { profile } = useAuth()
   const confirm = useConfirm()
   const { events, reload: reloadEvents } = useDefectEvents(defect.id)
   const { photos, reload: reloadPhotos } = useQaPhotos({ defectId: defect.id })
@@ -60,6 +67,26 @@ export default function DefectDetail({
       active = false
     }
   }, [defect.inspection_item_id])
+  // Raised against a work item: corrected through that item's correction package, whose remarks and photos answer this NCR.
+  const [workItems, setWorkItems] = useState<Array<{ id: string; text: string }>>([])
+  useEffect(() => {
+    if (!defect.inspection_id) return setWorkItems([])
+    let active = true
+    supabase.from("pin_qa_submissions").select("item_ids,checklist_snapshot").eq("inspection_id", defect.inspection_id).maybeSingle().then(({ data }) => {
+      if (active) setWorkItems(data ? submittedChecklistItems(data as ChecklistRecord).map((row) => ({ id: row.id, text: row.text })) : [])
+    })
+    return () => { active = false }
+  }, [defect.inspection_id])
+  const [packagePhotos, setPackagePhotos] = useState<PinPhoto[]>([])
+  useEffect(() => {
+    if (!defect.correction_attempt_id) return setPackagePhotos([])
+    let active = true
+    supabase.from("pin_photos").select("*").eq("qa_attempt_id", defect.correction_attempt_id).order("created_at").then(({ data }) => {
+      if (active) setPackagePhotos((data as PinPhoto[] | null) ?? [])
+    })
+    return () => { active = false }
+  }, [defect.correction_attempt_id])
+  const viaPackage = workItems.length > 0
   const compareBefore = found ?? (photos.length > 1 ? photos[0] : null)
   const compareAfter = photos.length ? photos[photos.length - 1] : null
   const [root, setRoot] = useState(defect.root_cause ?? "")
@@ -79,7 +106,9 @@ export default function DefectDetail({
   const ref = refNumber("ncr", defect.number)
   const due = dueState(defect, today)
   const closed = defect.status === "closed"
-  const working = canWork && (defect.status === "open" || defect.status === "in_progress")
+  const assigned = profile?.role === "foreman" && profile.id === defect.assigned_to
+  const working = canWork && assigned && (defect.status === "open" || defect.status === "in_progress") && !viaPackage
+  const openItem = (id: string) => followLink(workItemPath(canVerify ? "engineer" : "foreman", defect.project_id, id, canVerify ? undefined : "issues"), defect.project_id)
   const refresh = async () => {
     await Promise.all([onChanged(), reloadEvents()])
   }
@@ -133,6 +162,8 @@ export default function DefectDetail({
           <SeverityChip severity={defect.severity} />
           <Chip tone={dueTone[due.state]}>{dueText(defect, today)}</Chip>
           {defect.inspection_id && onOpenInspection ? <button type="button" onClick={() => onOpenInspection(defect.inspection_id as string)} className="text-xs font-bold text-brand-text underline">View the inspection</button> : null}
+          {workItems.map((row) => <button key={row.id} type="button" className="text-xs font-bold text-brand-text underline" onClick={() => openItem(row.id)}>Open work item: {row.text}</button>)}
+          {defect.pin_id && !viaPackage ? <button type="button" className="text-xs font-bold text-brand-text underline" onClick={() => followLink(`/${canVerify ? "engineer/annotation" : "foreman/daily-work"}?project=${defect.project_id}&pin=${defect.pin_id}`, defect.project_id)}>Open on the plan</button> : null}
         </div>
 
         {editing ? (
@@ -162,6 +193,13 @@ export default function DefectDetail({
           </>
         )}
 
+        {viaPackage && canWork && assigned && (defect.status === "open" || defect.status === "in_progress") ? (
+          <div role="status" className="rounded-xl border-2 border-brand/60 bg-brand-soft/40 p-3 text-sm">
+            <p className="font-bold">Correct this NCR from its work item</p>
+            <p className="mt-1 text-fg-muted">One correction form re-submits {workItems.map((row) => row.text).join(", ")} for inspection and sends this NCR for verification with the same remarks and photos. You do not fill in a separate NCR form.</p>
+            <div className="mt-2 flex flex-wrap gap-2">{workItems.map((row) => <button key={row.id} type="button" className={buttonPrimary + " !py-1.5 !text-xs"} onClick={() => openItem(row.id)}>Open the correction form: {row.text}</button>)}</div>
+          </div>
+        ) : null}
         <section aria-label="Corrective and preventive action" className="rounded-xl border border-line p-3">
           <h3 className="text-xs font-extrabold uppercase tracking-wider text-fg-muted">Contractor's response (corrective and preventive action)</h3>
           {working ? (
@@ -182,10 +220,11 @@ export default function DefectDetail({
             <p className={label}>Evidence</p>
             {compareBefore && compareAfter && compareBefore.id !== compareAfter.id ? (
               <div className="mb-2 max-w-md">
-                <BeforeAfter bucket="qa-evidence" labels={[found ? "Found at inspection" : "First photo", closed ? "Closed" : "Latest"]} before={{ path: compareBefore.path, at: compareBefore.created_at, caption: compareBefore.caption }} after={{ path: compareAfter.path, at: compareAfter.created_at, caption: compareAfter.caption }} />
+                <BeforeAfter bucket="qa-evidence" labels={[found ? "Found at inspection" : "First photo", closed ? "Closed" : "Latest"]} before={{ path: compareBefore.path, at: compareBefore.created_at, caption: compareBefore.caption,photo:{...compareBefore,label:`${ref} · ${found ? "Found at inspection" : "First photo"}`,uploaderName:nameOf(compareBefore.uploaded_by)} }} after={{ path: compareAfter.path, at: compareAfter.created_at, caption: compareAfter.caption,photo:{...compareAfter,label:`${ref} · Latest correction`,uploaderName:nameOf(compareAfter.uploaded_by)} }} />
               </div>
             ) : null}
-            <EvidenceStrip projectId={defect.project_id} photos={photos} target={{ defectId: defect.id }} canAdd={!closed && (canWork || canVerify)} canRemove={() => !closed} onChanged={reloadPhotos} label={`${ref} evidence`} />
+            {packagePhotos.length ? <div className="mb-2"><p className="mb-1 text-xs font-semibold text-fg-muted">Photos from the correction package</p><PhotoGrid bucket="pin-photos" emptyHint="" photos={packagePhotos.map((photo) => ({ ...photo, label: `${ref} correction package`, uploaderName: nameOf(photo.uploaded_by) }))} /></div> : null}
+            <EvidenceStrip projectId={defect.project_id} photos={photos} target={{ defectId: defect.id }} canAdd={!closed && ((canWork && assigned && !viaPackage) || canVerify)} canRemove={() => !closed && (assigned || canVerify)} onChanged={reloadPhotos} label={`${ref} evidence`} />
           </div>
         </section>
 

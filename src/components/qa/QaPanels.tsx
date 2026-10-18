@@ -1,5 +1,5 @@
 import DefectTrends from "./DefectTrends"
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import Modal from "../Modal"
 import { EmptyState, Meter, StatCard, buttonPrimary, buttonSecondary, inputClass } from "../ui/PageParts"
 import { SkeletonKpis, SkeletonList } from "../ui/Skeleton"
@@ -15,6 +15,8 @@ import {
 import { qaSummaryHtml } from "../../lib/qaPrint"
 import type { QaWorkspace } from "../../lib/qaWorkspace"
 import { useToast } from "../../lib/toast"
+import { useQaSubmissionIndex } from "../../lib/qaAttempts"
+import { checklistGroups, checklistNames } from "../../lib/qaChecklistModel"
 
 export type QaMode = "engineer" | "foreman"
 const day = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString("en-PH", { timeZone: "Asia/Manila", day: "numeric", month: "short" }) : "-")
@@ -62,6 +64,11 @@ export function OverviewPanel({ ws, mode, onOpenInspection, onOpenDefect, onGo }
   if (ws.summaryLoading && !s) return <><SkeletonKpis count={6} /><SkeletonList rows={3} label="Loading the quality summary" /></>
   if (!s) return <p role="alert" className="rounded-lg bg-danger-soft px-4 py-2 text-sm text-danger-fg">Could not load the quality summary.</p>
   const finished = s.inspections.passed + s.inspections.conditional + s.inspections.failed
+  const openInspections = ws.inspections.filter(i => i.status === "requested" || i.status === "in_progress")
+  const overdueInspections = openInspections.filter(i => i.target_at && Date.parse(i.target_at) < Date.now()).length
+  const oldestInspection = openInspections.length ? Math.max(...openInspections.map(i => Math.floor((Date.now() - Date.parse(i.requested_at)) / 3600000))) : 0
+  const openNcrs = ws.defects.filter(d => d.status !== "closed")
+  const averageNcrAge = openNcrs.length ? Math.round(openNcrs.reduce((n, d) => n + (Date.now() - Date.parse(d.raised_at)) / 86400000, 0) / openNcrs.length) : 0
 
   return (
     <div className="space-y-5">
@@ -75,6 +82,11 @@ export function OverviewPanel({ ws, mode, onOpenInspection, onOpenDefect, onGo }
       </div>
 
       {mode === "engineer" ? <DefectTrends defects={ws.defects} today={ws.today} /> : null}
+      <div className="grid gap-3 sm:grid-cols-3">
+        <StatCard label="Overdue inspections" value={overdueInspections} note={`Oldest open request: ${oldestInspection} hours`} tone={overdueInspections ? "red" : "green"} onClick={() => onGo("inspections")} />
+        <StatCard label="Re-inspections" value={ws.inspections.filter(i => i.reinspection_of).length} note="Linked follow-up inspection requests" tone="brand" />
+        <StatCard label="Average open NCR age" value={`${averageNcrAge} days`} note={`${openNcrs.length} unresolved NCRs`} tone={averageNcrAge > 7 ? "amber" : "brand"} onClick={() => onGo("defects")} />
+      </div>
 
       <div className="grid gap-5 xl:grid-cols-2">
         <section aria-label="Needs attention" className="rounded-xl border border-line bg-surface p-4">
@@ -131,21 +143,33 @@ export function OverviewPanel({ ws, mode, onOpenInspection, onOpenDefect, onGo }
 }
 
 // ---------------------------------------------------------------- Inspections
-export function InspectionsPanel({ ws, onOpen, onNew, canRequest }: { ws: QaWorkspace; onOpen: (id: string) => void; onNew: () => void; canRequest: boolean }) {
+export type InspectionKind = "work" | "stage"
+// Work item QA = requested from a work item (FLOOR, WALL…); stage / hold point = a separate inspection of a stage. Never interchangeable.
+export function InspectionsPanel({ ws, onOpen, onNew, canRequest, kind: fixedKind }: { ws: QaWorkspace; onOpen: (id: string) => void; onNew: () => void; canRequest: boolean; kind?: InspectionKind }) {
+  const submissionIndex=useQaSubmissionIndex(ws.projectId)
+  const groups=useMemo(()=>checklistGroups(submissionIndex.rows),[submissionIndex.rows])
+  const [checklist,setChecklist]=useState("")
+  useEffect(()=>{setChecklist("")},[ws.projectId])
+  const matchedIds=useMemo(()=>new Set(groups.find(group=>group.key===checklist)?.rows.map(row=>row.inspection_id) ?? []),[groups,checklist])
+  const namesByInspection=useMemo(()=>new Map(submissionIndex.rows.map(row=>[row.inspection_id,checklistNames(row)])),[submissionIndex.rows])
   const [status, setStatus] = useState<"all" | "open" | InspectionStatus>("all")
   const [trade, setTrade] = useState<"all" | Trade>("all")
   const [query, setQuery] = useState("")
+  const [kindFilter, setKindFilter] = useState<"all" | InspectionKind>(fixedKind ?? "all")
+  const kindOf = (id: string): InspectionKind => (namesByInspection.has(id) ? "work" : "stage")
   const list = useMemo(() => {
     const text = query.trim().toLowerCase()
-    return ws.inspections.filter((row) => (status === "all" || (status === "open" ? row.status === "requested" || row.status === "in_progress" : row.status === status)) && (trade === "all" || row.trade === trade) && (!text || `${refNumber("ir", row.number)} ${row.title} ${row.location ?? ""}`.toLowerCase().includes(text)))
-  }, [ws.inspections, status, trade, query])
+    return ws.inspections.filter((row) => (kindFilter === "all" || kindOf(row.id) === kindFilter) && (!checklist || matchedIds.has(row.id)) && (status === "all" || (status === "open" ? row.status === "requested" || row.status === "in_progress" : row.status === status)) && (trade === "all" || row.trade === trade) && (!text || `${refNumber("ir", row.number)} ${row.title} ${row.location ?? ""} ${(namesByInspection.get(row.id) ?? []).join(" ")}`.toLowerCase().includes(text)))
+  }, [ws.inspections, status, trade, query,checklist,matchedIds,namesByInspection,kindFilter]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const exportCsv = () => downloadCsv(`inspections-${ws.project?.code ?? "project"}-${ws.today}.csv`, toCsv(["IR", "Title", "Trade", "Location", "Status", "Score %", "Pass mark %", "Requested by", "Requested", "Inspector", "Completed"], list.map((row) => [refNumber("ir", row.number), row.title, tradeLabels[row.trade], row.location ?? "", inspectionStatusLabels[row.status], row.score ?? "", row.threshold ?? "", ws.nameOf(row.requested_by), row.requested_at.slice(0, 10), ws.nameOf(row.inspector_id), row.completed_at?.slice(0, 10) ?? ""]))) // eslint-disable-line
+  const exportCsv = () => downloadCsv(`inspections-${ws.project?.code ?? "project"}-${ws.today}.csv`, toCsv(["IR", "Type", "Title", "Work item(s)", "Trade", "Location", "Status", "Score %", "Pass mark %", "Requested by", "Requested", "Inspector", "Completed"], list.map((row) => [refNumber("ir", row.number), kindOf(row.id) === "work" ? "Work item QA" : "Stage / hold point", row.title, (namesByInspection.get(row.id) ?? []).join(" / "), tradeLabels[row.trade], row.location ?? "", inspectionStatusLabels[row.status], row.score ?? "", row.threshold ?? "", ws.nameOf(row.requested_by), row.requested_at.slice(0, 10), ws.nameOf(row.inspector_id), row.completed_at?.slice(0, 10) ?? ""]))) // eslint-disable-line
 
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
-        <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search inspections..." aria-label="Search inspections" className={`${inputClass} !w-56`} />
+        <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search IR, work or work item name..." aria-label="Search inspections" className={`${inputClass} !w-64`} />
+        {!fixedKind ? <select aria-label="Filter by request type" className={`${inputClass} !w-auto`} value={kindFilter} onChange={(event) => setKindFilter(event.target.value as typeof kindFilter)}><option value="all">All request types</option><option value="work">Work item QA</option><option value="stage">Stage / hold point</option></select> : null}
+        {fixedKind !== "stage" ? <select aria-label="Filter by work item name" className={`${inputClass} !w-auto max-w-full`} value={checklist} disabled={submissionIndex.loading || Boolean(submissionIndex.error)} onChange={event=>setChecklist(event.target.value)}><option value="">All work items</option>{groups.map(group=><option key={group.key} value={group.key}>{group.name} ({group.rows.length} requests)</option>)}</select> : null}
         <select aria-label="Filter by status" className={`${inputClass} !w-auto`} value={status} onChange={(event) => setStatus(event.target.value as typeof status)}>
           <option value="all">All statuses</option><option value="open">Waiting or in progress</option>
           {(["requested", "in_progress", "passed", "conditional", "failed", "cancelled"] as const).map((value) => <option key={value} value={value}>{inspectionStatusLabels[value]}</option>)}
@@ -153,21 +177,23 @@ export function InspectionsPanel({ ws, onOpen, onNew, canRequest }: { ws: QaWork
         <select aria-label="Filter by trade" className={`${inputClass} !w-auto`} value={trade} onChange={(event) => setTrade(event.target.value as typeof trade)}><option value="all">All trades</option>{trades.map((value) => <option key={value} value={value}>{tradeLabels[value]}</option>)}</select>
         <span className="ml-auto flex gap-2">
           <button type="button" className={buttonSecondary} onClick={exportCsv} disabled={!list.length}>Export CSV</button>
-          {canRequest ? <button type="button" className={buttonPrimary} onClick={onNew}>Request inspection</button> : null}
+          {canRequest && fixedKind !== "work" ? <button type="button" className={buttonPrimary} onClick={onNew}>Request stage / hold-point inspection</button> : null}
         </span>
       </div>
-      {ws.loading ? <SkeletonList rows={5} label="Loading inspections" /> : ws.inspections.length === 0 ? (
-        <EmptyState title="No inspections yet" action={canRequest ? <button type="button" className={buttonPrimary} onClick={onNew}>Request the first inspection</button> : undefined}>An inspection is requested by the foreman when work is ready, and recorded by the engineer against a checklist.</EmptyState>
+      {submissionIndex.error ? <p role="alert" className="text-sm text-danger-fg">{submissionIndex.error}<button type="button" className="ml-2 font-bold underline" onClick={()=>void submissionIndex.reload()}>Retry</button></p> : null}
+      {ws.loading || submissionIndex.loading ? <SkeletonList rows={5} label="Loading inspections" /> : ws.inspections.length === 0 ? (
+        <EmptyState title="No inspections yet" action={canRequest && fixedKind !== "work" ? <button type="button" className={buttonPrimary} onClick={onNew}>Request stage / hold-point inspection</button> : undefined}>Work items are submitted from the work item itself. Stage and hold-point inspections are requested here and recorded by the Engineer against their criteria.</EmptyState>
       ) : list.length === 0 ? <EmptyState title="Nothing matches">Change the filters or the search.</EmptyState> : (
-        <Table label="Inspections" head={["IR", "Inspection", "Trade", "Status", "Score", "Requested", "Inspector"]}>
+        <Table label="Inspections" head={["IR", "Inspection", "Trade", "Status", "Score", "Requested", "Target / owner", "Inspector"]}>
           {list.map((row: Inspection) => (
             <tr key={row.id} className="hover:bg-surface-muted/60">
               <td className="whitespace-nowrap px-3 py-2"><button type="button" className={rowButton} onClick={() => onOpen(row.id)}>{refNumber("ir", row.number)}</button></td>
-              <td className="px-3 py-2"><span className="block font-semibold">{row.title}</span>{row.location ? <span className="block text-xs text-fg-muted">{row.location}</span> : null}</td>
+              <td className="px-3 py-2"><span className="block font-semibold">{row.title}</span>{row.location ? <span className="block text-xs text-fg-muted">{row.location}</span> : null}<span className="block text-xs font-bold text-brand-text">{kindOf(row.id) === "work" ? `Work item QA · ${(namesByInspection.get(row.id) ?? []).join(" · ")}` : "Stage / hold point"}</span></td>
               <td className="px-3 py-2 text-xs">{tradeLabels[row.trade]}</td>
               <td className="px-3 py-2"><Chip tone={inspectionTone[row.status]}>{inspectionStatusLabels[row.status]}</Chip>{row.reinspection_of ? <span className="ml-1 text-[11px] font-bold text-fg-muted">re-inspection</span> : null}</td>
               <td className="px-3 py-2 tabular-nums">{row.score === null ? "-" : `${row.score}%`}</td>
               <td className="whitespace-nowrap px-3 py-2 text-xs text-fg-muted">{day(row.requested_at)} • {ws.nameOf(row.requested_by)}</td>
+              <td className="px-3 py-2 text-xs"><span className={row.target_at && Date.parse(row.target_at) < Date.now() && ["requested", "in_progress"].includes(row.status) ? "font-bold text-danger-fg" : "text-fg-muted"}>{row.target_at ? new Date(row.target_at).toLocaleString("en-PH", { timeZone: "Asia/Manila", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "—"}</span><span className="block text-fg-muted">{ws.nameOf(row.escalation_owner ?? null)}</span></td>
               <td className="whitespace-nowrap px-3 py-2 text-xs text-fg-muted">{row.inspector_id ? ws.nameOf(row.inspector_id) : "-"}</td>
             </tr>
           ))}
@@ -178,7 +204,7 @@ export function InspectionsPanel({ ws, onOpen, onNew, canRequest }: { ws: QaWork
 }
 
 // ---------------------------------------------------------------- Defects (NCR register)
-export function DefectsPanel({ ws, mode, onOpen, onNew }: { ws: QaWorkspace; mode: QaMode; onOpen: (id: string) => void; onNew: (() => void) | null }) {
+export function DefectsPanel({ ws, mode, onOpen, onNew, scope }: { ws: QaWorkspace; mode: QaMode; onOpen: (id: string) => void; onNew: (() => void) | null; scope?: (defect: Defect) => boolean }) {
   const { profile } = useAuth()
   const [status, setStatus] = useState<"all" | "open_all" | "late" | DefectStatus>(mode === "foreman" ? "open_all" : "all")
   const [severity, setSeverity] = useState<"all" | "critical" | "major" | "minor">("all")
@@ -188,13 +214,14 @@ export function DefectsPanel({ ws, mode, onOpen, onNew }: { ws: QaWorkspace; mod
   const list = useMemo(() => {
     const text = query.trim().toLowerCase()
     return ws.defects.filter((row) => {
+      if (scope && !scope(row)) return false
       if (status === "open_all" ? row.status === "closed" : status === "late" ? dueState(row, ws.today).state !== "overdue" : status !== "all" && row.status !== status) return false
       if (severity !== "all" && row.severity !== severity) return false
       if (trade !== "all" && row.trade !== trade) return false
       if (mine && row.assigned_to !== profile?.id) return false
       return !text || `${refNumber("ncr", row.number)} ${row.title} ${row.description ?? ""} ${row.reference ?? ""}`.toLowerCase().includes(text)
     })
-  }, [ws.defects, ws.today, status, severity, trade, mine, query, profile?.id])
+  }, [ws.defects, ws.today, status, severity, trade, mine, query, profile?.id, scope])
 
   const exportCsv = () =>
     downloadCsv(`ncr-register-${ws.project?.code ?? "project"}-${ws.today}.csv`, toCsv(["NCR", "Title", "Class", "Category", "Trade", "Standard", "Status", "Responsible", "Raised", "Due", "Closed", "Root cause", "Corrective action", "Preventive action", "Closing note"], list.map((row) => [refNumber("ncr", row.number), row.title, qaSeverityLabels[row.severity], row.category, tradeLabels[row.trade], row.reference ?? "", defectStatusLabels[row.status], ws.nameOf(row.assigned_to), row.raised_at.slice(0, 10), row.due_date ?? "", row.closed_at?.slice(0, 10) ?? "", row.root_cause ?? "", row.corrective_action ?? "", row.closing_note ?? ""])))
@@ -222,9 +249,9 @@ export function DefectsPanel({ ws, mode, onOpen, onNew }: { ws: QaWorkspace; mod
           {list.map((row: Defect) => {
             const due = dueState(row, ws.today)
             return (
-              <tr key={row.id} className="hover:bg-surface-muted/60">
+              <tr key={row.id} tabIndex={0} aria-label={`Open ${refNumber("ncr", row.number)}: ${row.title}`} onClick={() => onOpen(row.id)} onKeyDown={event => { if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); onOpen(row.id) } }} className="cursor-pointer hover:bg-surface-muted/60 focus:bg-brand-soft">
                 <td className="whitespace-nowrap px-3 py-2"><button type="button" className={rowButton} onClick={() => onOpen(row.id)}>{refNumber("ncr", row.number)}</button></td>
-                <td className="px-3 py-2"><span className="block font-semibold">{row.title}</span><span className="block text-xs text-fg-muted">{tradeLabels[row.trade]}{row.reference ? ` • ${row.reference}` : ""}</span></td>
+                <td className="px-3 py-2"><button type="button" className={rowButton} onClick={e => { e.stopPropagation(); onOpen(row.id) }}>{row.title}</button><span className="block text-xs text-fg-muted">{tradeLabels[row.trade]}{row.reference ? ` • ${row.reference}` : ""}</span></td>
                 <td className="px-3 py-2"><Chip tone={severityTone[row.severity]}>{qaSeverityLabels[row.severity]}</Chip></td>
                 <td className="px-3 py-2"><Chip tone={defectTone[row.status]}>{defectStatusLabels[row.status]}</Chip></td>
                 <td className="whitespace-nowrap px-3 py-2 text-xs text-fg-muted">{ws.nameOf(row.assigned_to)}</td>
@@ -239,14 +266,14 @@ export function DefectsPanel({ ws, mode, onOpen, onNew }: { ws: QaWorkspace; mod
 }
 
 // ---------------------------------------------------------------- Checklists
-function Viewer({ template, canRequest, canEdit, onClose, onRequest, onDuplicate }: { template: Template; canRequest: boolean; canEdit: boolean; onClose: () => void; onRequest: () => void; onDuplicate: () => void }) {
+function Viewer({ template, canEdit, onClose, onDuplicate }: { template: Template; canEdit: boolean; onClose: () => void; onDuplicate: () => void }) {
   return (
     <Modal
       title={template.name}
       description={`${tradeLabels[template.trade]}${template.standards.length ? ` • ${template.standards.join(", ")}` : ""}`}
       size="xl"
       onClose={onClose}
-      footer={<>{canEdit ? <button type="button" className={buttonSecondary} onClick={onDuplicate}>Copy to my project</button> : null}{canRequest && !template.archived ? <button type="button" className={buttonPrimary} onClick={onRequest}>Request an inspection</button> : null}<button type="button" className={buttonSecondary} onClick={onClose}>Close</button></>}
+      footer={<>{canEdit ? <button type="button" className={buttonSecondary} onClick={onDuplicate}>Copy to my project</button> : null}<button type="button" className={buttonSecondary} onClick={onClose}>Close</button></>}
     >
       {template.description ? <p className="mb-3 text-sm text-fg-muted">{template.description}</p> : null}
       <ol className="space-y-2">
@@ -266,7 +293,7 @@ function Viewer({ template, canRequest, canEdit, onClose, onRequest, onDuplicate
   )
 }
 
-export function ChecklistsPanel({ ws, mode, canEdit, canEditLibrary, onEdit, onRequest }: { ws: QaWorkspace; mode: QaMode; canEdit: boolean; canEditLibrary: boolean; onEdit: (template: Template | null, scope: "project" | "library") => void; onRequest: (templateId: string) => void }) {
+export function ChecklistsPanel({ ws, canEdit, canEditLibrary, onEdit }: { ws: QaWorkspace; canEdit: boolean; canEditLibrary: boolean; onEdit: (template: Template | null, scope: "project" | "library") => void }) {
   const toast = useToast()
   const confirm = useConfirm()
   const [viewing, setViewing] = useState<Template | null>(null)
@@ -320,7 +347,6 @@ export function ChecklistsPanel({ ws, mode, canEdit, canEditLibrary, onEdit, onR
                     {template.standards.length ? <p className="mt-1 text-xs font-semibold text-fg-muted">{template.standards.join(" • ")}</p> : null}
                     <div className="mt-auto flex flex-wrap gap-2 pt-3">
                       <button type="button" className={buttonSecondary + " !py-1 !text-xs"} onClick={() => setViewing(template)}>View</button>
-                      {ws.projectId ? <button type="button" className={buttonSecondary + " !py-1 !text-xs"} disabled={template.archived} onClick={() => onRequest(template.id)}>Request inspection</button> : null}
                       {editable ? <button type="button" className={buttonSecondary + " !py-1 !text-xs"} onClick={() => onEdit(template, template.project_id ? "project" : "library")}>Edit</button> : null}
                       {canEdit && template.project_id === null && ws.projectId ? <button type="button" className={buttonSecondary + " !py-1 !text-xs"} disabled={busy} onClick={() => void duplicate(template)}>Copy to project</button> : null}
                       {(template.project_id ? canEdit : canEditLibrary) ? <button type="button" className={buttonSecondary + " !py-1 !text-xs"} onClick={() => void archive(template)}>{template.archived ? "Restore" : "Archive"}</button> : null}
@@ -332,7 +358,7 @@ export function ChecklistsPanel({ ws, mode, canEdit, canEditLibrary, onEdit, onR
           )}
         </section>
       ))}
-      {viewing ? <Viewer template={viewing} canRequest={Boolean(ws.projectId)} onClose={() => setViewing(null)} canEdit={canEdit && viewing.project_id === null && Boolean(ws.projectId)} onDuplicate={() => void duplicate(viewing)} onRequest={() => { onRequest(viewing.id); setViewing(null) }} /> : null}
+      {viewing ? <Viewer template={viewing} onClose={() => setViewing(null)} canEdit={canEdit && viewing.project_id === null && Boolean(ws.projectId)} onDuplicate={() => void duplicate(viewing)} /> : null}
     </div>
   )
 }

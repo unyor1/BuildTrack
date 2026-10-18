@@ -21,8 +21,7 @@ export default function BlueprintUpload({ onNavigate }: AdminPageProps) {
     } catch {
       // storage unavailable: the URL parameter still carries the selection
     }
-    window.history.replaceState({}, "", id ? `/admin/blueprint-upload?project=${id}` : "/admin/blueprint-upload")
-    window.dispatchEvent(new PopStateEvent("popstate"))
+    onNavigate("blueprint-upload", id ? `?project=${id}` : "?list=1")
   }
 
   return (
@@ -58,7 +57,7 @@ export default function BlueprintUpload({ onNavigate }: AdminPageProps) {
             <strong>{project.code}</strong> • {project.name}
             <button className="ml-3 inline-flex min-h-6 items-center text-brand-text hover:underline" onClick={() => onNavigate("project-overview")}>Project overview</button>
           </p>
-          <SelectedProjectWorkspace key={project.id} role="admin" canEdit={can("blueprints.manage")} />
+          <SelectedProjectWorkspace key={project.id} role="admin" canEdit={false} canUpload={can("blueprints.manage")} />
         </>
       )}
     </div>

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react"
 import { getSelectedProjectId, useProjects, type Project } from "../lib/projects"
+import { readProjectRoute } from "../lib/projectRoutes"
 
 const SELECTED_KEY = "buildtrack.project"
 
@@ -7,10 +8,11 @@ const SELECTED_KEY = "buildtrack.project"
 export function useAdminProject() {
   const { projects, loading, error } = useProjects()
   const [chosen, setChosen] = useState<string | null>(() => getSelectedProjectId())
-  const project: Project | null = projects.find((item) => item.id === chosen) ?? projects[0] ?? null
+  const scoped = readProjectRoute(window.location.pathname) ?? (new URLSearchParams(window.location.search).get("project") ? { projectId: getSelectedProjectId() } : null)
+  const project: Project | null = projects.find((item) => item.id === (scoped?.projectId ?? chosen)) ?? null
 
   useEffect(() => {
-    if (!loading && projects.length && !projects.some((item) => item.id === chosen)) setChosen(projects[0].id)
+    if (!scoped && !chosen && !loading && projects.length) setChosen(projects[0].id)
   }, [loading, projects, chosen])
 
   const choose = useCallback((id: string) => {
@@ -29,6 +31,7 @@ export function useAdminProject() {
 }
 
 export default function AdminProjectSelect({ projects, value, onChange }: { projects: Project[]; value: string | null; onChange: (id: string) => void }) {
+  if (readProjectRoute(window.location.pathname) || new URLSearchParams(window.location.search).has("project")) return null
   return (
     <label className="text-xs font-bold uppercase tracking-wider text-fg-muted">Project
       <select value={value ?? ""} onChange={(event) => onChange(event.target.value)} disabled={!projects.length} className="mt-1 block min-w-[16rem] rounded-lg border border-line bg-surface px-3 py-2 text-sm normal-case text-fg">

@@ -310,6 +310,7 @@ export default function EditorToolbar({
   revisions,
   onRevision,
   canEdit,
+  canUpload = canEdit,
   zoomPercent,
   onZoomIn,
   onZoomOut,
@@ -350,6 +351,7 @@ export default function EditorToolbar({
   revisions: Revision[]
   onRevision: (id: string) => void
   canEdit: boolean
+  canUpload?: boolean // sheets and revisions; defaults to canEdit
   zoomPercent: number
   onZoomIn: () => void
   onZoomOut: () => void
@@ -451,7 +453,7 @@ export default function EditorToolbar({
             </button>
           ) : null}
           <span className="mx-1 hidden h-6 w-px bg-line sm:block" aria-hidden="true" />
-          {canEdit ? (
+          {canUpload ? (
             <>
               <button type="button" onClick={onUpload} className={iconButton} title="Upload a new sheet" aria-label="Upload a new sheet"><Icon name="upload" /></button>
               {blueprint ? <button type="button" onClick={onNewRevision} disabled={baseLocked} className={`${button} hidden text-fg hover:bg-surface-muted 2xl:flex`} title={baseLocked ? "The base layer is locked" : "Upload a new revision of this sheet"}>New revision</button> : null}

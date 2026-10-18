@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "vite build --configLoader runner",
     "preview": "vite preview",
     "format": "oxfmt",
     "functions:deploy": "npx supabase functions deploy admin-users --project-ref ruimjlhsfpaezkgfphsz --use-api && npx supabase functions deploy impersonate --project-ref ruimjlhsfpaezkgfphsz --use-api && npx supabase functions deploy send-notifications --project-ref ruimjlhsfpaezkgfphsz --use-api && npx supabase functions deploy oauth-gate --project-ref ruimjlhsfpaezkgfphsz --use-api",
@@ -13,8 +13,9 @@
     "db:status": "node scripts/db-migrate.mjs status",
     "db:apply": "node scripts/db-migrate.mjs apply",
     "test:lib": "node scripts/test-lib.mjs",
+    "test:comparison": "node scripts/test-comparison.mjs",
     "test:load": "node scripts/load-test.mjs",
-    "check": "tsc --noEmit && pnpm test:lib && pnpm test:sql && pnpm build"
+    "check": "tsc --noEmit && pnpm test:lib && pnpm test:comparison && pnpm test:sql && pnpm build"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.117.3",

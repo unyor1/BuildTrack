@@ -1,5 +1,6 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import BlueprintEditor from "./editor/BlueprintEditor"
+import BlueprintUploadDialog from "./BlueprintUploadDialog"
 import type { EditorRole } from "./editor/Inspector"
 import { Skeleton, SkeletonCardGrid } from "./ui/Skeleton"
 import { getSelectedProjectId, disciplineLabels, useProject } from "../lib/projects"
@@ -22,11 +23,18 @@ function SheetCard({ blueprint, index, onOpen }: { blueprint: Blueprint; index: 
 }
 
 // Sheets of the selected project with an "Open editor" button. The editor itself fills the whole window.
-export default function SelectedProjectWorkspace({ role, canEdit }: { role: EditorRole; canEdit: boolean }) {
+// canEdit = engineering work in the editor; canUpload = add sheets / revisions (defaults to canEdit; Admins upload only).
+export default function SelectedProjectWorkspace({ role, canEdit, canUpload = canEdit }: { role: EditorRole; canEdit: boolean; canUpload?: boolean }) {
   const projectId = getSelectedProjectId()
   const { project, loading, notFound } = useProject(projectId)
   const { blueprints, loading: sheetsLoading, error, reload } = useBlueprints(project ? project.id : null)
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(Boolean(new URLSearchParams(window.location.search).get("pin")))
+  useEffect(() => {
+    const openLinkedPin = () => { if (new URLSearchParams(window.location.search).get("pin")) setOpen(true) }
+    window.addEventListener("popstate", openLinkedPin)
+    return () => window.removeEventListener("popstate", openLinkedPin)
+  }, [])
+  const [uploading, setUploading] = useState(false)
 
   if (!projectId || notFound) return null // ProjectContextBar above already explains it
   if (loading || !project) return <SkeletonCardGrid count={3} label="Loading sheets" />
@@ -35,6 +43,7 @@ export default function SelectedProjectWorkspace({ role, canEdit }: { role: Edit
     <section className="mb-6 space-y-3 text-fg">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="border-l-4 border-accent pl-3 text-lg font-extrabold text-brand-strong">Sheets and pins ({blueprints.length})</h2>
+        {canUpload ? <button type="button" onClick={() => setUploading(true)} className="rounded-lg bg-brand px-4 py-2 text-sm font-bold text-white hover:bg-brand-hover">Upload blueprint</button> : null}
         <button type="button" onClick={() => setOpen(true)} className="rounded-lg bg-brand px-4 py-2 text-sm font-bold text-white hover:bg-brand-hover">
           {canEdit ? "Open the editor" : "Open the plan"}
         </button>
@@ -47,7 +56,8 @@ export default function SelectedProjectWorkspace({ role, canEdit }: { role: Edit
           {blueprints.map((bp, index) => <SheetCard key={bp.id} blueprint={bp} index={index} onOpen={() => setOpen(true)} />)}
         </div>
       )}
-      {open ? <BlueprintEditor projectId={project.id} role={role} canEdit={canEdit} onExit={() => { setOpen(false); void reload() }} /> : null}
+      {open ? <BlueprintEditor key={project.id} projectId={project.id} role={role} canEdit={canEdit} canUpload={canUpload} onExit={() => { setOpen(false); void reload() }} /> : null}
+      {uploading ? <BlueprintUploadDialog projectId={project.id} onClose={() => setUploading(false)} onDone={() => { setUploading(false); void reload() }} /> : null}
     </section>
   )
 }

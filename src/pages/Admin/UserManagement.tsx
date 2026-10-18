@@ -98,6 +98,13 @@ export default function UserManagement({ onNavigate }: AdminPageProps) {
 
   const assignable: AppRole[] = isSuper ? ["user", "engineer", "foreman", "client", "admin", "super_admin"] : ["user", "engineer", "foreman", "client"]
 
+  // A viewer may inspect the people and past requests, but the review queue is an action surface.
+  // Do not advertise it to an Admin who lacks users.approve; the Edge Function still checks this
+  // independently for every request.
+  useEffect(() => {
+    if (!can("users.approve") && tab === "queue") setTab("users")
+  }, [can, tab])
+
   const load = useCallback(async () => {
     const [people, asks, listed, ids] = await Promise.all([
       supabase.from("profiles").select("*").order("created_at", { ascending: false }),
@@ -144,13 +151,17 @@ export default function UserManagement({ onNavigate }: AdminPageProps) {
   }
 
   // Approve or reject a registration (used by the details dialog and the review queue).
-  const decideRegistration = async (user: Profile, action: "approve" | "reject", role: RequestedRole): Promise<void> => {
+  const decideRegistration = async (user: Profile, action: "approve" | "reject", role: RequestedRole, note = ""): Promise<void> => {
     const who = user.full_name || user.email
+    if (action === "reject" && note.trim().length < 5) {
+      toast.error("A reason is required", "Give the person a helpful reason of at least 5 characters.")
+      return
+    }
     const ok = action === "approve"
       ? await confirm({ title: `Approve ${who} as ${roleLabel[role]}?`, message: "They get access to this role right away and are notified.", confirmLabel: "Approve" })
       : await confirm({ title: `Reject ${who}?`, message: "Their sessions end now and they will not be able to use the system. You can reconsider later.", confirmLabel: "Reject", tone: "danger" })
     if (!ok) return
-    if (await call({ action, id: user.id, role }, action === "approve" ? "User approved" : "User rejected")) setDetails(null)
+    if (await call({ action, id: user.id, role, note: note.trim() }, action === "approve" ? "User approved" : "User rejected")) setDetails(null)
   }
 
   const toggleEnabled = async (user: Profile) => {
@@ -175,7 +186,7 @@ export default function UserManagement({ onNavigate }: AdminPageProps) {
       <PageIntro
         eyebrow="Access control • Admin only"
         title="Users & Access Requests"
-        description="New people sign up as basic users. You only decide who gets Engineer, Foreman or Client access."
+        description="Admins with Review access decide Engineer, Foreman, or Client requests. Admin promotion and permissions are Super Admin only."
         action={
           <div className="flex gap-2">
             {can("users.create") ? <AdminButton icon="plus" onClick={() => setCreate(true)}>Create user</AdminButton> : null}
@@ -188,8 +199,19 @@ export default function UserManagement({ onNavigate }: AdminPageProps) {
         <div className="mb-3 flex items-center gap-3 rounded-lg bg-danger-soft px-4 py-2 text-sm text-danger-fg">{loadError}<button className="font-bold underline" onClick={() => void load()}>Retry</button></div>
       ) : null}
 
+      <div className="mb-4 rounded-xl border border-line bg-surface px-4 py-3 text-sm">
+        <p className="font-bold">{isSuper ? "Super Admin controls" : "Admin approval scope"}</p>
+        <p className="mt-1 text-fg-muted">
+          {isSuper
+            ? "You can review regular access requests and manage Admin accounts and permissions. You cannot change your own account or permissions here."
+            : can("users.approve")
+              ? "Admin approval required: you may approve or reject Engineer, Foreman, and Client access only. Admin and Super Admin accounts are restricted."
+              : "You can view the people allowed by your permissions. A Super Admin can grant additional access."}
+        </p>
+      </div>
+
       <div className="mb-4 flex gap-1 rounded-xl border border-line bg-surface p-1" role="tablist" aria-label="User management sections">
-        {(isSuper ? (["users", "queue", "requests", "whitelist", "permissions"] as const) : (["users", "queue", "requests", "whitelist"] as const)).map((key) => (
+        {(isSuper ? (["users", "queue", "requests", "whitelist", "permissions"] as const) : (["users", "queue", "requests", "whitelist"] as const)).filter((key) => key !== "queue" || can("users.approve")).map((key) => (
           <button
             key={key}
             role="tab"
@@ -356,7 +378,7 @@ export default function UserManagement({ onNavigate }: AdminPageProps) {
           onToggle={() => void toggleEnabled(details)}
           onLoginAs={() => void loginAs(details)}
           onPermissions={() => setPermsFor(details)}
-          onLegacyDecision={(action, role) => decideRegistration(details, action, role)}
+          onLegacyDecision={(action, role, note) => decideRegistration(details, action, role, note)}
         />
       ) : null}
 
@@ -446,10 +468,11 @@ function UserDetailsModal({
   onToggle: () => void
   onLoginAs: () => void
   onPermissions: () => void
-  onLegacyDecision: (action: "approve" | "reject", role: RequestedRole) => Promise<void>
+  onLegacyDecision: (action: "approve" | "reject", role: RequestedRole, note?: string) => Promise<void>
   onReopen: () => Promise<void>
 }) {
   const [busy, setBusy] = useState(false)
+  const [rejectionReason, setRejectionReason] = useState("")
   return (
     <Modal
       title={user.full_name || user.email}
@@ -482,22 +505,28 @@ function UserDetailsModal({
         <Detail label="Signed up with">{user.signup_provider === "google" ? "Google" : user.signup_provider === "admin" ? "Created by an administrator" : "Email and password"}</Detail>
         {user.requested_role ? <Detail label="Asked for">{roleLabel[user.requested_role]}</Detail> : null}
       </dl>
+      {user.role === "admin" || user.role === "super_admin" ? (
+        <p className="mt-5 rounded-xl border border-brand/30 bg-brand-soft px-4 py-3 text-sm text-brand-text">
+          <strong>Super Admin approval required.</strong> Administrative accounts and their permissions can only be managed by a Super Admin.
+        </p>
+      ) : null}
       {canApproveLegacy ? (
         <div className="mt-5 rounded-xl border border-line bg-surface-muted/60 p-4">
           <p className="text-sm font-bold">{user.registration_completed_at ? "This registration is waiting for your decision" : "This person has not sent their registration details yet"}</p>
           {user.registration_completed_at ? (
             <>
-              <p className="mt-1 text-xs text-fg-muted">{user.requested_role ? `They asked for ${roleLabel[user.requested_role]} access.` : "They did not say which access they need."} Approving gives that role at once and notifies them; rejecting ends their sessions.</p>
+              <p className="mt-1 text-xs text-fg-muted">Admin approval required. {user.requested_role ? `They asked for ${roleLabel[user.requested_role]} access.` : "They did not say which access they need."} Approving gives that role at once and notifies them; rejecting ends their sessions.</p>
               <div className="mt-3 flex flex-wrap gap-2">
                 {(["engineer", "foreman", "client"] as RequestedRole[]).sort((a, b) => Number(b === user.requested_role) - Number(a === user.requested_role)).map((role) => (
                   <button key={role} type="button" disabled={busy} className={role === user.requested_role ? primary : secondary} onClick={async () => { setBusy(true); await onLegacyDecision("approve", role); setBusy(false) }}>Approve as {roleLabel[role]}</button>
                 ))}
-                <button type="button" disabled={busy} className={secondary + " !text-danger-fg"} onClick={async () => { setBusy(true); await onLegacyDecision("reject", "client"); setBusy(false) }}>Reject</button>
+                <button type="button" disabled={busy || rejectionReason.trim().length < 5} className={secondary + " !text-danger-fg"} onClick={async () => { setBusy(true); await onLegacyDecision("reject", "client", rejectionReason); setBusy(false) }}>Reject</button>
               </div>
+              <label className="mt-3 block text-xs font-bold uppercase tracking-wider text-fg-muted">Reason required to reject<textarea className={field + " min-h-20"} maxLength={500} value={rejectionReason} onChange={(event) => setRejectionReason(event.target.value)} placeholder="Explain what needs to change or why this registration cannot be approved." /></label>
             </>
           ) : (
             <div className="mt-3 flex flex-wrap gap-2">
-              <button type="button" disabled={busy} className={secondary + " !text-danger-fg"} onClick={async () => { setBusy(true); await onLegacyDecision("reject", "client"); setBusy(false) }}>Reject</button>
+              <button type="button" disabled={busy || rejectionReason.trim().length < 5} className={secondary + " !text-danger-fg"} onClick={async () => { setBusy(true); await onLegacyDecision("reject", "client", rejectionReason); setBusy(false) }}>Reject</button>
             </div>
           )}
         </div>
@@ -531,8 +560,14 @@ function ReviewRequestModal({
   const [discipline, setDiscipline] = useState<Discipline | "">(request.discipline ?? "")
   const [note, setNote] = useState("")
   const [busy, setBusy] = useState(false)
+  const [decisionError, setDecisionError] = useState("")
   const person = request.profiles
   const decide = async (approve: boolean) => {
+    if (!approve && note.trim().length < 5) {
+      setDecisionError("A reason of at least 5 characters is required when declining a request.")
+      return
+    }
+    setDecisionError("")
     setBusy(true)
     await onDecide(approve, role, discipline, note)
     setBusy(false)
@@ -586,9 +621,10 @@ function ReviewRequestModal({
             </label>
           ) : null}
           <label className="block text-sm font-semibold sm:col-span-2">
-            Note to the user (optional)
+            Note to the user (required to decline)
             <input className={field} maxLength={500} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Shown to them with your decision" />
           </label>
+          {decisionError ? <p role="alert" className="sm:col-span-2 rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger-fg">{decisionError}</p> : null}
         </div>
       ) : null}
     </Modal>

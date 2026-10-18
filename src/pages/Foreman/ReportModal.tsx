@@ -1,28 +1,28 @@
-import { useCallback, useState, type FormEvent } from "react"
+import { useState, type FormEvent } from "react"
 import Modal from "../../components/Modal"
-import { PinChecklist, PinPhotos, PinTimeline, ProgressTracker } from "../../components/editor/PinParts"
-import { buttonPrimary, buttonSecondary, inputClass } from "../../components/ui/PageParts"
+import { PinChecklist, PinTimeline, ProgressTracker } from "../../components/editor/PinParts"
+import { buttonSecondary, inputClass } from "../../components/ui/PageParts"
 import { statusLabels, type Pin } from "../../lib/blueprints"
 import { useAuth } from "../../lib/auth"
 import { supabase } from "../../lib/supabase"
 import { enqueue } from "../../lib/offlineQueue"
 import { isNetworkProblem } from "../../lib/offlineModel"
 import { useToast } from "../../lib/toast"
+import { usePinQa } from "../../lib/pinQa"
 
-// One pin as the foreman sees it: tick the checklist, add photos, leave a note, then start the work or send it for review.
-export default function ReportModal({ pin, onClose, onSaved }: { pin: Pin; onClose: () => void; onSaved: () => Promise<void> }) {
+// One pin as the foreman sees it: photos and ticks go on each checklist item; leave a note and start or continue the work.
+export default function ReportModal({ pin: sourcePin, onClose, onSaved }: { pin: Pin; onClose: () => void; onSaved: () => Promise<void> }) {
+  const qa = usePinQa(sourcePin.id)
+  const pin = { ...sourcePin, status: qa.state?.status ?? sourcePin.status }
   const { profile } = useAuth()
   const toast = useToast()
   const [note, setNote] = useState("")
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState("")
-  const [checklist, setChecklist] = useState({ done: 0, total: 0 })
-  const onChecklist = useCallback((done: number, total: number) => setChecklist((current) => (current.done === done && current.total === total ? current : { done, total })), [])
-  const locked = pin.status === "for_review" || pin.status === "verified"
+  const locked = pin.status === "for_review" || pin.status === "verified" || pin.assigned_to !== profile?.id
 
-  const send = async (status: "in_progress" | "for_review", event?: FormEvent) => {
+  const send = async (status: "in_progress", event?: FormEvent) => {
     event?.preventDefault()
-    if (status === "for_review" && checklist.total > checklist.done && note.trim().length < 5) return setError(`${checklist.total - checklist.done} checklist item(s) are not ticked. Tick them, or write a short note for the engineer.`)
     setError("")
     setBusy(true)
     // No signal: keep the report on this device and send it when the connection is back.
@@ -38,11 +38,11 @@ export default function ReportModal({ pin, onClose, onSaved }: { pin: Pin; onClo
     if (rpcError && isNetworkProblem(rpcError)) return saveOffline()
     setBusy(false)
     if (rpcError) {
-      const message = rpcError.message.replace(/^.*?(Only a Foreman|Foremen can|A verified|This pin is assigned)/i, "$1")
+      const message = rpcError.message.replace(/^.*?(Only a Foreman|Foremen can|A verified|This work is not assigned|Complete every checklist item)/i, "$1")
       setError(message)
       return toast.error("Not sent", message)
     }
-    toast.success(status === "for_review" ? "Sent to the engineer for review" : "Progress saved", pin.title)
+    toast.success("Progress saved", pin.title)
     await onSaved()
   }
 
@@ -59,7 +59,6 @@ export default function ReportModal({ pin, onClose, onSaved }: { pin: Pin; onClo
           <>
             <button type="button" className={buttonSecondary} onClick={onClose} disabled={busy}>Cancel</button>
             <button type="button" className={buttonSecondary} onClick={() => void send("in_progress")} disabled={busy}>{pin.status === "not_started" ? "Start work" : "Save progress"}</button>
-            <button type="button" className={buttonPrimary} onClick={() => void send("for_review")} disabled={busy}>{busy ? "Sending..." : "Send for review"}</button>
           </>
         )
       }
@@ -69,11 +68,7 @@ export default function ReportModal({ pin, onClose, onSaved }: { pin: Pin; onClo
         {pin.description ? <p className="whitespace-pre-wrap text-sm">{pin.description}</p> : null}
         <section>
           <h3 className="mb-2 text-xs font-extrabold uppercase tracking-wider text-fg-muted">Checklist</h3>
-          <PinChecklist pinId={pin.id} canEdit={false} canTick={!locked} onChange={onChecklist} />
-        </section>
-        <section>
-          <h3 className="mb-2 text-xs font-extrabold uppercase tracking-wider text-fg-muted">Photos</h3>
-          <PinPhotos pin={pin} canAdd={!locked} canRemoveAny={false} meId={profile?.id ?? ""} columns={3} />
+          <PinChecklist pin={pin} canEdit={false} canTick={!locked && pin.assigned_to === profile?.id} notice={pin.assigned_to !== profile?.id ? "This work is not assigned to you. The engineer must assign it to you before you can upload photos." : locked ? "Awaiting Engineer inspection. Photos can be added again if the work is sent back." : ""} onPinChanged={onSaved} submissionNote={note} />
         </section>
         {!locked ? (
           <label className="block text-sm font-semibold">Note for the engineer (optional)

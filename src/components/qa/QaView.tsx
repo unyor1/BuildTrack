@@ -1,46 +1,55 @@
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import DefectDetail from "./DefectDetail"
 import InspectionDetail from "./InspectionDetail"
 import NewDefectModal from "./NewDefectModal"
 import NewInspectionModal from "./NewInspectionModal"
-import { ChecklistsPanel, DefectsPanel, InspectionsPanel, OverviewPanel, type QaMode } from "./QaPanels"
+import { ChecklistsPanel, DefectsPanel, InspectionsPanel, OverviewPanel, type InspectionKind, type QaMode } from "./QaPanels"
 import TemplateEditor from "./TemplateEditor"
 import { SnagDetail, SnagsPanel } from "./SnagPanel"
 import { useSnags, type Snag } from "../../lib/snags"
-import type { Template } from "../../lib/qa"
+import type { Defect, Template } from "../../lib/qa"
 import type { QaWorkspace } from "../../lib/qaWorkspace"
 
 export type QaTab = "overview" | "inspections" | "defects" | "snags" | "checklists"
-const tabNames: Record<QaTab, string> = { overview: "Overview", inspections: "Inspections", defects: "Non-conformances (NCR)", snags: "Client reports", checklists: "Checklists" }
+const tabNames: Record<QaTab, string> = { overview: "Overview", inspections: "Inspections", defects: "NCR register", snags: "Client reports", checklists: "Inspection criteria" }
 
 // The shared QA workspace. The Engineer page shows all four tabs; the Foreman's pages show one tab each (inspection requests,
 // the defects assigned to them, the checklists they will be inspected against). The database decides who may do what.
-export default function QaView({ ws, mode, tabs, canEditLibrary = false }: { ws: QaWorkspace; mode: QaMode; tabs: QaTab[]; canEditLibrary?: boolean }) {
-  const params = new URLSearchParams(window.location.search)
+export default function QaView({ ws, mode, tabs, canEditLibrary = false, inspectionKind, defectScope }: { ws: QaWorkspace; mode: QaMode; tabs: QaTab[]; canEditLibrary?: boolean; inspectionKind?: InspectionKind; defectScope?: (defect: Defect) => boolean }) {
+  const [search, setSearch] = useState(window.location.search)
+  useEffect(() => { const changed = () => setSearch(window.location.search); window.addEventListener("popstate", changed); return () => window.removeEventListener("popstate", changed) }, [])
+  const params = new URLSearchParams(search)
   const wanted = params.get("tab") as QaTab | null
   const [tab, setTab] = useState<QaTab>(wanted && tabs.includes(wanted) ? wanted : tabs[0])
   const [inspectionId, setInspectionId] = useState<string | null>(null)
   const [defectId, setDefectId] = useState<string | null>(null)
-  const [requesting, setRequesting] = useState<{ templateId?: string } | null>(null)
+  const [requesting, setRequesting] = useState(false)
   const [raising, setRaising] = useState(false)
   const [editing, setEditing] = useState<{ template: Template | null; scope: "project" | "library" } | null>(null)
-  const [deepLinked, setDeepLinked] = useState(false)
+  const deepLinked = useRef("")
+  const [linkError, setLinkError] = useState("")
   const snagData = useSnags(tabs.includes("snags") ? ws.projectId : null)
   const [snagOpen, setSnagOpen] = useState<Snag | null>(null)
 
   // Links from notifications: ?inspection=<id> or ?defect=<id> opens it once the lists are loaded.
   useEffect(() => {
-    if (deepLinked || ws.loading || snagData.loading) return
-    setDeepLinked(true)
+    const key = `${ws.projectId}:${search}`
+    if (deepLinked.current === key || ws.loading || snagData.loading) return
+    if (ws.error) return
+    setInspectionId(null); setDefectId(null); setSnagOpen(null); setLinkError("")
+    const wanted = params.get("tab") as QaTab | null
+    if (wanted && tabs.includes(wanted)) setTab(wanted)
     const inspection = params.get("inspection")
     const defect = params.get("defect")
     const snagParam = params.get("snag")
     const snagHit = snagParam ? snagData.snags.find((row) => row.id === snagParam) : null
-    if (snagHit) setSnagOpen(snagHit)
-    else if (inspection && ws.inspections.some((row) => row.id === inspection)) setInspectionId(inspection)
-    else if (defect && ws.defects.some((row) => row.id === defect)) setDefectId(defect)
+    if (snagHit) { setSnagOpen(snagHit); deepLinked.current = key }
+    else if (inspection && ws.inspections.some((row) => row.id === inspection)) { setInspectionId(inspection); if (tabs.includes("inspections")) setTab("inspections"); deepLinked.current = key }
+    else if (defect && ws.defects.some((row) => row.id === defect)) { setDefectId(defect); if (tabs.includes("defects")) setTab("defects"); deepLinked.current = key }
+    else if (inspection || defect || snagParam) setLinkError("This linked record is unavailable in the selected project, or your access has changed.")
+    else deepLinked.current = key
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ws.loading, snagData.loading, deepLinked])
+  }, [ws.loading, ws.error, ws.projectId, ws.inspections, ws.defects, snagData.loading, snagData.snags, search])
 
   const inspection = ws.inspections.find((row) => row.id === inspectionId) ?? null
   const defect = ws.defects.find((row) => row.id === defectId) ?? null
@@ -63,15 +72,17 @@ export default function QaView({ ws, mode, tabs, canEditLibrary = false }: { ws:
       ) : null}
 
       {ws.error ? <p role="alert" className="mb-3 rounded-lg bg-danger-soft px-4 py-2 text-sm text-danger-fg">{ws.error}</p> : null}
+      {linkError ? <p role="alert" className="mb-3 rounded-lg bg-danger-soft p-3 text-sm text-danger-fg">{linkError}</p> : null}
 
       {tab === "overview" ? <OverviewPanel ws={ws} mode={mode} onOpenInspection={setInspectionId} onOpenDefect={setDefectId} onGo={(next) => (tabs.includes(next) ? setTab(next) : undefined)} /> : null}
-      {tab === "inspections" ? <InspectionsPanel ws={ws} canRequest onOpen={setInspectionId} onNew={() => setRequesting({})} /> : null}
-      {tab === "defects" ? <DefectsPanel ws={ws} mode={mode} onOpen={setDefectId} onNew={engineer ? () => setRaising(true) : null} /> : null}
+      {tab === "inspections" ? <InspectionsPanel ws={ws} canRequest kind={inspectionKind} onOpen={setInspectionId} onNew={() => setRequesting(true)} /> : null}
+      {tab === "defects" ? <DefectsPanel ws={ws} mode={mode} scope={defectScope} onOpen={setDefectId} onNew={engineer ? () => setRaising(true) : null} /> : null}
       {tab === "snags" ? <SnagsPanel snags={snagData.snags} loading={snagData.loading} error={snagData.error} nameOf={ws.nameOf} onOpen={setSnagOpen} /> : null}
-      {tab === "checklists" ? <ChecklistsPanel ws={ws} mode={mode} canEdit={engineer && Boolean(ws.projectId)} canEditLibrary={canEditLibrary} onEdit={(template, scope) => setEditing({ template, scope })} onRequest={(templateId) => setRequesting({ templateId })} /> : null}
+      {tab === "checklists" ? <ChecklistsPanel ws={ws} canEdit={engineer && Boolean(ws.projectId)} canEditLibrary={canEditLibrary} onEdit={(template, scope) => setEditing({ template, scope })} /> : null}
 
       {inspection && project ? (
         <InspectionDetail
+          key={inspection.id}
           inspection={inspection}
           project={project}
           weights={ws.weights}
@@ -88,6 +99,7 @@ export default function QaView({ ws, mode, tabs, canEditLibrary = false }: { ws:
       ) : null}
       {defect && project ? (
         <DefectDetail
+          key={defect.id}
           defect={defect}
           project={project}
           foremen={ws.foremen}
@@ -119,13 +131,13 @@ export default function QaView({ ws, mode, tabs, canEditLibrary = false }: { ws:
       ) : null}
       {requesting && ws.projectId ? (
         <NewInspectionModal
+          pendingPinIds={ws.inspections.filter(i => i.status === "requested" || i.status === "in_progress").flatMap(i => i.pin_id ? [i.pin_id] : [])}
           projectId={ws.projectId}
           templates={ws.templates}
           pins={ws.work.pins}
-          initialTemplateId={requesting.templateId}
-          onClose={() => setRequesting(null)}
+          onClose={() => setRequesting(false)}
           onCreated={async (id) => {
-            setRequesting(null)
+            setRequesting(false)
             await ws.reloadAll()
             if (tabs.includes("inspections")) setTab("inspections")
             setInspectionId(id)

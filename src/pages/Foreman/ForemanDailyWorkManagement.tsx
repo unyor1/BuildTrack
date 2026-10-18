@@ -6,9 +6,9 @@ import type { ForemanPageKey, ForemanPageProps } from "./types"
 
 const steps: { key: ForemanPageKey; icon: AdminIconName; title: string; text: string }[] = [
   { key: "daily-report", icon: "file", title: "Daily progress report", text: "Weather, crew head count, work done and problems met today." },
-  { key: "photo-documentation", icon: "camera", title: "Photo documentation", text: "Before, during and after photos, attached to the right pin." },
-  { key: "quality-control", icon: "clipboard", title: "Inspection requests", text: "Ask the engineer to inspect work that is ready." },
-  { key: "corrective-action", icon: "edit", title: "Corrective action", text: "Fix and close the defects the engineer raised." },
+  { key: "photo-documentation", icon: "camera", title: "Photo documentation", text: "Daily report, checklist and work progress photos for this project." },
+  { key: "quality-control", icon: "clipboard", title: "QA requests", text: "Each work item with its next action, and stage / hold-point requests." },
+  { key: "issues", icon: "edit", title: "Corrections", text: "Fix returned work items and their NCRs with one correction form." },
 ]
 
 // The foreman's site plan: open a pin to report progress, then use the shortcuts for the day's paperwork.
@@ -17,10 +17,10 @@ export default function ForemanDailyWorkManagement({ onNavigate }: ForemanPagePr
     <div className="foreman-page">
       <PageHead
         eyebrow="Today on site"
-        title="Daily work"
-        description={'Open a pin on the plan to report progress, add photos or leave a note. Mark it "Ready for review" when the work is done so the engineer can verify it.'}
+        title="My work"
+        description="Open your assigned work and its work items (FLOOR, WALL…). For each item: add photos, mark it Ready and submit it for QA. Open an item to see its next action, inspection, NCRs and corrections. The work is Completed when every item is accepted and all NCRs are closed."
       />
-      <ProjectContextBar listPath="/foreman/dashboard" listLabel="My projects" />
+      <ProjectContextBar listPath="/foreman/projects" listLabel="My projects" />
 
       <section aria-label="Site plan and pins" className="mb-6">
         <SelectedProjectWorkspace role="foreman" canEdit={false} />

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { asPoints, type Pt } from "./geometry"
 import { sanitizeFormat, type TextFormat } from "./textFormat"
 import type { Discipline } from "./projects"
@@ -43,6 +43,8 @@ export type Blueprint = {
 
 export type Pin = {
   id: string
+  qa_template_id?: string | null
+  qa_approved_by?: string | null
   project_id: string
   blueprint_id: string
   revision_id: string | null
@@ -55,6 +57,8 @@ export type Pin = {
   status: PinStatus
   severity: PinSeverity
   assigned_to: string | null
+  assigned_by?: string | null
+  assigned_at?: string | null
   due_date: string | null
   locked: boolean
   created_by: string | null
@@ -64,17 +68,19 @@ export type Pin = {
   updated_at: string
 }
 
-export type PinPhoto = { id: string; pin_id: string; path: string; caption: string | null; uploaded_by: string | null; created_at: string; taken_at: string | null; stamp_flag: StampFlag | null; distance_m: number | null }
+export type PinPhoto = { id: string; pin_id: string; checklist_item_id?: string | null; qa_attempt_id?: string | null; path: string; caption: string | null; uploaded_by: string | null; created_at: string; taken_at: string | null; stamp_flag: StampFlag | null; distance_m: number | null }
 
 export type TimelineEntry = {
   id: number
   created_at: string
-  kind: "created" | "moved" | "edited" | "status" | "comment" | "photo" | "checklist" | "photo_removed"
+  kind: "created" | "moved" | "edited" | "status" | "comment" | "photo" | "checklist" | "photo_removed" | "assigned"
   from_status: PinStatus | null
   to_status: PinStatus | null
   note: string | null
   actor_name: string
   actor_role: string | null
+  from_name?: string | null // assignment entries: previous and new Foreman
+  to_name?: string | null
 }
 
 export type EditorTool = "select" | "pin" | "pen" | "highlighter" | "shape" | "text" | "note" | "arrow" | "cloud" | "symbol" | "image" | "dimension" | "polyline" | "area" | "measure" | "stamp"
@@ -111,6 +117,10 @@ export type Annotation = {
 }
 
 export type ChecklistItem = {
+  review_status?: "not_submitted" | "for_review" | "verified" | "returned"
+  review_inspection_id?: string | null
+  verified_by?: string | null
+  verified_at?: string | null
   id: string
   pin_id: string
   project_id: string
@@ -119,6 +129,9 @@ export type ChecklistItem = {
   done: boolean
   done_by: string | null
   done_at: string | null
+  remark: string | null // evidence: a remark or a photo of its own is needed before the item can be done
+  remark_by: string | null
+  remark_at: string | null
 }
 
 export const annotationColors: Record<AnnotationColor, string> = {
@@ -187,7 +200,7 @@ export const statusLabels: Record<PinStatus, string> = {
   in_progress: "In progress",
   for_review: "For review",
   issue: "Issue",
-  verified: "Verified",
+  verified: "Completed",
 }
 
 // Fixed status colors (the same meaning in light and dark mode).
@@ -348,24 +361,33 @@ export function useAnnotations(blueprintId: string | null) {
 export function useChecklist(pinId: string | null) {
   const [items, setItems] = useState<ChecklistItem[]>([])
   const [loading, setLoading] = useState(Boolean(pinId))
+  const [error, setError] = useState("")
+  const sequence = useRef(0)
 
   const reload = useCallback(async () => {
+    const run = ++sequence.current
     if (!pinId) {
       setItems([])
+      setError("")
       setLoading(false)
       return
     }
-    const { data } = await supabase.from("pin_checklist_items").select("*").eq("pin_id", pinId).order("position", { ascending: true })
+    const { data, error: loadError } = await supabase.from("pin_checklist_items").select("*").eq("pin_id", pinId).order("position", { ascending: true })
+    if (run !== sequence.current) return
+    setError(loadError ? "Could not load the checklist. Refresh and retry before submitting or reviewing." : "")
     setItems((data as ChecklistItem[] | null) ?? [])
     setLoading(false)
   }, [pinId])
 
   useEffect(() => {
+    setItems([])
     setLoading(Boolean(pinId))
     void reload()
+    return () => { sequence.current++ }
   }, [reload, pinId])
+  useLiveReload(byColumn("pin_checklist_items", "pin_id", pinId), () => void reload())
 
-  return { items, setItems, loading, reload }
+  return { items, setItems, loading, error, reload }
 }
 
 export type HistoryEntry = {
@@ -467,17 +489,23 @@ export function usePinEvidence(pinId: string | null, status: Pin["status"] | nul
 // Private files need a short-lived signed link. Cached so panning/zooming never re-requests it.
 const urlCache = new Map<string, { url: string; expires: number }>()
 
-export async function signedUrl(bucket: "blueprints" | "pin-photos" | "qa-evidence" | "snag-photos" | "identity-docs", path: string): Promise<string | null> {
-  const key = `${bucket}/${path}`
+export async function signedUrl(bucket: "blueprints" | "pin-photos" | "qa-evidence" | "snag-photos" | "identity-docs" | "daily-photos", path: string): Promise<string | null> {
+  const { data: { session } } = await supabase.auth.getSession()
+  const key = `${session?.user.id ?? "anonymous"}/${bucket}/${path}`
+  if (["pin-photos", "qa-evidence", "daily-photos"].includes(bucket)) {
+    const allowed = await supabase.rpc("evidence_image_allowed", { p_bucket: bucket, p_path: path })
+    if (allowed.error || !allowed.data) return null
+  }
   const hit = urlCache.get(key)
   if (hit && hit.expires > Date.now() + 60_000) return hit.url
-  const { data, error } = await supabase.storage.from(bucket).createSignedUrl(path, 3600)
+  const lifetime = ["pin-photos", "qa-evidence", "daily-photos"].includes(bucket) ? 300 : 3600
+  const { data, error } = await supabase.storage.from(bucket).createSignedUrl(path, lifetime)
   if (error || !data) return null
-  urlCache.set(key, { url: data.signedUrl, expires: Date.now() + 3_600_000 })
+  urlCache.set(key, { url: data.signedUrl, expires: Date.now() + lifetime * 1000 })
   return data.signedUrl
 }
 
-export function useSignedUrl(bucket: "blueprints" | "pin-photos" | "qa-evidence" | "snag-photos" | "identity-docs", path: string | null) {
+export function useSignedUrl(bucket: "blueprints" | "pin-photos" | "qa-evidence" | "snag-photos" | "identity-docs" | "daily-photos", path: string | null) {
   const [url, setUrl] = useState<string | null>(null)
   const [failed, setFailed] = useState(false)
 

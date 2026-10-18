@@ -7,7 +7,7 @@ import DataConfirmModal, { PrivacyNoticeModal } from "../../components/PrivacyNo
 import Icon from "../../components/Icons"
 import { useAuth } from "../../lib/auth"
 import { invokeFunction } from "../../lib/functions"
-import { setOAuthIntent } from "../../lib/oauthIntent"
+import { setLoginSuccessNotice, setOAuthIntent } from "../../lib/oauthIntent"
 import { PRIVACY_VERSION } from "../../lib/privacy"
 import { supabase } from "../../lib/supabase"
 import { useToast } from "../../lib/toast"
@@ -41,7 +41,7 @@ const passwordIssue = (value: string) => {
 // Google gave us a verified email and name; the person now adds the details an administrator needs. The account stays pending until
 // an administrator approves it (or it is pre-approved on the whitelist, which never reaches this form).
 function CompleteGoogleRegistration({ navigate }: RegisterPageProps) {
-  const { profile, refreshProfile, signOut } = useAuth()
+  const { profile, signOut } = useAuth()
   const toast = useToast()
   const [name, setName] = useState(profile?.full_name ?? "")
   const [phone, setPhone] = useState("")
@@ -74,8 +74,12 @@ function CompleteGoogleRegistration({ navigate }: RegisterPageProps) {
       setError(rpcError.message)
       return toast.error("Registration not sent", rpcError.message)
     }
-    toast.success("Registration sent", "An administrator will review it.")
-    await refreshProfile() // the guard now shows "Awaiting administrator approval" (or the dashboard if you were pre-approved)
+    setLoginSuccessNotice(
+      "Registration sent",
+      "Your registration is awaiting administrator approval. You will be able to sign in after your access is approved.",
+    )
+    await signOut()
+    navigate("login")
   }
 
   const useAnotherAccount = async () => {
@@ -193,8 +197,9 @@ export default function RegisterPage({ navigate }: RegisterPageProps) {
       setError("That code is incorrect or has expired.")
       return
     }
-    toast.success("Email verified", "Welcome to BuildTrack.")
-    // A session now exists: RouteGuard opens the account home. No admin approval is needed for a basic account.
+    setLoginSuccessNotice("Email verified", "Your basic account is ready. Sign in to request the access you need.")
+    await supabase.auth.signOut()
+    navigate("login")
   }
 
   const handleGoogle = async () => {
@@ -255,9 +260,9 @@ export default function RegisterPage({ navigate }: RegisterPageProps) {
           ) : (
           <form className="register-form" onSubmit={handleSubmit}>
             <Brand compact inverse />
-            <h1>Create your account</h1>
+            <h1>Register</h1>
             <p className="register-lead">
-              Sign up in a minute. With email, a basic account needs no approval and you can request Engineer, Foreman or Client access afterwards.
+              Submit your details to create a basic account. You can then request Engineer, Foreman or Client access.
             </p>
             <button className="button button--outline-light button--wide" type="button" onClick={() => void handleGoogle()}>
               Register with Google
@@ -338,7 +343,7 @@ export default function RegisterPage({ navigate }: RegisterPageProps) {
             </label>
             <div className="register-actions">
               <button className="button button--gold" type="submit" disabled={busy}>
-                {busy ? "Sending code..." : "Create account"}
+                {busy ? "Sending code..." : "Register"}
               </button>
               <span>
                 Already have an account?{" "}
@@ -347,7 +352,7 @@ export default function RegisterPage({ navigate }: RegisterPageProps) {
                   type="button"
                   onClick={() => navigate("login")}
                 >
-                  Login
+                  Sign in
                 </button>
               </span>
             </div>
@@ -359,7 +364,7 @@ export default function RegisterPage({ navigate }: RegisterPageProps) {
           </form>
           )}
           {confirming ? (
-            <DataConfirmModal title="Check your information" description="We will email you a 6-digit code to verify this address." scope="registration" record={false} rows={[{ label: "Full name", value: values.name.trim() }, { label: "Email", value: email }, { label: "Phone", value: values.phone.trim() }, { label: "Company", value: values.company.trim() }, { label: "Job title", value: values.role.trim() }]} confirmLabel="Create my account" busy={busy} onConfirm={sendSignUp} onClose={() => !busy && setConfirming(false)} />
+            <DataConfirmModal title="Check your information" description="We will email you a 6-digit code to verify this address." scope="registration" record={false} rows={[{ label: "Full name", value: values.name.trim() }, { label: "Email", value: email }, { label: "Phone", value: values.phone.trim() }, { label: "Company", value: values.company.trim() }, { label: "Job title", value: values.role.trim() }]} confirmLabel="Register" busy={busy} onConfirm={sendSignUp} onClose={() => !busy && setConfirming(false)} />
           ) : null}
           {reading ? <PrivacyNoticeModal scope="registration" onClose={() => setReading(false)} /> : null}
           <aside className="intelligence-panel">

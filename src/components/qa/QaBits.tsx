@@ -1,12 +1,13 @@
 import { useRef, useState } from "react"
-import Modal from "../Modal"
-import { formatStamp, useSignedUrl } from "../../lib/blueprints"
+import PhotoViewer from "../PhotoViewer"
+import { useSignedUrl } from "../../lib/blueprints"
 import { removeQaPhoto, uploadQaPhoto, qaSeverityLabels, severityTone, type PhotoTarget, type QaPhoto, type QaSeverity } from "../../lib/qa"
 import { useConfirm } from "../../lib/confirm"
 import { errorText, useToast } from "../../lib/toast"
 import { buttonSecondary } from "../ui/PageParts"
-import StampChip from "../StampChip"
-import { captureStamp, stampSummary } from "../../lib/photoStamp"
+import { captureStamp, stampSummary, photoPreviewBlocked } from "../../lib/photoStamp"
+import { useAuth } from "../../lib/auth"
+import { useProjectTeam } from "../../lib/projects"
 
 export function Chip({ tone, children, title }: { tone: string; children: React.ReactNode; title?: string }) {
   return <span title={title} className={`inline-flex items-center whitespace-nowrap rounded-md px-2 py-0.5 text-[11px] font-extrabold uppercase tracking-wide ${tone}`}>{children}</span>
@@ -39,7 +40,10 @@ export function ScoreBar({ score, threshold, label = "Score" }: { score: number 
 }
 
 function Thumb({ photo, className }: { photo: QaPhoto; className: string }) {
-  const { url, failed } = useSignedUrl("qa-evidence", photo.path)
+  const { profile } = useAuth()
+  const blocked = photoPreviewBlocked(profile?.role, photo)
+  const { url, failed } = useSignedUrl("qa-evidence", blocked ? null : photo.path)
+  if (blocked) return <div className={`${className} flex items-center justify-center bg-danger-soft p-1 text-[10px] text-danger-fg`}>Site/time check failed</div>
   if (failed) return <div className={`${className} flex items-center justify-center bg-surface-muted text-[11px] text-fg-muted`}>Unavailable</div>
   if (!url) return <div className={`${className} skeleton`} aria-hidden="true" />
   return <img src={url} alt={photo.caption ?? "Evidence photo"} loading="lazy" className={`${className} object-cover`} />
@@ -67,6 +71,7 @@ export function EvidenceStrip({
 }) {
   const toast = useToast()
   const confirm = useConfirm()
+  const { team } = useProjectTeam(projectId)
   const input = useRef<HTMLInputElement>(null)
   const [busy, setBusy] = useState(false)
   const [viewing, setViewing] = useState<QaPhoto | null>(null)
@@ -113,23 +118,7 @@ export function EvidenceStrip({
           <input ref={input} type="file" accept="image/png,image/jpeg,image/webp" capture="environment" multiple hidden onChange={(event) => void add(event.target.files)} />
         </>
       ) : null}
-      {viewing ? (
-        <Modal
-          title={viewing.caption || label}
-          description={formatStamp(viewing.created_at)}
-          size="xl"
-          onClose={() => setViewing(null)}
-          footer={
-            <>
-              {canRemove?.(viewing) ? <button type="button" className={buttonSecondary} onClick={() => void remove(viewing)}>Remove</button> : null}
-              <button type="button" className={buttonSecondary} onClick={() => setViewing(null)}>Close</button>
-            </>
-          }
-        >
-          <Thumb photo={viewing} className="mx-auto max-h-[70vh] w-auto max-w-full rounded-lg" />
-          <div className="mt-2 flex justify-center"><StampChip photo={viewing} /></div>
-        </Modal>
-      ) : null}
+      {viewing ? <PhotoViewer key={viewing.id} bucket="qa-evidence" photo={{...viewing,label,uploaderName:team.find(row=>row.user_id===viewing.uploaded_by)?.full_name}} onClose={()=>setViewing(null)} actions={canRemove?.(viewing) ? <button type="button" className={buttonSecondary} onClick={() => void remove(viewing)}>Remove</button> : null} /> : null}
     </div>
   )
 }

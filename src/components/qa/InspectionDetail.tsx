@@ -12,6 +12,15 @@ import {
 } from "../../lib/qa"
 import { inspectionReportHtml } from "../../lib/qaPrint"
 import { useToast } from "../../lib/toast"
+import WorkSubmissionEvidence, { useWorkSubmission } from "./WorkSubmissionEvidence"
+import { photoEligible } from "../../lib/photoStamp"
+import InspectionSchedule from "./InspectionSchedule"
+import { useInspectionTimeline } from "../../lib/qaAttempts"
+import { submittedChecklistItems } from "../../lib/qaChecklistModel"
+import { workItemPath } from "../../lib/workItemModel"
+import { followLink } from "../../lib/notifications"
+import LimitedTimeline from "../ui/LimitedTimeline"
+import { usePinQa } from "../../lib/pinQa"
 
 const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString("en-PH", { timeZone: "Asia/Manila", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }) : "-")
 
@@ -26,7 +35,8 @@ const resultWord: Record<ItemResult, string> = { pending: "Pending", pass: "Pass
 
 type SaveItem = (input: { itemId: string; result: ItemResult; measured: number | null; remarks: string }) => Promise<string>
 
-function ItemRow({ item, index, editable, photos, projectId, onSave, onPhotosChanged }: { item: InspectionItem; index: number; editable: boolean; photos: QaPhoto[]; projectId: string; onSave: SaveItem; onPhotosChanged: () => void | Promise<void> }) {
+// prepBy: the Foreman preparing a requested inspection may upload a photo on each item (and remove their own) before the engineer starts.
+function ItemRow({ item, index, editable, prepBy, photos, projectId, onSave, onPhotosChanged }: { item: InspectionItem; index: number; editable: boolean; prepBy?: string | null; photos: QaPhoto[]; projectId: string; onSave: SaveItem; onPhotosChanged: () => void | Promise<void> }) {
   const [remarks, setRemarks] = useState(item.remarks ?? "")
   const [value, setValue] = useState(item.measured_value === null ? "" : String(item.measured_value))
   const [pending, setPending] = useState<ItemResult | null>(null)
@@ -100,7 +110,7 @@ function ItemRow({ item, index, editable, photos, projectId, onSave, onPhotosCha
     }
   }
 
-  const needsPhoto = item.requires_photo && myPhotos.length === 0 && (shown === "pass" || shown === "fail")
+  const needsPhoto = item.requires_photo && !myPhotos.some(photoEligible) && (shown === "pass" || shown === "fail")
   const showRemarks = shown === "fail" || shown === "na" || Boolean(item.remarks)
 
   return (
@@ -176,9 +186,10 @@ function ItemRow({ item, index, editable, photos, projectId, onSave, onPhotosCha
       {problem ? <p role="alert" className="mt-2 pl-9 text-xs font-bold text-danger-fg">{problem}</p> : null}
       {needsPhoto && editable ? <p className="mt-2 pl-9 text-xs font-bold text-amber-800 dark:text-amber-300">This item needs a photo before the inspection can be completed.</p> : null}
 
-      {editable || myPhotos.length ? (
+      {editable || prepBy || myPhotos.length ? (
         <div className="mt-2 pl-9">
-          <EvidenceStrip projectId={projectId} photos={myPhotos} target={{ itemId: item.id }} canAdd={editable} canRemove={() => editable} onChanged={onPhotosChanged} label={`Item ${index + 1}`} compact />
+          {prepBy && !myPhotos.length ? <p className="mb-1 text-xs font-semibold text-fg-muted">Upload a photo showing this item is ready for inspection.</p> : null}
+          <EvidenceStrip projectId={projectId} photos={myPhotos} target={{ itemId: item.id }} canAdd={editable || Boolean(prepBy)} canRemove={(photo) => editable || (Boolean(prepBy) && photo.uploaded_by === prepBy)} onChanged={onPhotosChanged} label={`Item ${index + 1}`} compact />
         </div>
       ) : null}
     </li>
@@ -226,12 +237,22 @@ export default function InspectionDetail({
 
   const done = inspection.status === "passed" || inspection.status === "conditional" || inspection.status === "failed"
   const isInspector = inspection.status === "in_progress" && inspection.inspector_id === profile?.id && canInspect
+  // Before the engineer starts, the project's Foremen upload a photo on each checklist item (the database allows exactly this, 0040).
+  const workSubmission = useWorkSubmission(inspection.id)
+  const pinQa = usePinQa(inspection.pin_id ?? "")
+  const retryBlocked=Boolean(inspection.pin_id && (!pinQa.state || pinQa.error || pinQa.state.submissionProblem))
+  const timeline = useInspectionTimeline(inspection.id)
+  const prepBy = !workSubmission.loading && !workSubmission.error && !workSubmission.submission && inspection.status === "requested" && !canInspect && profile?.role === "foreman" ? profile.id : null
   const usedWeights = inspection.weights ?? weights
   const usedThreshold = inspection.threshold ?? threshold
   const preview = useMemo(() => previewScore(items, usedWeights, usedThreshold), [items, usedWeights, usedThreshold])
   const mine = defects.filter((defect) => defect.inspection_id === inspection.id)
-  const photosMissing = items.filter((item) => item.requires_photo && (item.result === "pass" || item.result === "fail") && !photos.some((photo) => photo.item_id === item.id)).length
+  const photosMissing = items.filter((item) => item.requires_photo && (item.result === "pass" || item.result === "fail") && !photos.some((photo) => photo.item_id === item.id && photoEligible(photo))).length
   const ref = refNumber("ir", inspection.number)
+  // A work item request (submitted from a work item) or a stage / hold-point inspection: they are never interchangeable.
+  const workItems = workSubmission.submission ? submittedChecklistItems(workSubmission.submission) : []
+  const role = canInspect ? "engineer" : "foreman"
+  const openItem = (id: string) => followLink(workItemPath(role, inspection.project_id, id, !canInspect && (inspection.status === "failed" || inspection.status === "conditional") ? "issues" : undefined), inspection.project_id)
 
   const save: SaveItem = async ({ itemId, result, measured, remarks }) => {
     const outcome = await qaActions.saveItem({ itemId, result, measured, remarks })
@@ -271,6 +292,10 @@ export default function InspectionDetail({
 
   const submitReason = async () => {
     setBusy(true)
+    if(asking === "reinspect" && inspection.pin_id) {
+      try { const why=await pinQa.preflight(); if(why) throw new Error(why) }
+      catch(e) { setBusy(false); return toast.error("Re-inspection not requested",(e as Error).message) }
+    }
     const outcome = asking === "cancel" ? await qaActions.cancel(inspection.id, reason.trim()) : await qaActions.reinspect(inspection.id, reason.trim())
     setBusy(false)
     if (!outcome.ok) return toast.error(asking === "cancel" ? "Not cancelled" : "Not requested", outcome.message)
@@ -288,8 +313,9 @@ export default function InspectionDetail({
   const footer = (
     <>
       {done || inspection.status === "cancelled" ? <button type="button" className={buttonSecondary} onClick={print}>Print / PDF</button> : null}
-      {(inspection.status === "failed" || inspection.status === "conditional") && canRequest ? <button type="button" className={buttonSecondary} onClick={() => setAsking("reinspect")}>Request re-inspection</button> : null}
-      {(inspection.status === "requested" || inspection.status === "in_progress") && canRequest ? <button type="button" className={buttonSecondary} onClick={() => setAsking("cancel")}>Cancel inspection</button> : null}
+      {(inspection.status === "failed" || inspection.status === "conditional") && canRequest ? workItems.length ? <button type="button" className={buttonPrimary} onClick={() => openItem(workItems[0].id)}>{canInspect ? "Open the work item" : "Open the correction form"}</button> : <button type="button" className={buttonSecondary} disabled={workSubmission.loading || Boolean(workSubmission.error)} onClick={() => setAsking("reinspect")}>Request re-inspection</button> : null}
+      {inspection.pin_id && !workItems.length ? <button type="button" className={buttonSecondary} onClick={() => followLink(`/${canInspect ? "engineer/annotation" : "foreman/daily-work"}?project=${inspection.project_id}&pin=${inspection.pin_id}`, inspection.project_id)}>Open on the plan</button> : null}
+      {(inspection.status === "requested" || inspection.status === "in_progress") && canRequest && !workSubmission.loading && !workSubmission.error && (!workSubmission.submission || canInspect) ? <button type="button" className={buttonSecondary} onClick={() => setAsking("cancel")}>Cancel inspection</button> : null}
       {inspection.status === "requested" && canInspect ? <button type="button" className={buttonPrimary} disabled={busy} onClick={() => void start()}>{busy ? "Starting..." : "Start inspection"}</button> : null}
       {isInspector ? <button type="button" className={buttonPrimary} disabled={busy || loading} onClick={() => void complete()}>{busy ? "Signing off..." : "Complete inspection"}</button> : null}
       <button type="button" className={buttonSecondary} onClick={onClose}>Close</button>
@@ -301,6 +327,7 @@ export default function InspectionDetail({
       <div className="space-y-4">
         <div className="flex flex-wrap items-center gap-2 text-xs">
           <Chip tone={inspectionTone[inspection.status]}>{inspectionStatusLabels[inspection.status]}</Chip>
+          <Chip tone="bg-surface-muted text-fg">{workSubmission.loading ? "…" : workItems.length ? "Work item QA" : "Stage / hold point"}</Chip>
           {inspection.reinspection_of ? <Chip tone="bg-fuchsia-100 text-fuchsia-900 dark:bg-fuchsia-900/40 dark:text-fuchsia-200">Re-inspection</Chip> : null}
           <span className="text-fg-muted">Requested by {nameOf(inspection.requested_by)} • {when(inspection.requested_at)}</span>
           {inspection.inspector_id ? <span className="text-fg-muted">• Inspector {nameOf(inspection.inspector_id)}</span> : null}
@@ -308,6 +335,13 @@ export default function InspectionDetail({
         </div>
         {inspection.standards.length ? <p className="text-xs text-fg-muted"><strong>Standards:</strong> {inspection.standards.join(", ")}</p> : null}
         {inspection.request_note ? <p className="rounded-lg bg-surface-muted px-3 py-2 text-sm"><strong>Note from the requester:</strong> {inspection.request_note}</p> : null}
+        {workItems.length ? <p className="flex flex-wrap items-center gap-2 text-sm"><span className="font-bold">Work item{workItems.length === 1 ? "" : "s"} in this request:</span>{workItems.map((row) => <button key={row.id} type="button" className={buttonSecondary + " !py-1 !text-xs"} onClick={() => openItem(row.id)}>{inspection.title} → {row.text}</button>)}<span className="text-xs text-fg-muted">Earlier attempts, corrections and NCRs are in the work item record.</span></p> : null}
+        <WorkSubmissionEvidence record={workSubmission} />
+        <section className="rounded-xl border border-line p-3" aria-label="Inspection timeline"><h3 className="text-sm font-bold">This request's timeline</h3>
+          <LimitedTimeline entries={[...timeline.events].reverse()} resetKey={inspection.id} label="Inspection timeline" entryKey={e => e.id} renderEntry={e => <><strong className="text-xs">{when(e.created_at)} · {nameOf(e.actor_id)}</strong><p className="whitespace-pre-wrap text-xs">{e.note}</p></>} />
+          {timeline.error ? <p role="alert" className="text-xs text-danger-fg">{timeline.error}</p> : null}
+        </section>
+        <InspectionSchedule inspection={inspection} canEdit={canInspect} onChanged={onChanged} />
 
         {items.length ? (
           <div className="rounded-xl border border-line bg-surface p-3">
@@ -324,7 +358,7 @@ export default function InspectionDetail({
           </div>
         ) : null}
 
-        {inspection.status === "requested" && !canInspect ? <p className="rounded-lg bg-sky-50 px-3 py-2 text-sm text-sky-900 dark:bg-sky-900/30 dark:text-sky-100">Waiting for the engineer. The checklist below is what will be inspected, so the work can be made ready.</p> : null}
+        {inspection.status === "requested" && !canInspect ? <p className="rounded-lg bg-sky-50 px-3 py-2 text-sm text-sky-900 dark:bg-sky-900/30 dark:text-sky-100">Waiting for the engineer. The checklist below is what will be inspected{prepBy ? ": upload a photo on each item to show the work is ready." : ", so the work can be made ready."}</p> : null}
         {inspection.status === "in_progress" && !isInspector ? <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:bg-amber-900/30 dark:text-amber-100">{canInspect ? `${nameOf(inspection.inspector_id)} is inspecting. Only the inspector can record results.` : "The engineer is inspecting now."}</p> : null}
 
         {loading ? (
@@ -334,7 +368,7 @@ export default function InspectionDetail({
         ) : (
           <ol className="space-y-2">
             {items.map((item, index) => (
-              <ItemRow key={item.id} item={item} index={index} editable={isInspector} photos={photos} projectId={inspection.project_id} onSave={save} onPhotosChanged={reloadPhotos} />
+              <ItemRow key={item.id} item={item} index={index} editable={isInspector} prepBy={prepBy} photos={photos} projectId={inspection.project_id} onSave={save} onPhotosChanged={reloadPhotos} />
             ))}
           </ol>
         )}
@@ -371,8 +405,9 @@ export default function InspectionDetail({
             <textarea id="qa-reason" rows={2} maxLength={500} value={reason} onChange={(event) => setReason(event.target.value)} className={inputClass} placeholder={asking === "cancel" ? "At least 5 characters" : "Optional: tell the engineer what changed"} />
             <div className="mt-2 flex justify-end gap-2">
               <button type="button" className={buttonSecondary} onClick={() => { setAsking(null); setReason("") }}>Back</button>
-              <button type="button" className={buttonPrimary} disabled={busy || (asking === "cancel" && reason.trim().length < 5)} onClick={() => void submitReason()}>{busy ? "Sending..." : asking === "cancel" ? "Cancel the inspection" : "Request re-inspection"}</button>
+              <button type="button" className={buttonPrimary} disabled={busy || (asking === "cancel" && reason.trim().length < 5) || (asking === "reinspect" && retryBlocked)} onClick={() => void submitReason()}>{busy ? "Sending..." : asking === "cancel" ? "Cancel the inspection" : "Request re-inspection"}</button>
             </div>
+            {asking === "reinspect" && retryBlocked ? <p role="status" className="mt-2 text-sm text-fg-muted">{pinQa.error || pinQa.state?.submissionProblem || "Checking pending requests…"}</p> : null}
           </div>
         ) : null}
       </div>

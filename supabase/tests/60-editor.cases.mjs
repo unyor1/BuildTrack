@@ -5,7 +5,7 @@ export default async function ({ db, ids, as, asOwner, test, expectOk, expectFai
 
   await as("eng1", "aal2")
   const bp = (await db.query("insert into public.blueprints (project_id, title) values ($1, 'Editor plan') returning id", [P1])).rows[0].id
-  const pin = (await db.query("insert into public.pins (project_id, blueprint_id, x, y, title) values ($1, $2, 30, 30, 'Checklist pin') returning id", [P1, bp])).rows[0].id
+  const pin = (await db.query("insert into public.pins (project_id, blueprint_id, x, y, title, assigned_to) values ($1, $2, 30, 30, 'Checklist pin', $3) returning id", [P1, bp, ids.fore1])).rows[0].id
 
   const noteSql = "insert into public.blueprint_annotations (project_id, blueprint_id, kind, x, y, text, color) values ($1, $2, 'note', 20, 20, $3, 'blue') returning id"
   const shapeSql = "insert into public.blueprint_annotations (project_id, blueprint_id, kind, shape, x, y, w, h, text, color) values ($1, $2, 'shape', $3, $4, $5, $6, $7, 'Slab pour zone', 'orange') returning id"
@@ -108,8 +108,10 @@ export default async function ({ db, ids, as, asOwner, test, expectOk, expectFai
 
   await test("Foreman ticks an item: who/when recorded and a timeline entry is written; unticking clears it", async () => {
     await as("fore1", "aal2")
-    const ticked = await db.query("update public.pin_checklist_items set done = true where id = $1 returning done_by, done_at", [ids.itemA])
+    await db.query("insert into public.pin_photos (pin_id, project_id, path, checklist_item_id) values ($1, $2, $3, $4)", [pin, P1, `${P1}/${pin}/spacing.jpg`, ids.itemA])
+    const ticked = await db.query("update public.pin_checklist_items set done = true, remark = 'Spacing checked, 200 mm' where id = $1 returning done_by, done_at, remark_by", [ids.itemA])
     if (ticked.rows[0].done_by !== ids.fore1 || !ticked.rows[0].done_at) throw new Error("done_by / done_at not set")
+    if (ticked.rows[0].remark_by !== ids.fore1) throw new Error("remark_by not set")
     await asOwner()
     if ((await count("select count(*) n from public.pin_events where pin_id = $1 and kind = 'checklist' and note like 'Done:%'", [pin])) !== 1) throw new Error("timeline entry missing")
     await as("fore1", "aal2")

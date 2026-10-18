@@ -127,6 +127,7 @@ export default function AppShell({
   mobileTabs = [],
   banner,
   topExtra,
+  onAllProjects,
   children,
 }: {
   persona: ShellPersona
@@ -139,6 +140,8 @@ export default function AppShell({
   mobileTabs?: string[]
   banner?: ReactNode
   topExtra?: ReactNode
+  // Set by workspaces that work one project at a time: the rail starts with that project and a way back to the list.
+  onAllProjects?: () => void
   children: ReactNode
 }) {
   const { profile, signOut } = useAuth()
@@ -187,6 +190,23 @@ export default function AppShell({
   const tabs = mobileTabs.map((key) => all.find((item) => item.key === key)).filter((item): item is ShellNavItem => Boolean(item))
   const side = collapsed ? "4.75rem" : "17rem"
 
+  const projectHeader = (compact: boolean) => (onAllProjects && project ? (
+    compact ? (
+      <div className="px-3 pb-2">
+        <button type="button" onClick={() => { setDrawer(false); onAllProjects() }} title={`${project.code} • ${project.name}. Back to all projects`} aria-label="Back to all projects" className="mx-auto flex h-10 w-10 items-center justify-center rounded-xl bg-white/10 text-[11px] font-extrabold text-white/85 hover:bg-white/20">{project.code.slice(-3)}</button>
+      </div>
+    ) : (
+      <div className="mx-3 mb-1 rounded-xl border border-white/10 bg-white/[0.06] p-3">
+        <button type="button" onClick={() => { setDrawer(false); onAllProjects() }} className="mb-2 inline-flex min-h-6 items-center gap-1 text-[11px] font-extrabold uppercase tracking-wider text-white/70 hover:text-white">
+          <span aria-hidden="true">←</span> All projects
+        </button>
+        <p className="bt-persona-light text-[11px] font-extrabold uppercase tracking-wider">{project.code}</p>
+        <p className="mt-0.5 line-clamp-2 text-sm font-bold text-white">{project.name}</p>
+        {project.sub ? <p className="truncate text-xs text-white/60">{project.sub}</p> : null}
+      </div>
+    )
+  ) : null)
+
   const nav = (compact: boolean) => (
     <nav aria-label={`${workspace} navigation`} className="flex-1 space-y-5 overflow-y-auto px-3 py-2">
       {groups.map((group) => (
@@ -229,7 +249,7 @@ export default function AppShell({
 
   const footer = (compact: boolean) => (
     <div className="space-y-3 border-t border-white/10 p-3">
-      {project !== undefined ? (
+      {project !== undefined && !onAllProjects ? (
         compact ? (
           <div title={project ? `${project.code} • ${project.name}` : projectEmpty} className="mx-auto flex h-10 w-10 items-center justify-center rounded-xl bg-white/10 text-[11px] font-extrabold text-white/80">{project ? project.code.slice(-3) : "-"}</div>
         ) : (
@@ -255,6 +275,7 @@ export default function AppShell({
       {/* Desktop rail */}
       <aside aria-label="Sidebar" className={`fixed inset-y-0 left-0 z-40 hidden flex-col border-r border-white/10 text-white transition-[width] duration-200 lg:flex ${railClasses}`} style={{ width: side }}>
         {brand(collapsed)}
+        {projectHeader(collapsed)}
         {nav(collapsed)}
         {footer(collapsed)}
       </aside>
@@ -264,6 +285,7 @@ export default function AppShell({
         <button type="button" tabIndex={drawer ? 0 : -1} aria-label="Close menu" onClick={() => setDrawer(false)} className={`absolute inset-0 bg-black/55 transition-opacity ${drawer ? "opacity-100" : "opacity-0"}`} />
         <aside className={`absolute inset-y-0 left-0 flex w-[min(20rem,86vw)] flex-col text-white shadow-2xl transition-transform duration-200 ${railClasses} ${drawer ? "translate-x-0" : "-translate-x-full"}`}>
           {brand(false)}
+          {projectHeader(false)}
           {nav(false)}
           {footer(false)}
         </aside>
@@ -274,7 +296,7 @@ export default function AppShell({
           <button type="button" onClick={() => setDrawer(true)} aria-label="Open menu" className="grid h-10 w-10 place-items-center rounded-xl hover:bg-surface-muted lg:hidden"><span className="h-5 w-5 [&>svg]:h-5 [&>svg]:w-5"><AdminIcon name="menu" /></span></button>
           <button type="button" onClick={() => setCollapsed(!collapsed)} aria-label={collapsed ? "Expand the sidebar" : "Collapse the sidebar"} aria-pressed={collapsed} className="hidden h-10 w-10 place-items-center rounded-xl text-fg-muted hover:bg-surface-muted hover:text-fg lg:grid"><span className="h-5 w-5 [&>svg]:h-5 [&>svg]:w-5"><AdminIcon name="panel" /></span></button>
           <div className="min-w-0 flex-1 leading-tight">
-            <p className="bt-persona-text truncate text-[11px] font-extrabold uppercase tracking-wider">{workspace}</p>
+            <p className="bt-persona-text truncate text-[11px] font-extrabold uppercase tracking-wider">{onAllProjects && project ? `${workspace} · ${project.code}` : workspace}</p>
             <p className="truncate text-base font-extrabold sm:text-lg">{current?.label ?? "BuildTrack"}</p>
           </div>
           {topExtra}

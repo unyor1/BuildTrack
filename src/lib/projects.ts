@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react"
 import { supabase } from "./supabase"
+import { fieldShellMode, projectPath, readProjectRoute } from "./projectRoutes"
 
 export type Discipline = "civil_structural" | "architectural" | "mep"
 export type ProjectPhase = "plan_review" | "team_briefing" | "mobilization" | "execution"
@@ -89,8 +90,11 @@ export function useProjects() {
 const SELECTED_KEY = "buildtrack.project"
 
 export function getSelectedProjectId(): string | null {
+  const route = readProjectRoute(window.location.pathname)
+  if (route) return route.projectId
   const fromUrl = new URLSearchParams(window.location.search).get("project")
   if (fromUrl) return fromUrl
+  if (window.location.pathname.startsWith("/admin/")) return null
   try {
     return sessionStorage.getItem(SELECTED_KEY)
   } catch {
@@ -100,23 +104,41 @@ export function getSelectedProjectId(): string | null {
 
 export type ProjectRole = "engineer" | "foreman" | "client" | "admin"
 
-// Where each role lands after picking a project card.
+// Where each role lands after picking a project card (Engineer / Foreman: that project's own dashboard).
 const workspacePath: Record<ProjectRole, string> = {
   admin: "/admin/project-overview",
-  engineer: "/engineer/project-blueprint",
-  foreman: "/foreman/daily-work",
+  engineer: "/engineer/dashboard",
+  foreman: "/foreman/dashboard",
   client: "/client/blueprint",
 }
 
-export function openProject(role: ProjectRole, projectId: string) {
+// Mirror of the selected project in sessionStorage (null forgets it, e.g. back on the project list or after sign-out).
+export function rememberProject(projectId: string | null) {
   try {
-    sessionStorage.setItem(SELECTED_KEY, projectId)
+    if (projectId) sessionStorage.setItem(SELECTED_KEY, projectId)
+    else sessionStorage.removeItem(SELECTED_KEY)
   } catch {
     // sessionStorage unavailable: the URL parameter still carries the selection.
   }
-  window.history.pushState({}, "", `${workspacePath[role]}?project=${projectId}`)
+}
+
+export function openProject(role: ProjectRole, projectId: string) {
+  rememberProject(projectId)
+  window.history.pushState({}, "", role === "admin" ? projectPath(projectId) : `${workspacePath[role]}?project=${projectId}`)
   window.scrollTo({ top: 0 })
   window.dispatchEvent(new PopStateEvent("popstate")) // makes App re-read the path
+}
+
+// Engineer / Foreman shells: on the project list there is no project; elsewhere the page belongs to the selected project.
+// A project that is missing or not assigned (Row Level Security hides it) sends the person back to the list.
+export function useFieldProject(page: string) {
+  const selected = page === "projects" ? null : getSelectedProjectId()
+  const { project, loading, notFound } = useProject(selected)
+  useEffect(() => {
+    if (page === "projects") rememberProject(null)
+    else if (project) rememberProject(project.id)
+  }, [page, project])
+  return { projectId: selected, project, loading, notFound, mode: fieldShellMode({ page, projectId: selected, notFound }) }
 }
 
 export function useProject(projectId: string | null) {

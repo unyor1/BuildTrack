@@ -1,5 +1,13 @@
 // Tests for the pure editor helpers (geometry + layering). Run: pnpm test:lib  (needs Node 22.18+ for TypeScript imports).
 import assert from "node:assert/strict"
+import { qaSubmissionMessage, submitAfterConfirmation } from "../src/lib/pinQaModel.ts"
+import { checklistAttemptNumber, checklistGroups, checklistNames, checklistNameKey, submittedChecklistItems } from "../src/lib/qaChecklistModel.ts"
+import { selectedVerification, timelineWindow } from "../src/lib/verificationViewModel.ts"
+import { currentAttemptPhotos, itemSubmissions, qaRecordPath } from "../src/lib/qaAttemptsModel.ts"
+import { acceptProblem, connectedHistory, headline as itemHeadline, itemAttempts, linkedDefects, pinBusy, pinLevelDefects, workItemPath, workItemStage } from "../src/lib/workItemModel.ts"
+import { adjustPhotoZoom, changePhotoScope, defaultPhotoDates, emptyPhotoScope, photoDateBounds, photoRangeDates, photoRangeOf, readPhotoDates, readPhotoScope, validPhotoDate, photoTime } from "../src/lib/photoGalleryModel.ts"
+import { foremanTasks, manilaDayRange, reportStatusLabel, taskCounts, taskFilters } from "../src/lib/foremanDashboardModel.ts"
+import { fieldPagePath, fieldShellMode, projectPath, projectSections, readProjectRoute } from "../src/lib/projectRoutes.ts"
 import { areaSquareMeters, asPoints, bbox, formatArea, lengthMeters, limitPoints, polygonAreaPx, polylineLengthPx, pointsToPath, simplify, translatePoints } from "../src/lib/geometry.ts"
 import { alignMoves, distributeMoves, fitImageBox, resizeFromCorner, resizedBox, inRectangle, isNoop, itemBox, shifted, shiftedTogether, withGroupMembers } from "../src/lib/arrange.ts"
 import { angleFromCenter, arrowHeadPx, cloudPath, constrainAngle, dimensionTickPx, normalizeAngle, rectCorners, snapAngle, toLocalAxes } from "../src/lib/shapes.ts"
@@ -35,6 +43,100 @@ const test = (name, fn) => {
     process.exitCode = 1
   }
 }
+
+test("Photo calendar uses inclusive Manila dates, optional bounds, and validates ranges", () => {
+  assert.deepEqual(photoDateBounds({ from: "2026-10-15", to: "2026-10-15" }), { start: "2026-10-14T16:00:00.000Z", end: "2026-10-15T16:00:00.000Z" })
+  assert.deepEqual(photoDateBounds({ from: "", to: "2026-12-31" }), { start: undefined, end: "2026-12-31T16:00:00.000Z" })
+  assert.deepEqual(photoDateBounds({ from: "2026-01-01", to: "" }), { start: "2025-12-31T16:00:00.000Z", end: undefined })
+  assert.deepEqual(photoDateBounds({ from: "", to: "" }), { start: undefined, end: undefined })
+  assert.ok(photoDateBounds({ from: "2026-10-16", to: "2026-10-15" }).error)
+  assert.ok(photoDateBounds({ from: "2026-02-30", to: "" }).error)
+  assert.equal(validPhotoDate("2028-02-29"), true)
+  assert.equal(validPhotoDate("2026-02-29"), false)
+  assert.deepEqual(readPhotoDates("?tab=checklist&from=invalid&to=2026-10-15"), { from: "", to: "2026-10-15" })
+  assert.equal(photoTime(null), "Not recorded")
+})
+
+test("Photo date buttons give Manila calendar ranges; daily report photos open on today", () => {
+  const today = "2026-10-01"
+  assert.deepEqual(photoRangeDates("today", today), { from: today, to: today })
+  assert.deepEqual(photoRangeDates("yesterday", today), { from: "2026-09-30", to: "2026-09-30" })
+  assert.deepEqual(photoRangeDates("week", today), { from: "2026-09-25", to: today })
+  assert.deepEqual(photoRangeDates("month", today), { from: "2026-10-01", to: today })
+  assert.deepEqual(photoRangeDates("all", today), { from: "", to: "" })
+  assert.equal(photoRangeOf({ from: "2026-09-25", to: today }, today), "week")
+  assert.equal(photoRangeOf({ from: "2026-09-01", to: "2026-09-10" }, today), "custom")
+  assert.deepEqual(defaultPhotoDates("daily", today), { from: today, to: today })
+  assert.deepEqual(defaultPhotoDates("checklist", today), { from: "", to: "" })
+})
+test("Photo filters: sheet clears pin and work item, a pin picks its sheet, links carry only valid ids", () => {
+  const sheetA = "11111111-1111-4111-8111-111111111111", sheetB = "22222222-2222-4222-8222-222222222222"
+  const pin = "33333333-3333-4333-8333-333333333333", item = "44444444-4444-4444-8444-444444444444"
+  const sheetOf = (id) => (id === pin ? sheetB : undefined)
+  const picked = changePhotoScope(emptyPhotoScope, "pin", pin, sheetOf)
+  assert.deepEqual(picked, { sheet: sheetB, pin, item: "" })
+  const withItem = changePhotoScope(picked, "item", item, sheetOf)
+  assert.deepEqual(changePhotoScope(withItem, "sheet", sheetA, sheetOf), { sheet: sheetA, pin: "", item: "" })
+  assert.deepEqual(changePhotoScope(withItem, "pin", "", sheetOf), { sheet: sheetB, pin: "", item: "" })
+  assert.deepEqual(readPhotoScope(`?sheet=${sheetA}&pin=bad&item=${item}`), { sheet: sheetA, pin: "", item })
+})
+test("Foreman photo counts use Manila midnight and an exclusive next midnight", () => {
+  assert.deepEqual(manilaDayRange("2026-10-15"), { start: "2026-10-14T16:00:00.000Z", end: "2026-10-15T16:00:00.000Z" })
+  assert.deepEqual(manilaDayRange("2027-01-01"), { start: "2026-12-31T16:00:00.000Z", end: "2027-01-01T16:00:00.000Z" })
+})
+test("Foreman daily report labels distinguish absent, draft, submitted and multiple projects", () => {
+  assert.equal(reportStatusLabel([], true), "None")
+  assert.equal(reportStatusLabel(["draft"], true), "Draft")
+  assert.equal(reportStatusLabel(["submitted"], true), "Submitted")
+  assert.equal(reportStatusLabel(["draft", "submitted", "submitted"], false), "1 draft / 2 submitted")
+})
+test("Foreman tasks: one detailed list, each task in exactly one short filter, most urgent first", () => {
+  const today = "2026-10-19"
+  const pin = (id, status, due = null) => ({ id, project_id: "p", title: id, status, category: "work", due_date: due })
+  const tasks = foremanTasks({
+    pins: [pin("start", "not_started"), pin("doing", "in_progress"), pin("back", "in_progress"), pin("late", "in_progress", "2026-10-10"), pin("issue", "issue", "2026-10-01"), pin("review", "for_review", "2026-10-01"), pin("done", "verified"), { ...pin("note", "in_progress"), category: "note" }],
+    sentBack: new Set(["back"]),
+    ncrs: [{ id: "n1", project_id: "p", number: 1, title: "Level", status: "open", due_date: "2026-10-01" }, { id: "n2", project_id: "p", number: 2, title: "Paint", status: "for_verification", due_date: null }, { id: "n3", project_id: "p", number: 3, title: "Closed", status: "closed", due_date: null }],
+    inspections: [{ id: "i1", project_id: "p", number: 3, title: "LAUNDRY", status: "requested" }, { id: "i2", project_id: "p", number: 4, title: "Old", status: "passed" }],
+    today,
+  })
+  const filterOf = Object.fromEntries(tasks.map((task) => [task.id, task.filter]))
+  assert.deepEqual(filterOf, { start: "to_start", doing: "doing", back: "sent_back", late: "overdue", issue: "issue", review: "waiting", n1: "ncr", n2: "waiting", i1: "waiting" })
+  assert.deepEqual(tasks.slice(0, 2).map((task) => task.id).sort(), ["back", "n1"])
+  assert.equal(tasks.find((task) => task.id === "i1").title, "IR-0003 LAUNDRY")
+  const counts = taskCounts(tasks)
+  assert.equal(counts.all, 9)
+  assert.equal(counts.waiting, 3)
+  assert.equal(Object.values(counts).reduce((a, b) => a + b, 0) - counts.all, counts.all)
+  assert.ok(taskFilters.every(([, label]) => label.length <= 9))
+})
+
+test("Project URLs retain their own project and section across refresh and separate tabs", () => {
+  const first = "11111111-1111-4111-8111-111111111111"
+  const second = "22222222-2222-4222-8222-222222222222"
+  for (const section of Object.keys(projectSections)) {
+    const a = projectPath(first, section)
+    const b = projectPath(second, section)
+    assert.notEqual(a, b)
+    assert.deepEqual(readProjectRoute(a), { projectId: first, section })
+    assert.deepEqual(readProjectRoute(b), { projectId: second, section })
+  }
+  assert.equal(readProjectRoute("/admin/blueprint-upload"), null)
+  assert.equal(readProjectRoute("/admin/projects/invalid/blueprints"), null)
+  assert.equal(readProjectRoute(`/admin/projects/${first}/unknown`), null)
+})
+test("Engineer and Foreman pages carry their own project; the project list never does", () => {
+  const first = "11111111-1111-4111-8111-111111111111"
+  const second = "22222222-2222-4222-8222-222222222222"
+  assert.equal(fieldPagePath("engineer", "qa", first), `/engineer/qa?project=${first}`)
+  assert.notEqual(fieldPagePath("foreman", "issues", first), fieldPagePath("foreman", "issues", second))
+  assert.equal(fieldPagePath("foreman", "projects", first), "/foreman/projects")
+  assert.equal(fieldPagePath("engineer", "dashboard", null), "/engineer/dashboard")
+  assert.equal(fieldShellMode({ page: "projects", projectId: first, notFound: false }), "list")
+  assert.equal(fieldShellMode({ page: "qa", projectId: null, notFound: false }), "list")
+  assert.equal(fieldShellMode({ page: "qa", projectId: first, notFound: true }), "list")
+  assert.equal(fieldShellMode({ page: "qa", projectId: first, notFound: false }), "project")
+})
 
 test("bbox of points", () => assert.deepEqual(bbox([[10, 20], [30, 5], [25, 40]]), { x: 10, y: 5, w: 20, h: 35 }))
 
@@ -637,7 +739,8 @@ test("QA badges and pin quality warning: engineer counts decisions, foreman coun
   assert.equal(qaBadge("foreman", "f1", irs, ncrs), 1)
   assert.equal(qaBadge("foreman", "f2", irs, ncrs), 1)
   assert.equal(qaBadge("foreman", null, irs, ncrs), 0)
-  assert.equal(pinQualityWarning(null), "")
+  assert.match(pinQualityWarning(null), /Checking QA/)
+  assert.match(pinQualityWarning({ inspections: [{ status: "conditional" }], defects: [] }), /CONDITIONAL/)
   assert.equal(pinQualityWarning({ inspections: [{ status: "passed" }], defects: [{ status: "closed" }] }), "")
   assert.match(pinQualityWarning({ inspections: [{ status: "failed" }, { status: "passed" }], defects: [] }), /latest inspection FAILED/)
   assert.match(pinQualityWarning({ inspections: [{ status: "requested" }, { status: "passed" }], defects: [{ status: "open" }, { status: "for_verification" }] }), /still open, 2 defects are still open/)
@@ -950,4 +1053,148 @@ test("search: every hit opens a screen that role really has; no screen means no 
   })
 }
 
+let qaWrites = 0
+const cancelledQa = await submitAfterConfirmation(async () => false, async () => { qaWrites++ })
+test("QA confirmation cancellation performs no submission", () => {
+  assert.equal(cancelledQa, false)
+  assert.equal(qaWrites, 0)
+})
+const confirmedQa = await submitAfterConfirmation(async () => true, async () => { qaWrites++ })
+test("QA confirmation invokes submission once after explicit approval", () => {
+  assert.equal(confirmedQa, true)
+  assert.equal(qaWrites, 1)
+})
+test("QA confirmation distinguishes partial work from complete work without inventing standards", () => {
+  assert.match(qaSubmissionMessage(1,3), /partial submission \(1\/3/)
+  assert.doesNotMatch(qaSubmissionMessage(1,3), /all required checklist items are completed/)
+  assert.match(qaSubmissionMessage(3,3), /all required checklist items are completed/)
+  assert.match(qaSubmissionMessage(3,3), /approved drawings and project specifications/)
+})
+test("Correction evidence keeps the new draft photos apart from the earlier request", () => {
+  const photos = [{ id: "old", checklist_item_id: "item" }, { id: "new", checklist_item_id: "item", qa_attempt_id: "draft" }]
+  assert.deepEqual(currentAttemptPhotos(photos,"item",true,{ id:"draft" }).map(p=>p.id),["new"])
+  assert.deepEqual(currentAttemptPhotos(photos,"item",true),[])
+  assert.equal(itemSubmissions([{ checklist_snapshot:[{ id:"item",done:true }] }, { checklist_snapshot:[{ id:"item",done:false }] }],"item").length,1)
+})
+test("QA record links connect each role's defects, inspections and work checklist with the same project", () => {
+  assert.equal(qaRecordPath("foreman","project","defect","id"),"/foreman/issues?project=project&tab=defects&defect=id")
+  assert.equal(qaRecordPath("engineer","project","inspection","id"),"/engineer/qa?project=project&tab=inspections&inspection=id")
+})
+test("Verification tiles never open the first record automatically and cannot show another project's details", () => {
+  const pins = [{ id: "one", project_id: "a" }, { id: "two", project_id: "a" }, { id: "three", project_id: "b" }]
+  assert.equal(selectedVerification(pins,"a",null),null)
+  assert.equal(selectedVerification(pins,"a","missing"),null)
+  assert.equal(selectedVerification(pins,"a","three"),null)
+  assert.equal(selectedVerification(pins,null,"one"),null)
+  assert.equal(selectedVerification(pins,"a","two"),pins[1])
+})
+test("Timeline preview limits recent events, keeps the original history and expands on demand", () => {
+  const entries = Array.from({length:12},(_,i)=>({id:12-i}))
+  assert.deepEqual(timelineWindow(entries,false).map(e=>e.id),[12,11,10,9,8])
+  assert.equal(timelineWindow(entries,true).length,12)
+  assert.equal(entries.length,12)
+  assert.equal(timelineWindow([],false).length,0)
+  assert.equal(timelineWindow(entries,false,3).length,3)
+})
+test("Item acceptance waits for a passed inspection and the item's own NCRs only (same order as SQL)", () => {
+  const ready={ loading:false,error:"",open:false,inspectionStatus:"passed",openItemNcrs:0 }
+  assert.equal(acceptProblem(ready),"")
+  assert.match(acceptProblem({...ready,open:true}),/pending QA/)
+  assert.match(acceptProblem({...ready,inspectionStatus:"failed"}),/must pass/)
+  assert.match(acceptProblem({...ready,openItemNcrs:2}),/Close the 2 open NCRs linked to this work item/)
+  assert.match(acceptProblem({...ready,error:"Unavailable"}),/unavailable/)
+  assert.match(acceptProblem({...ready,loading:true}),/Checking/)
+})
+test("Work item records link NCRs and attempts by the item's permanent id, even after a rename", () => {
+  const subs=[
+    { id:"s1",inspection_id:"i1",pin_id:"p",item_ids:["floor"],checklist_snapshot:[{id:"floor",text:"FLOOR",done:true}],submitted_at:"2026-10-01" },
+    { id:"s2",inspection_id:"i2",pin_id:"p",item_ids:["floor","wall"],checklist_snapshot:[{id:"floor",text:"Floor tiles",done:true},{id:"wall",text:"WALL",done:true}],submitted_at:"2026-10-03" },
+    { id:"s3",inspection_id:"i3",pin_id:"p",item_ids:null,checklist_snapshot:[{id:"wall",text:"WALL",done:true},{id:"floor",text:"FLOOR",done:false}],submitted_at:"2026-10-05" },
+  ]
+  const inspections=[{id:"i2",number:2,status:"passed"},{id:"i1",number:1,status:"failed"},{id:"i3",number:3,status:"failed"}]
+  assert.deepEqual(itemAttempts("floor",subs,inspections).map(a=>[a.inspection.number,a.label]),[[1,"Original request"],[2,"Resubmission 1"]])
+  assert.deepEqual(itemAttempts("wall",subs,inspections).map(a=>a.label),["Original request","Resubmission 1"])
+  const defects=[
+    {id:"n1",number:1,status:"open",inspection_id:"i1",pin_id:"p"},{id:"n3",number:3,status:"open",inspection_id:"i3",pin_id:"p"},
+    {id:"site",number:4,status:"open",inspection_id:null,pin_id:"p"},{id:"stage",number:5,status:"open",inspection_id:"stage-ir",pin_id:"p"},
+    {id:"other",number:6,status:"open",inspection_id:"i1",pin_id:"q"},
+  ]
+  assert.deepEqual(linkedDefects("floor","p",subs,defects).map(d=>d.id),["n1"])
+  assert.deepEqual(linkedDefects("wall","p",subs,defects).map(d=>d.id),["n3"])
+  assert.deepEqual(pinLevelDefects("p",subs,defects).map(d=>d.id),["site","stage"])
+})
+test("Every work item stage names the responsible person, the blocker and one next action", () => {
+  const item={ id:"floor",text:"FLOOR",done:true,review_status:"for_review",review_inspection_id:"i2" }
+  const base={ item,attempts:2,current:{number:2,status:"passed"},ncrs:[],draft:null,eligiblePhotos:1,criteriaApproved:true,pinBusy:null,pinCompleted:false }
+  assert.equal(itemHeadline(workItemStage(base)),"Inspection passed. Next action: Engineer accepts FLOOR.")
+  const closed=workItemStage({...base,ncrs:[{number:1,status:"closed"},{number:2,status:"closed"}]})
+  assert.equal(itemHeadline(closed),"Inspection passed. NCRs closed. Next action: Engineer accepts FLOOR.")
+  const waiting=workItemStage({...base,ncrs:[{number:1,status:"open"},{number:2,status:"in_progress"}]})
+  assert.equal(waiting.owner,"Foreman")
+  assert.equal(itemHeadline(waiting),"Inspection passed. 2 NCRs still need closure. Next action: Foreman submits corrective action for NCR-0001, NCR-0002.")
+  const review=workItemStage({...base,ncrs:[{number:1,status:"for_verification"},{number:2,status:"open"}]})
+  assert.equal(review.owner,"Engineer"); assert.equal(review.action,"review_ncrs"); assert.match(review.blocker,/NCR-0002 has no corrective action/)
+  const failed={...base,item:{...item,review_status:"returned"},current:{number:2,status:"failed"},ncrs:[{number:3,status:"open"}]}
+  assert.equal(workItemStage(failed).action,"start_correction")
+  assert.match(workItemStage(failed).status,/Inspection failed \(IR-0002\)\. 1 NCR to correct\./)
+  const draft=workItemStage({...failed,draft:{remarks:"Fixed",photos:0}})
+  assert.equal(draft.action,"submit_correction"); assert.match(draft.blocker,/at least 10 characters.*new eligible photo/)
+  assert.equal(workItemStage({...failed,draft:{remarks:"Re-levelled the slab",photos:2}}).blocker,"")
+  assert.equal(workItemStage({...failed,pinBusy:"IR-0009 is open on this work."}).owner,null)
+  assert.equal(workItemStage({...base,current:{number:4,status:"requested"}}).owner,"Engineer")
+  assert.equal(workItemStage({...base,current:{number:4,status:"in_progress"}}).stage,"inspecting")
+  const fresh={...base,item:{id:"wall",text:"WALL",done:false,review_status:"not_submitted"},attempts:0,current:null}
+  assert.equal(workItemStage({...fresh,eligiblePhotos:0}).next,"Foreman adds photos of WALL and marks it ready.")
+  assert.equal(workItemStage({...fresh,item:{...fresh.item,done:true}}).action,"submit")
+  assert.equal(workItemStage({...fresh,item:{...fresh.item,done:true},criteriaApproved:false}).owner,"Engineer")
+  assert.equal(workItemStage({...base,item:{...item,review_status:"verified"},pinCompleted:true}).status,"FLOOR accepted by the Engineer. Work completed.")
+})
+test("One request per work: another item's open inspection or pending acceptance blocks this item only", () => {
+  const items=[{id:"floor",text:"FLOOR",done:true,review_status:"for_review",review_inspection_id:"i4"},{id:"wall",text:"WALL",done:true,review_status:"returned"}]
+  assert.match(pinBusy("wall",items,{id:"i4",number:4}),/IR-0004 \(FLOOR\) is open/)
+  assert.equal(pinBusy("floor",items,{id:"i4",number:4}),null)
+  assert.match(pinBusy("wall",items,null),/FLOOR is waiting for Engineer acceptance/)
+  assert.equal(pinBusy("floor",items,null),null)
+})
+test("The connected history merges inspection and NCR events newest first", () => {
+  const rows=connectedHistory(
+    [{id:1,inspection_id:"i1",actor_id:"e",note:"Inspection requested.",created_at:"2026-10-01T01:00:00Z"},{id:2,inspection_id:"i1",actor_id:"e",note:"Inspection failed",created_at:"2026-10-01T03:00:00Z"}],
+    [{id:7,defect_id:"n1",actor_id:null,kind:"raised",note:null,to_status:"open",created_at:"2026-10-01T03:00:00Z"},{id:8,defect_id:"n1",actor_id:"f",kind:"status",note:"Correction package submitted with IR-0002",to_status:"for_verification",created_at:"2026-10-02T01:00:00Z"}],
+    () => "IR-0001", () => "NCR-0001")
+  assert.deepEqual(rows.map(r=>r.key),["ncr-8","ncr-7","ir-2","ir-1"])
+  assert.equal(rows[0].text,"Now for verification: Correction package submitted with IR-0002")
+  assert.equal(workItemPath("foreman","p 1","x"),"/foreman/quality-control?project=p%201&item=x")
+  assert.equal(workItemPath("engineer","p","x"),"/engineer/verification?project=p&item=x")
+})
+test("Photo viewer zoom fits at 100 percent, increases in steps and cannot exceed 300 percent", () => {
+  assert.equal(adjustPhotoZoom(100,25),125)
+  assert.equal(adjustPhotoZoom(125,-25),100)
+  assert.equal(adjustPhotoZoom(100,-25),100)
+  assert.equal(adjustPhotoZoom(300,25),300)
+})
+test("QA reports group by checklist name, merging case and spacing without counting unfinished legacy items", () => {
+  const rows=[{id:"one",item_ids:null,checklist_snapshot:[{id:"f",text:" FLOOR ",done:true},{id:"c",text:"CEILING",done:false}]},{id:"two",item_ids:["f","w"],checklist_snapshot:[{id:"f",text:"floor",done:true},{id:"w",text:"WALL",done:true}]}]
+  const groups=checklistGroups(rows)
+  assert.deepEqual(groups.map(g=>g.key),["floor","wall"])
+  assert.deepEqual(groups[0].rows.map(row=>row.id),["one","two"])
+  assert.deepEqual(groups[1].rows.map(row=>row.id),["two"])
+  assert.deepEqual(checklistNames(rows[0]),["FLOOR"])
+  assert.deepEqual(submittedChecklistItems(rows[1],undefined,"wall").map(i=>i.id),["w"])
+  assert.equal(checklistGroups(rows,"f").length,1)
+  assert.equal(checklistNameKey(" Main   WALL "),"main wall")
+})
+test("QA batch reports retain per-checklist original/resubmission numbering and isolate evidence item IDs", () => {
+  const rows=[{id:"one",checklist_snapshot:[{id:"f",text:"FLOOR",done:true}]},{id:"two",item_ids:["f","w"],checklist_snapshot:[{id:"f",text:"FLOOR",done:true},{id:"w",text:"WALL",done:true}]},{id:"three",item_ids:["f"],checklist_snapshot:[{id:"f",text:"FLOOR FINISH",done:true}]}]
+  assert.equal(checklistAttemptNumber(rows,rows[1],undefined,"floor"),1)
+  assert.equal(checklistAttemptNumber(rows,rows[1],undefined,"wall"),0)
+  assert.equal(checklistAttemptNumber(rows,rows[2],"f"),2)
+  const ids=new Set(submittedChecklistItems(rows[1],undefined,"wall").map(i=>i.id))
+  assert.deepEqual([{id:"floor-photo",checklist_item_id:"f"},{id:"wall-photo",checklist_item_id:"w"}].filter(p=>ids.has(p.checklist_item_id)).map(p=>p.id),["wall-photo"])
+  assert.equal(rows[1].checklist_snapshot.length,2)
+})
+test("Explicit QA item IDs take precedence over legacy readiness flags", () => {
+  const row={item_ids:["w"],checklist_snapshot:[{id:"f",text:"FLOOR",done:true},{id:"w",text:"WALL",done:true}]}
+  assert.deepEqual(checklistNames(row),["WALL"])
+  assert.equal(checklistGroups([]).length,0)
+})
 console.log(`\n${passed} passed${process.exitCode ? ", some FAILED" : ""}`)

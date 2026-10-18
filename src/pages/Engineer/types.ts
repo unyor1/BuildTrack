@@ -1,4 +1,4 @@
-export type EngineerPageKey = "dashboard" | "projects" | "project-blueprint" | "annotation" | "verification" | "report-issue" | "progress" | "assignments" | "reports" | "qa"
+export type EngineerPageKey = "dashboard" | "projects" | "project-blueprint" | "annotation" | "verification" | "report-issue" | "progress" | "assignments" | "reports" | "qa" | "checklists"
 
 export type EngineerNavigate = (page: EngineerPageKey) => void
 

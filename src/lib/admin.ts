@@ -20,6 +20,7 @@ const actionLabels: Record<string, string> = {
   "project_members.delete": "Removed from project",
   "user.create": "Created user",
   "user.update": "Edited user",
+  "user.promote_admin": "Promoted user to Admin",
   "user.approve": "Approved user",
   "user.reject": "Rejected user",
   "user.reopen": "Reconsidered a rejected registration",

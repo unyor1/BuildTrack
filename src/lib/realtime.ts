@@ -7,9 +7,11 @@ import { supabase } from "./supabase"
 // Not used inside the blueprint editor, whose optimistic edits and undo stack must not be replaced mid-gesture.
 
 export type LiveTable =
-  | "pins" | "pin_events" | "pin_photos"
+  | "pins" | "pin_events" | "pin_photos" | "pin_checklist_items" | "daily_report_photos"
   | "qa_inspections" | "qa_inspection_items" | "qa_defects" | "qa_defect_events" | "qa_photos"
   | "client_snags" | "daily_reports" | "project_questions" | "notifications"
+  | "daily_report_revisions" | "biometric_daily_totals"
+  | "qa_work_attempts" | "qa_inspection_events" | "pin_qa_submissions"
 
 // `filter` uses the Realtime syntax, for example "project_id=eq.<uuid>".
 export type LiveSource = { table: LiveTable; filter?: string }

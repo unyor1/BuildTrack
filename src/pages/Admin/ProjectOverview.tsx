@@ -95,12 +95,6 @@ export default function ProjectOverview({ onNavigate }: AdminPageProps) {
           ) : undefined
         }
       />
-      <div className="overview-tabs">
-        <button className="is-active">Overview</button>
-        <button onClick={() => onNavigate("blueprint-upload")}>Blueprint</button>
-        <button onClick={() => onNavigate("blueprint-progress")}>Verified Progress</button>
-        <button onClick={() => onNavigate("blueprint-mapping")}>Pin mapping</button>
-      </div>
 
       <ProjectHealth projects={[project]} />
 

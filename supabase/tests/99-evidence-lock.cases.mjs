@@ -1,4 +1,5 @@
 // Tests for 0033 (evidence lock) and 0034 (live-update publication).
+import { passWorkFixture } from "./qa-fixtures.mjs"
 export default async function ({ db, ids, as, asOwner, test, expectFail, count }) {
   const P1 = ids.p1
 
@@ -6,9 +7,10 @@ export default async function ({ db, ids, as, asOwner, test, expectFail, count }
   const sheet = (await db.query("insert into public.blueprints (project_id, title) values ($1, 'Evidence test plan') returning id", [P1])).rows[0].id
   const newPin = async (title) => {
     await as("eng1", "aal2")
-    return (await db.query("insert into public.pins (project_id, blueprint_id, x, y, title) values ($1, $2, 20, 30, $3) returning id", [P1, sheet, title])).rows[0].id
+    return (await db.query("insert into public.pins (project_id, blueprint_id, x, y, title, assigned_to) values ($1, $2, 20, 30, $3, $4) returning id", [P1, sheet, title, ids.fore1])).rows[0].id
   }
   const setStatus = async (pin, status) => {
+    if (status === "verified") await passWorkFixture({db,ids,as,asOwner},pin)
     await as("eng1", "aal2")
     await db.query("update public.pins set status = $2 where id = $1", [pin, status])
   }
@@ -94,7 +96,7 @@ export default async function ({ db, ids, as, asOwner, test, expectFail, count }
     await setStatus(pin, "issue")
     await asOwner()
     if ((await db.query("select verified_at from public.pins where id = $1", [pin])).rows[0].verified_at !== null) throw new Error("verified_at should be cleared")
-    await as("admin", "aal2")
+    await as("eng1", "aal2")
     await expectFail("delete from public.pins where id = $1", [pin], /evidence/)
   })
 
@@ -109,7 +111,7 @@ export default async function ({ db, ids, as, asOwner, test, expectFail, count }
     await expectFail("delete from public.blueprints where id = $1", [sheet], /evidence/)
     await as("eng1", "aal2")
     const spare = (await db.query("insert into public.blueprints (project_id, title) values ($1, 'Spare plan') returning id", [P1])).rows[0].id
-    const fresh = (await db.query("insert into public.pins (project_id, blueprint_id, x, y, title) values ($1, $2, 5, 5, 'Not started yet') returning id", [P1, spare])).rows[0].id
+    const fresh = (await db.query("insert into public.pins (project_id, blueprint_id, x, y, title, assigned_to) values ($1, $2, 5, 5, 'Not started yet', $3) returning id", [P1, spare, ids.fore1])).rows[0].id
     await addPhoto(fresh, "draft")
     await as("admin", "aal2")
     await db.query("delete from public.blueprints where id = $1", [spare])
@@ -120,7 +122,7 @@ export default async function ({ db, ids, as, asOwner, test, expectFail, count }
   await test("Live updates are published for the work tables only; profiles, identity and audit are never published", async () => {
     await asOwner()
     const rows = (await db.query("select tablename from pg_publication_tables where pubname = 'supabase_realtime' order by tablename")).rows.map((row) => row.tablename)
-    const expected = ["client_snags", "daily_reports", "notifications", "pin_events", "pin_photos", "pins", "project_questions", "qa_defect_events", "qa_defects", "qa_inspection_items", "qa_inspections", "qa_photos"]
+    const expected = ["biometric_daily_totals", "client_snags", "daily_report_photos", "daily_report_revisions", "daily_reports", "notifications", "pin_checklist_items", "pin_events", "pin_photos", "pins", "project_questions", "qa_defect_events", "qa_defects", "qa_inspection_events", "qa_inspection_items", "qa_inspections", "qa_photos", "qa_work_attempts"]
     if (JSON.stringify(rows) !== JSON.stringify(expected)) throw new Error("published: " + rows.join(", "))
   })
 }

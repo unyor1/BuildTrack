@@ -33,7 +33,7 @@ type View = { scale: number; tx: number; ty: number }
 
 type Gesture =
   | { type: "pan"; x: number; y: number; tx: number; ty: number; moved: boolean }
-  | { type: "dragPin"; id: string; moved: boolean }
+  | { type: "dragPin"; id: string; moved: boolean; offsetX: number; offsetY: number }
   | { type: "dragAnn"; ids: string[]; start: Point; moved: boolean; target: string; reduce: boolean }
   | { type: "resize"; id: string; corner: Corner; x0: number; y0: number; orig: { x: number; y: number; w: number; h: number }; rotation: number; kind: Annotation["kind"]; moved: boolean }
   | { type: "rotate"; id: string; cx: number; cy: number; moved: boolean }
@@ -305,7 +305,7 @@ export default function StageCanvas(props: Props) {
     if (tool === "select") {
       if (pressedPin) {
         props.onPick({ type: "pin", id: pressedPin.id }, false)
-        gesture.current = canEdit && !pressedPin.locked ? { type: "dragPin", id: pressedPin.id, moved: false } : panGesture
+        gesture.current = canEdit && !pressedPin.locked && point ? { type: "dragPin", id: pressedPin.id, moved: false, offsetX: pressedPin.x - point.x, offsetY: pressedPin.y - point.y } : panGesture
         return
       }
       if (pressedAnn) {
@@ -384,7 +384,7 @@ export default function StageCanvas(props: Props) {
       }
     } else if (g.type === "dragPin" && point) {
       g.moved = true
-      setDragging({ type: "pin", id: g.id, x: point.x, y: point.y })
+      setDragging({ type: "pin", id: g.id, x: clamp(point.x + g.offsetX, 0, 100), y: clamp(point.y + g.offsetY, 0, 100) })
     } else if (g.type === "dragAnn" && point) {
       const moved = Math.abs(point.x - g.start.x) + Math.abs(point.y - g.start.y) > 0.3
       if (moved) g.moved = true
@@ -930,11 +930,15 @@ export default function StageCanvas(props: Props) {
                     tabIndex={-1}
                     data-pin-id={pin.id}
                     title={`${pin.title} (${statusLabels[pin.status]})${pin.locked ? " - locked" : ""}`}
-                    aria-label={`${pin.title}, ${statusLabels[pin.status]}${pin.locked ? ", locked" : ""}`}
-                    className={`absolute flex h-6 w-6 items-center justify-center rounded-full border-2 border-white text-[11px] font-bold text-white shadow-md transition-none ${isSelected ? "ring-4 ring-black/30" : ""}`}
-                    style={{ zIndex: PIN_Z + (isSelected ? 1 : 0), left: `${p.x}%`, top: `${p.y}%`, background: statusDot[pin.status], transform: `translate(-50%, -50%) scale(${(isSelected ? 1.25 : 1) * inverse})`, cursor: pin.locked && tool === "select" ? "default" : tool === "stamp" ? "pointer" : isSelected && canEdit && tool === "select" && !readOnly ? "move" : "pointer" }}
+                    aria-label={`Pin ${numberOf(pin)}: ${pin.title}, ${statusLabels[pin.status]}${pin.locked ? ", locked" : ""}`}
+                    className="absolute h-11 w-8 border-0 bg-transparent p-0 transition-none"
+                    style={{ zIndex: PIN_Z + (isSelected ? 1 : 0), left: `${p.x}%`, top: `${p.y}%`, transformOrigin: "50% 100%", transform: `translate(-50%, -100%) scale(${(isSelected ? 1.2 : 1) * inverse})`, filter: isSelected ? "drop-shadow(0 0 3px #111)" : "drop-shadow(0 2px 2px #0005)", cursor: pin.locked && tool === "select" ? "default" : tool === "stamp" ? "pointer" : isSelected && canEdit && tool === "select" && !readOnly ? "move" : "pointer" }}
                   >
-                    {numberOf(pin)}
+                    <svg viewBox="0 0 32 44" className="pointer-events-none h-full w-full" aria-hidden="true">
+                      <path d="M16 44 3.8 24A15 15 0 1 1 28.2 24Z" fill={statusDot[pin.status]} stroke="white" strokeWidth="1" />
+                      <circle cx="16" cy="16" r="8.5" fill="white" />
+                      <text x="16" y="16" dy=".35em" textAnchor="middle" fill="#211f20" fontWeight="800" fontSize={numberOf(pin) > 99 ? 8 : 11}>{numberOf(pin)}</text>
+                    </svg>
                     {pin.locked ? <span className="absolute -right-1.5 -top-1.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-[#211f20] text-[8px] leading-none" aria-hidden="true">🔒</span> : null}
                   </button>
                 )
@@ -942,7 +946,7 @@ export default function StageCanvas(props: Props) {
             : null}
 
           {props.draftPin ? (
-            <span className="pointer-events-none absolute h-6 w-6 rounded-full border-2 border-dashed border-white bg-[#9e1f93]/70" style={{ zIndex: PIN_Z + 2, left: `${props.draftPin.x}%`, top: `${props.draftPin.y}%`, transform: `translate(-50%, -50%) scale(${inverse})` }} />
+            <svg viewBox="0 0 32 44" className="pointer-events-none absolute h-11 w-8 opacity-70" style={{ zIndex: PIN_Z + 2, left: `${props.draftPin.x}%`, top: `${props.draftPin.y}%`, transformOrigin: "50% 100%", transform: `translate(-50%, -100%) scale(${inverse})` }}><path d="M16 43 3.8 24A15 15 0 1 1 28.2 24Z" fill="#9e1f93" stroke="white" /><circle cx="16" cy="16" r="8.5" fill="white" /></svg>
           ) : null}
         </div>
       ) : (

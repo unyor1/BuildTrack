@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react"
+import { useMemo, useState, type ReactNode } from "react"
 import { useAuth } from "../lib/auth"
 import { openProject, statusLabels, useProjects, type ProjectRole, type ProjectStatus } from "../lib/projects"
 import ProjectCard from "./ProjectCard"
@@ -6,7 +6,7 @@ import { SkeletonCardGrid } from "./ui/Skeleton"
 
 // Drive-style grid of the projects the signed-in Engineer / Foreman / Client is assigned to.
 // The database (RLS) only returns those; clicking a card opens that project's workspace for the user's role.
-export default function AssignedProjects({ title = "My assigned projects" }: { title?: string }) {
+export default function AssignedProjects({ title = "My assigned projects", cardExtra }: { title?: string; cardExtra?: (projectId: string) => ReactNode }) {
   const { profile } = useAuth()
   const { projects, loading, error, reload } = useProjects()
   const [query, setQuery] = useState("")
@@ -72,6 +72,7 @@ export default function AssignedProjects({ title = "My assigned projects" }: { t
             key={project.id}
             project={project}
             onOpen={role ? () => openProject(role, project.id) : undefined}
+            actions={cardExtra?.(project.id)}
           />
         ))}
       </div>

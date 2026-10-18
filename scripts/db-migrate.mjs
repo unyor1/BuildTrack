@@ -51,11 +51,12 @@ const quote = (value) => `'${String(value).replace(/'/g, "''")}'`
 const checksum = (text) => createHash("sha256").update(text).digest("hex")
 
 const migrations = readdirSync(migrationsDir)
-  .filter((file) => /^\d{4}_.+\.sql$/.test(file))
+  .filter((file) => /^\d{4}(?:\d{10})?_.+\.sql$/.test(file))
   .sort()
   .map((file) => {
     const body = readFileSync(join(migrationsDir, file), "utf8")
-    return { file, version: file.slice(0, 4), name: file.slice(5, -4), body, sum: checksum(body) }
+    const separator = file.indexOf("_")
+    return { file, version: file.slice(0, separator), name: file.slice(separator + 1, -4), body, sum: checksum(body) }
   })
 
 // Used ONCE, to recognise migrations that were applied by hand in the SQL Editor before this runner existed.

@@ -1,10 +1,11 @@
-import { useMemo, useState } from "react"
+import { useMemo, useRef, useState } from "react"
 import Modal from "../Modal"
 import { buttonPrimary, buttonSecondary, inputClass } from "../ui/PageParts"
 import type { Pin } from "../../lib/blueprints"
 import { qaActions, tradeLabels, type Template } from "../../lib/qa"
 import { useToast } from "../../lib/toast"
 import { Chip } from "./QaBits"
+import { usePinQa } from "../../lib/pinQa"
 
 const label = "mb-1 block text-xs font-extrabold uppercase tracking-wider text-fg-muted"
 
@@ -16,6 +17,7 @@ export default function NewInspectionModal({
   pins,
   initialTemplateId,
   initialPinId,
+  pendingPinIds = [],
   onClose,
   onCreated,
 }: {
@@ -24,6 +26,7 @@ export default function NewInspectionModal({
   pins: Pin[]
   initialTemplateId?: string
   initialPinId?: string
+  pendingPinIds?: string[]
   onClose: () => void
   onCreated: (inspectionId: string) => void | Promise<void>
 }) {
@@ -33,24 +36,33 @@ export default function NewInspectionModal({
   const chosen = usable.find((template) => template.id === templateId)
   const [title, setTitle] = useState("")
   const [pinId, setPinId] = useState(initialPinId ?? "")
+  const pinQa = usePinQa(pinId)
   const [location, setLocation] = useState("")
   const [note, setNote] = useState("")
   const [busy, setBusy] = useState(false)
+  const pending = useRef(false)
+  const blockReason = pinId ? pinQa.error || (!pinQa.state ? "Checking this work's pending QA requests…" : pinQa.state.submissionProblem || (pendingPinIds.includes(pinId) ? "This work already has a pending QA request." : "")) : ""
+  const blocked = Boolean(blockReason)
   const workPins = pins.filter((pin) => pin.category !== "note")
   const items = chosen?.qa_template_items ?? []
   const holds = items.filter((item) => item.hold_point).length
   const photos = items.filter((item) => item.requires_photo).length
 
   const submit = async () => {
+    if (pending.current || blocked) return
     if (!chosen) return toast.error("Choose a checklist")
     const text = title.trim() || chosen.name
     if (text.length < 3) return toast.error("Give the request a title")
+    pending.current = true
     setBusy(true)
-    const result = await qaActions.requestInspection({ projectId, templateId: chosen.id, title: text, pinId: pinId || null, location: location.trim(), note: note.trim() })
-    setBusy(false)
-    if (!result.ok) return toast.error("Request not sent", result.message)
-    toast.success("Inspection requested", "The project engineers have been notified")
-    await onCreated(result.data)
+    try {
+      if (pinId) { const why=await pinQa.preflight(); if(why) throw new Error(why) }
+      const result = await qaActions.requestInspection({ projectId, templateId: chosen.id, title: text, pinId: pinId || null, location: location.trim(), note: note.trim() })
+      if (!result.ok) return toast.error("Request not sent", result.message)
+      toast.success("Inspection requested", "The project engineers have been notified")
+      await onCreated(result.data)
+    } catch(e) { toast.error("Request not sent",(e as Error).message) }
+    finally { setBusy(false); pending.current=false }
   }
 
   const groups = [
@@ -60,18 +72,19 @@ export default function NewInspectionModal({
 
   return (
     <Modal
-      title="Request an inspection"
-      description="The engineer is notified and records the result against the checklist. Work that has a hold point must not go on until it passes."
+      title="Request a stage / hold-point inspection"
+      description="Use this for a stage or hold point. Submit work items from the work checklist for final acceptance. An open QA request blocks further requests for that work."
       size="lg"
       onClose={onClose}
       footer={
         <>
           <button type="button" className={buttonSecondary} onClick={onClose}>Cancel</button>
-          <button type="button" className={buttonPrimary} disabled={busy || !chosen} onClick={() => void submit()}>{busy ? "Sending..." : "Send request"}</button>
+          <button type="button" className={buttonPrimary} disabled={busy || !chosen || blocked} onClick={() => void submit()}>{busy ? "Sending..." : "Send stage request"}</button>
         </>
       }
     >
       <div className="space-y-4">
+        {blocked ? <p role="status" className="rounded-lg bg-amber-100 p-3 text-sm text-amber-950">{blockReason}</p> : null}
         <div>
           <label className={label} htmlFor="qa-template">Checklist</label>
           <select id="qa-template" className={inputClass} value={templateId} onChange={(event) => setTemplateId(event.target.value)}>
@@ -106,7 +119,7 @@ export default function NewInspectionModal({
             <label className={label} htmlFor="qa-pin">Linked pin (optional)</label>
             <select id="qa-pin" className={inputClass} value={pinId} onChange={(event) => setPinId(event.target.value)}>
               <option value="">No pin</option>
-              {workPins.map((pin) => <option key={pin.id} value={pin.id}>{pin.title}</option>)}
+              {workPins.map((pin) => <option key={pin.id} value={pin.id} disabled={pendingPinIds.includes(pin.id) || pin.status === "verified"}>{pin.title}{pendingPinIds.includes(pin.id) ? " · QA pending" : pin.status === "verified" ? " · Completed" : ""}</option>)}
             </select>
           </div>
         </div>

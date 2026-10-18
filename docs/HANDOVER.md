@@ -7,21 +7,22 @@ For the teammates who take the project from here. Read [README.md](../README.md)
 One piece of work travels through the whole system. Follow a pin and you have seen most of it.
 
 ```
-Engineer uploads a plan sheet  ->  places a PIN on it (x/y in percent, due date, discipline)
+Engineer uploads a plan sheet  ->  places a PIN (the work, e.g. LAUNDRY) with WORK ITEMS (FLOOR, WALL...) and approves its inspection criteria
         |                                   |
         |                         assigns it to a FOREMAN  ->  notification (bell + email queue)
         |                                   |
-        |            Foreman reports progress + photos (works offline, syncs later)
-        |                                   |   status: not started -> in progress -> for review
+        |            Foreman: photos per work item -> Ready -> submits it for QA (one open request per work)
         v                                   v
-   Verification queue  <----  "for review" pin  ---->  EVIDENCE LOCK: from here on the pin and its photos cannot be deleted
+   Review inbox  <----  work item requested  ---->  EVIDENCE LOCK: submitted photos and remarks stay on record
         |
-   Engineer verifies (or sends back with a reason)
+   Engineer inspects against the criteria -> Passed, or failed criteria raise NCRs (due dates by severity)
+        |                                   |
+        |               Foreman: ONE correction package (fix + new photos + the NCRs it answers) -> linked re-inspection
+        |                                   |
+   Engineer closes / sends back each NCR, then Accepts the work item (all inside the work item record)
         |
-        +--> counts as PROGRESS: dashboards, S-curve, client portal, Project Health (all read the same pins)
-        +--> inspection requested -> checklist, measurements, photos -> failed items raise NCRs (due dates by severity)
-                                          |
-                                  Foreman fixes the NCR with a photo -> engineer verifies and closes
+        +--> every item Accepted + every NCR / inspection clear = work COMPLETED: counts as PROGRESS (dashboards, S-curve, client portal, Project Health)
+        +--> stage / hold-point inspections are separate requests; their results and NCRs also block completion
         +--> client sees plain-language progress; a client's "report a problem" can become an NCR
 ```
 

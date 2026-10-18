@@ -1,4 +1,5 @@
 // Tests for 0017: drawing kinds, layering, locks (annotation / pin / base layer) and the edit history.
+import { submitWorkFixture } from "./qa-fixtures.mjs"
 export default async function ({ db, ids, as, asOwner, test, expectOk, expectFail, count }) {
   const P1 = ids.p1
   await as("eng1", "aal2")
@@ -146,7 +147,7 @@ export default async function ({ db, ids, as, asOwner, test, expectOk, expectFai
   // ---- Pin locks ----
   await test("A locked pin cannot be moved, renamed or deleted, but its status can still be reported and set", async () => {
     await as("eng1", "aal2")
-    ids.pinA = (await db.query("insert into public.pins (project_id, blueprint_id, x, y, title) values ($1, $2, 40, 40, 'Column C9') returning id", [P1, bp])).rows[0].id
+    ids.pinA = (await db.query("insert into public.pins (project_id, blueprint_id, x, y, title, assigned_to) values ($1, $2, 40, 40, 'Column C9', $3) returning id", [P1, bp, ids.fore1])).rows[0].id
     await expectOk("update public.pins set locked = true where id = $1", [ids.pinA])
     await expectFail("update public.pins set x = 50 where id = $1", [ids.pinA], /locked/)
     await expectFail("update public.pins set title = 'Renamed' where id = $1", [ids.pinA], /locked/)
@@ -154,10 +155,11 @@ export default async function ({ db, ids, as, asOwner, test, expectOk, expectFai
     await expectFail("delete from public.pins where id = $1", [ids.pinA], /locked/)
     await expectOk("update public.pins set status = 'in_progress' where id = $1", [ids.pinA])
     await as("fore1", "aal2")
-    await expectOk("select public.report_pin_progress($1, 'for_review', 'ready')", [ids.pinA])
+    await expectFail("select public.report_pin_progress($1, 'for_review', 'ready')", [ids.pinA], /Submit for QA inspection/)
     await as("eng1", "aal2")
     await expectOk("update public.pins set locked = false where id = $1", [ids.pinA])
     await expectOk("update public.pins set x = 55 where id = $1", [ids.pinA])
+    await submitWorkFixture({db,ids,as,asOwner},ids.pinA)
   })
 
   await test("Lock all / unlock all covers every annotation and pin of the sheet; outsiders and Clients are refused", async () => {

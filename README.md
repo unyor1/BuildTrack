@@ -9,8 +9,8 @@ Construction site progress and quality assurance for **Valencia Construction Ser
 | Role | Workspace | Main jobs |
 |---|---|---|
 | Admin / Super Admin | Control center | Projects, users and access, invitations, approvals, ID checks, audit log, settings, backups |
-| Engineer | Engineering office | Plans and pins, assignments, verify or send back work, QA inspections and NCRs, progress and S-curve, reports |
-| Foreman | Field operations | My pins, report progress with photos, daily reports, inspection requests, fix NCRs (works offline) |
+| Engineer | Engineering office | Plans and pins, assignments, review inbox (inspect, decide NCR corrections, accept work items), QA register, progress and S-curve, reports |
+| Foreman | Field operations | My work, report progress with photos, daily reports, QA requests, corrections in one form (progress works offline) |
 | Client | Client portal | Honest progress (only verified work), plans, site logs, report a problem, ask the team |
 | Basic user | My account | Profile, ID verification, ask for a role |
 

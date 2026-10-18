@@ -1,0 +1,360 @@
+import { useEffect, useId, useMemo, useRef, useState } from "react"
+import Modal from "../Modal"
+import BeforeAfter from "../BeforeAfter"
+import LimitedTimeline from "../ui/LimitedTimeline"
+import { SkeletonList } from "../ui/Skeleton"
+import { buttonDanger, buttonPrimary, buttonSecondary, inputClass } from "../ui/PageParts"
+import { ChecklistUploadButton, PinPhotos, dbMessage, field } from "../editor/PinParts"
+import { CriteriaApproval } from "./PinQaSubmission"
+import CorrectionForm from "./CorrectionForm"
+import DefectDetail from "./DefectDetail"
+import InspectionDetail from "./InspectionDetail"
+import QaAttemptHistory from "./QaAttemptHistory"
+import { Chip, SeverityChip } from "./QaBits"
+import { NextActionCard, StageRail } from "./WorkItemParts"
+import { useAuth } from "../../lib/auth"
+import { useConfirm } from "../../lib/confirm"
+import { useToast } from "../../lib/toast"
+import { formatStamp, type PinPhoto } from "../../lib/blueprints"
+import { followLink } from "../../lib/notifications"
+import { photoEligible, photoPreviewBlocked } from "../../lib/photoStamp"
+import { manilaToday } from "../../lib/progress"
+import { useProject, useProjectTeam } from "../../lib/projects"
+import { defectStatusLabels, defectTone, dueText, inspectionStatusLabels, inspectionTone, qaActions, useInspectionItems, type Defect, type Inspection } from "../../lib/qa"
+import { useSettings } from "../../lib/settings"
+import { supabase } from "../../lib/supabase"
+import { useDefectHistory, useWorkItem } from "../../lib/workItem"
+import { acceptProblem, connectedHistory, irRef, ncrRef, pinLevelDefects, type SubmissionRef } from "../../lib/workItemModel"
+
+type Tab = "inspection" | "corrections" | "evidence" | "history"
+const tabNames: Record<Tab, string> = { inspection: "Inspection", corrections: "Corrections & NCRs", evidence: "Evidence", history: "Attempts & history" }
+const heading = "mb-2 text-xs font-extrabold uppercase tracking-wider text-fg-muted"
+const resultTone: Record<string, string> = { pass: "bg-green-100 text-green-900 dark:bg-green-900/40 dark:text-green-100", fail: "bg-red-100 text-red-900 dark:bg-red-900/40 dark:text-red-100", na: "bg-surface-muted text-fg-muted", pending: "bg-surface-muted text-fg-muted" }
+const resultWord: Record<string, string> = { pass: "Pass", fail: "Fail", na: "N/A", pending: "Not judged" }
+
+// One work item (e.g. LAUNDRY -> FLOOR) as one record: next action, current inspection, corrections and linked NCRs, evidence,
+// and every attempt with one connected history. The Foreman prepares and corrects here; the Engineer inspects, decides NCRs and
+// accepts here. Every write is a checked database function.
+export default function WorkItemWorkspace({ itemId, onClose, onChanged, fromPlan = false }: { itemId: string; onClose: () => void; onChanged?: () => void | Promise<void>; fromPlan?: boolean }) {
+  const { profile } = useAuth()
+  const toast = useToast()
+  const confirm = useConfirm()
+  const formId = useId().replace(/:/g, "")
+  const data = useWorkItem(itemId)
+  const { item, pin, stage, draft, photos, defects, history, qa } = data
+  const { project } = useProject(pin?.project_id ?? null)
+  const { team } = useProjectTeam(pin?.project_id ?? null)
+  const { settings } = useSettings()
+  const [tab, setTab] = useState<Tab | null>(null)
+  const [busy, setBusy] = useState(false)
+  const pending = useRef(false)
+  const [inspectionOpen, setInspectionOpen] = useState<string | null>(null)
+  const [defectOpen, setDefectOpen] = useState<string | null>(null)
+  const [returning, setReturning] = useState(false)
+
+  const nameOf = (id: string | null) => (id ? team.find((member) => member.user_id === id)?.full_name ?? "Someone on the team" : "Unassigned")
+  const engineer = profile?.role === "engineer"
+  const foreman = Boolean(pin && profile?.role === "foreman" && profile.status === "active" && pin.assigned_to === profile.id)
+  const view = stage?.view ?? null
+  const current = stage?.current ?? null
+  const submissions = history.submissions as unknown as SubmissionRef[]
+  const ncrs = stage?.ncrs ?? []
+  const otherNcrs = pin ? pinLevelDefects(pin.id, submissions, defects) : []
+  const previousIr = stage?.attempts.length ? stage.attempts[stage.attempts.length - 1].inspection?.number ?? null : null
+
+  // Open on the tab where the next action happens.
+  useEffect(() => {
+    if (tab || !view) return
+    setTab(view.stage === "correction" || view.action === "review_ncrs" || view.action === "open_ncr" ? "corrections"
+      : view.stage === "preparing" || view.stage === "ready" ? "evidence" : view.stage === "accepted" ? "history" : "inspection")
+  }, [view, tab])
+
+  const reload = async () => { await data.reload(); await onChanged?.() }
+  const run = async (action: () => Promise<{ ok: true } | { ok: false; message: string }>, failure: string, success: string, detail?: string) => {
+    if (pending.current) return false
+    pending.current = true
+    setBusy(true)
+    try {
+      if (!navigator.onLine) throw new Error("Connect to the internet first. QA steps are not queued offline.")
+      const outcome = await action()
+      if (!outcome.ok) throw new Error(outcome.message)
+      toast.success(success, detail)
+      await reload()
+      return true
+    } catch (error) {
+      toast.error(failure, (error as Error).message)
+      await data.reload()
+      return false
+    } finally { pending.current = false; setBusy(false) }
+  }
+
+  if (data.missing) {
+    return <Modal title="Work item not found" onClose={onClose} footer={<button type="button" className={buttonSecondary} onClick={onClose}>Close</button>}>
+      <p className="text-sm">This work item was removed, or it is not part of a project you can open.</p>
+    </Modal>
+  }
+  if (!item || !pin || !view || !stage) {
+    return <Modal title="Opening the work item" size="2xl" onClose={onClose}><SkeletonList rows={4} label="Loading the work item" /></Modal>
+  }
+
+  const name = item.text
+  const responsible = view.owner === "Foreman" ? nameOf(pin.assigned_to) : current?.inspector_id ? nameOf(current.inspector_id) : current?.escalation_owner ? nameOf(current.escalation_owner) : "Project Engineer"
+  const eligibleInitial = photos.filter((photo) => photo.checklist_item_id === item.id && !photo.qa_attempt_id && photoEligible(photo)).length
+  const openNcrs = ncrs.filter((row) => row.status !== "closed").length
+  const acceptBlock = acceptProblem({ loading: history.loading, error: data.error, open: Boolean(stage.open), inspectionStatus: current?.status, openItemNcrs: openNcrs })
+  const firstToFix = ncrs.find((row) => row.status === "open" || row.status === "in_progress")
+
+  const tick = async (value: boolean) => {
+    if (value && !eligibleInitial) { setTab("evidence"); return toast.info("Add a photo first", `Upload a photo of the finished ${name}, then mark it ready.`) }
+    await run(async () => {
+      const { data: rows, error } = await supabase.from("pin_checklist_items").update({ done: value }).eq("id", item.id).select("id")
+      return error || !rows?.length ? { ok: false, message: error ? dbMessage(error) : "Only the Foreman assigned to this work can mark it ready." } : { ok: true }
+    }, "Not saved", value ? `${name} is ready` : `${name} reopened`)
+  }
+  const submitFirst = async () => {
+    const problem = await qa.preflight().catch((error: Error) => error.message)
+    if (problem) return toast.error("QA request not sent", problem)
+    if (!(await confirm({ title: `Submit ${name} for QA?`, message: `${pin.title} → ${name}. The Engineer inspects it against the approved criteria. Its photos and remark are locked while the request is open.`, confirmLabel: "Submit for inspection" }))) return
+    await run(() => qaActions.submitItems(pin.id, [item.id]), "QA request not sent", "QA requested", "The project Engineer has been notified.")
+  }
+  const startCorrection = async () => {
+    if (await run(() => qaActions.beginCorrection(item.id), "Could not start the correction", "Correction started", "Describe the fix, add new photos and choose the NCRs it answers.")) setTab("corrections")
+  }
+  const accept = async () => {
+    if (acceptBlock) return toast.error("Not ready to accept", acceptBlock)
+    if (!(await confirm({ title: `Accept ${name}?`, message: `The inspection passed and every NCR linked to ${name} is closed. The work is Completed automatically when every item is accepted and the work has no open NCR or inspection.`, confirmLabel: `Accept ${name}` }))) return
+    await run(() => qaActions.reviewItem(item.id, true), "Not accepted", `${name} accepted`)
+  }
+
+  const primary = (() => {
+    if (foreman) {
+      if (view.action === "add_evidence") return !item.done && eligibleInitial
+        ? <button type="button" className={buttonPrimary} disabled={busy} onClick={() => void tick(true)}>Mark {name} ready</button>
+        : <button type="button" className={buttonPrimary} onClick={() => setTab("evidence")}>Add photos</button>
+      if (view.action === "submit") return <button type="button" className={buttonPrimary} disabled={busy} onClick={() => void submitFirst()}>Submit {name} for QA</button>
+      if (view.action === "start_correction") return <button type="button" className={buttonPrimary} disabled={busy} onClick={() => void startCorrection()}>Start correction</button>
+      if (view.action === "submit_correction") return tab === "corrections"
+        ? <button type="submit" form={formId} className={buttonPrimary} disabled={busy}>{busy ? "Sending…" : "Submit correction package"}</button>
+        : <button type="button" className={buttonPrimary} onClick={() => setTab("corrections")}>Open correction form</button>
+      if (view.action === "open_ncr" && firstToFix) return <button type="button" className={buttonPrimary} onClick={() => setDefectOpen(firstToFix.id)}>Correct {ncrRef(firstToFix.number)}</button>
+    }
+    if (engineer) {
+      if (view.action === "inspect" && current) return <button type="button" className={buttonPrimary} onClick={() => setInspectionOpen(current.id)}>{current.status === "requested" ? "Start inspection" : "Record results"}</button>
+      if (view.action === "review_ncrs") return <button type="button" className={buttonPrimary} onClick={() => setTab("corrections")}>Review NCR corrections</button>
+      if (view.action === "accept") return <button type="button" className={buttonPrimary} disabled={busy || Boolean(acceptBlock)} title={acceptBlock || undefined} onClick={() => void accept()}>Accept {name}</button>
+    }
+    return null
+  })()
+
+  const footer = <>
+    <button type="button" className={buttonSecondary} onClick={onClose}>Close</button>
+    {!fromPlan ? <button type="button" className={buttonSecondary} onClick={() => followLink(`/${engineer ? "engineer/annotation" : "foreman/daily-work"}?project=${pin.project_id}&pin=${pin.id}`, pin.project_id)}>Open on the plan</button> : null}
+    {engineer && (item.review_status === "for_review" || item.review_status === "verified") && !stage.open ? <button type="button" className={buttonSecondary} disabled={busy} onClick={() => setReturning(true)}>{item.review_status === "verified" ? `Reopen ${name}` : `Return ${name}`}</button> : null}
+    {primary}
+  </>
+
+  return (
+    <Modal title={`${pin.title} → ${name}`} description={`Inspection criteria: ${data.templateName ?? "not approved yet"} · Foreman: ${nameOf(pin.assigned_to)}`} size="2xl" onClose={busy ? () => undefined : onClose} footer={footer}>
+      <div className="min-w-0 space-y-4">
+        <NextActionCard view={view} responsible={responsible}>
+          {engineer && view.action === "approve_criteria" ? <CriteriaApproval pin={pin} qa={qa} compact onChanged={reload} /> : null}
+        </NextActionCard>
+        <StageRail stage={view.stage} completed={pin.status === "verified"} />
+        {data.error ? <p role="alert" className="rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger-fg">{data.error}</p> : null}
+
+        <div className="flex flex-wrap gap-1 border-b border-line pb-2" role="tablist" aria-label="Work item sections">
+          {(Object.keys(tabNames) as Tab[]).map((key) => (
+            <button key={key} type="button" role="tab" id={`${formId}-tab-${key}`} aria-selected={tab === key} aria-controls={`${formId}-panel-${key}`} onClick={() => setTab(key)} className={`rounded-lg px-3.5 py-1.5 text-sm font-bold ${tab === key ? "bg-brand text-white" : "text-fg-muted hover:bg-surface-muted"}`}>
+              {tabNames[key]}{key === "corrections" && openNcrs ? <span className={`ml-1.5 rounded-full px-1.5 text-[11px] ${tab === key ? "bg-white/25" : "bg-surface-muted"}`}>{openNcrs}</span> : null}
+            </button>
+          ))}
+        </div>
+
+        <section hidden={tab !== "inspection"} role="tabpanel" id={`${formId}-panel-inspection`} aria-labelledby={`${formId}-tab-inspection`}>
+          {current ? <CurrentInspection inspection={current} attemptLabel={stage.attempts[stage.attempts.length - 1]?.label ?? ""} nameOf={nameOf} onOpen={() => setInspectionOpen(current.id)} />
+            : <p className="text-sm text-fg-muted">Not submitted yet. The Foreman submits {name} when it is ready; the Engineer then inspects it against the criteria.</p>}
+        </section>
+
+        <section hidden={tab !== "corrections"} role="tabpanel" id={`${formId}-panel-corrections`} aria-labelledby={`${formId}-tab-corrections`} className="space-y-4">
+          <div>
+            <h3 className={heading}>NCRs linked to {name}</h3>
+            {!ncrs.length ? <p className="text-sm text-fg-muted">No NCR has been raised against {name}.</p> : (
+              <ul className="space-y-2">{ncrs.map((row) => <NcrRow key={row.id} defect={row} today={manilaToday()} canDecide={engineer && row.status === "for_verification"} onOpen={() => setDefectOpen(row.id)} onDecided={reload} />)}</ul>
+            )}
+          </div>
+          {foreman && view.stage === "correction" ? (
+            <CorrectionForm formId={formId} item={item} pin={pin} draft={draft} previousIr={previousIr} pinItems={data.pinItems} attempts={history.attempts} photos={photos} defects={defects} submissions={submissions} onChanged={data.reload} onBusy={setBusy} />
+          ) : view.stage === "correction" ? <p className="text-sm text-fg-muted">The Foreman records the correction here once: remarks, new photos and the NCRs it answers. You then review the re-inspection and those NCRs together.</p> : null}
+          {otherNcrs.length ? <div>
+            <h3 className={heading}>Other NCRs on {pin.title} (block completion only)</h3>
+            <ul className="space-y-1.5">{otherNcrs.map((row) => <li key={row.id}><button type="button" onClick={() => setDefectOpen(row.id)} className="flex w-full flex-wrap items-center gap-2 rounded-lg border border-line px-3 py-2 text-left text-sm hover:bg-surface-muted"><strong>{ncrRef(row.number)}</strong><span className="min-w-0 flex-1 truncate">{row.title}</span><Chip tone={defectTone[row.status]}>{defectStatusLabels[row.status]}</Chip></button></li>)}</ul>
+          </div> : null}
+        </section>
+
+        <section hidden={tab !== "evidence"} role="tabpanel" id={`${formId}-panel-evidence`} aria-labelledby={`${formId}-tab-evidence`} className="space-y-4">
+          <EvidenceCompare itemId={item.id} label={`${pin.title} → ${name}`} attempts={stage.attempts.map((row) => row.submission as unknown as { photos_snapshot: PinPhoto[] })} draftPhotos={draft ? photos.filter((photo) => photo.qa_attempt_id === draft.id) : []} role={profile?.role} />
+          {!stage.attempts.length ? <InitialEvidence item={item} pin={pin} canWork={foreman && item.review_status !== "for_review"} meId={profile?.id ?? ""} onTick={tick} busy={busy} onChanged={data.reload} />
+            : draft ? <div><h3 className={heading}>Correction photos (next request)</h3><PinPhotos pin={pin} checklistItemId={item.id} attemptId={draft.id} canAdd={false} canRemoveAny={false} meId={profile?.id ?? ""} columns={3} /><p className="mt-1 text-xs text-fg-muted">Add or remove them in the correction form under Corrections &amp; NCRs.</p></div>
+            : <p className="text-sm text-fg-muted">Submitted photos and remarks are kept with each request under Attempts &amp; history, unchanged.</p>}
+        </section>
+
+        <section hidden={tab !== "history"} role="tabpanel" id={`${formId}-panel-history`} aria-labelledby={`${formId}-tab-history`} className="space-y-4">
+          <QaAttemptHistory history={history} projectId={pin.project_id} itemId={item.id} currentInspectionId={current?.id} onOpen={(id) => setInspectionOpen(id)} />
+          {!stage.attempts.length ? <p className="text-sm text-fg-muted">No request yet.</p> : null}
+          <ConnectedHistory inspections={stage.attempts.flatMap((row) => row.inspection ? [row.inspection] : [])} events={history.events} ncrs={ncrs} nameOf={nameOf} />
+        </section>
+      </div>
+
+      {inspectionOpen && project ? (() => {
+        const inspection = history.inspections.find((row) => row.id === inspectionOpen)
+        return inspection ? <InspectionDetail key={inspection.id} inspection={inspection} project={project} weights={settings.weights} threshold={settings.threshold} defects={defects} canInspect={engineer} canRequest={engineer || foreman}
+          nameOf={nameOf} onClose={() => setInspectionOpen(null)} onChanged={reload} onOpenDefect={(row) => { setInspectionOpen(null); setDefectOpen(row.id) }} onOpenInspection={setInspectionOpen} /> : null
+      })() : null}
+      {defectOpen && project ? (() => {
+        const defect = defects.find((row) => row.id === defectOpen)
+        return defect ? <DefectDetail key={defect.id} defect={defect} project={project} foremen={team.filter((member) => member.role === "foreman")} today={manilaToday()} canWork={!engineer} canVerify={engineer}
+          nameOf={nameOf} onClose={() => setDefectOpen(null)} onChanged={reload} onOpenInspection={(id) => { setDefectOpen(null); setInspectionOpen(id) }} /> : null
+      })() : null}
+      {returning ? <ReturnDialog name={name} reopen={item.review_status === "verified"} busy={busy} onClose={() => setReturning(false)} onSubmit={async (reason) => { if (await run(() => qaActions.reviewItem(item.id, false, reason), "Not returned", `${name} returned for correction`)) setReturning(false) }} /> : null}
+    </Modal>
+  )
+}
+
+function CurrentInspection({ inspection, attemptLabel, nameOf, onOpen }: { inspection: Inspection; attemptLabel: string; nameOf: (id: string | null) => string; onOpen: () => void }) {
+  const { items, loading } = useInspectionItems(inspection.id)
+  const done = ["passed", "failed", "conditional"].includes(inspection.status)
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center gap-2 text-sm">
+        <strong>{irRef(inspection.number)}</strong>
+        <Chip tone={inspectionTone[inspection.status]}>{inspectionStatusLabels[inspection.status]}</Chip>
+        {attemptLabel ? <span className="text-xs font-semibold text-fg-muted">{attemptLabel}</span> : null}
+        {inspection.score !== null ? <span className="text-xs font-bold tabular-nums">{inspection.score}%</span> : null}
+        <span className="text-xs text-fg-muted">Requested {formatStamp(inspection.requested_at)}{inspection.inspector_id ? ` · Inspector ${nameOf(inspection.inspector_id)}` : ""}{inspection.completed_at ? ` · Signed off ${formatStamp(inspection.completed_at)}` : ""}</span>
+        <button type="button" className={buttonSecondary + " ml-auto !py-1 !text-xs"} onClick={onOpen}>Open inspection record</button>
+      </div>
+      {inspection.summary ? <p className="rounded-lg bg-surface-muted px-3 py-2 text-sm"><strong>Inspector's summary:</strong> {inspection.summary}</p> : null}
+      <h3 className={heading}>Inspection criteria{done ? " and results" : ""}</h3>
+      {loading ? <SkeletonList rows={3} label="Loading the criteria" /> : (
+        <ol className="space-y-1.5">
+          {items.map((row) => (
+            <li key={row.id} className="flex flex-wrap items-start gap-2 rounded-lg border border-line p-2 text-sm">
+              <span className={`rounded px-1.5 py-0.5 text-[11px] font-extrabold uppercase ${resultTone[row.result]}`}>{resultWord[row.result]}</span>
+              <span className="min-w-0 flex-1">{row.text}{row.measured_value !== null ? <span className="text-fg-muted"> · measured {row.measured_value}{row.unit ? ` ${row.unit}` : ""}</span> : null}{row.remarks ? <span className="block text-xs text-fg-muted">{row.remarks}</span> : null}</span>
+              <SeverityChip severity={row.severity} />
+            </li>
+          ))}
+        </ol>
+      )}
+      <p className="text-xs text-fg-muted">The Foreman's ready tick is never an inspection result: only the Engineer records Pass or Fail against these criteria.</p>
+    </div>
+  )
+}
+
+function NcrRow({ defect, today, canDecide, onOpen, onDecided }: { defect: Defect; today: string; canDecide: boolean; onOpen: () => void; onDecided: () => Promise<void> }) {
+  const toast = useToast()
+  const confirm = useConfirm()
+  const [note, setNote] = useState("")
+  const [busy, setBusy] = useState(false)
+  const decide = async (close: boolean) => {
+    if (note.trim().length < 5) return toast.error("Write a verification note", "At least 5 characters.")
+    if (close && !(await confirm({ title: `Close ${ncrRef(defect.number)}?`, message: "Closing confirms the corrected work meets the requirement. It cannot be reopened.", confirmLabel: "Close NCR" }))) return
+    setBusy(true)
+    const outcome = await qaActions.verifyDefect(defect.id, close, note.trim())
+    setBusy(false)
+    if (!outcome.ok) return toast.error(close ? "Not closed" : "Not sent back", outcome.message)
+    toast.success(close ? `${ncrRef(defect.number)} closed` : `${ncrRef(defect.number)} sent back`, close ? undefined : "The work item returns to the Foreman's correction form.")
+    setNote("")
+    await onDecided()
+  }
+  return (
+    <li className="space-y-2 rounded-xl border border-line p-3">
+      <div className="flex flex-wrap items-center gap-2 text-sm">
+        <strong>{ncrRef(defect.number)}</strong>
+        <span className="min-w-0 flex-1">{defect.title}</span>
+        <SeverityChip severity={defect.severity} />
+        <Chip tone={defectTone[defect.status]}>{defectStatusLabels[defect.status]}</Chip>
+        <span className="text-xs text-fg-muted">{dueText(defect, today)}</span>
+        <button type="button" className="text-xs font-bold text-brand-text underline" onClick={onOpen}>Open NCR record</button>
+      </div>
+      {defect.corrective_action ? <p className="text-sm"><span className="font-bold">Corrective action{defect.correction_attempt_id ? " (from the correction package)" : ""}:</span> {defect.corrective_action}</p> : null}
+      {canDecide ? <div className="space-y-2 rounded-lg border border-brand/50 p-2">
+        <label className="block text-xs font-bold" htmlFor={`note-${defect.id}`}>Your decision on the correction</label>
+        <textarea id={`note-${defect.id}`} rows={2} maxLength={1000} className={inputClass} value={note} onChange={(event) => setNote(event.target.value)} placeholder="Verification note (at least 5 characters)" />
+        <div className="flex flex-wrap justify-end gap-2">
+          <button type="button" className={buttonSecondary + " !py-1 !text-xs"} disabled={busy || note.trim().length < 5} onClick={() => void decide(false)}>Send back</button>
+          <button type="button" className={buttonPrimary + " !py-1 !text-xs"} disabled={busy || note.trim().length < 5} onClick={() => void decide(true)}>Close NCR</button>
+        </div>
+      </div> : null}
+    </li>
+  )
+}
+
+// First request photo against the latest correction photo of the same item.
+function EvidenceCompare({ itemId, label, attempts, draftPhotos, role }: { itemId: string; label: string; attempts: Array<{ photos_snapshot: PinPhoto[] }>; draftPhotos: PinPhoto[]; role?: string | null }) {
+  const first = attempts[0]?.photos_snapshot.find((photo) => photo.checklist_item_id === itemId) ?? null
+  const latest = draftPhotos[draftPhotos.length - 1] ?? [...attempts].reverse().map((row) => row.photos_snapshot.filter((photo) => photo.checklist_item_id === itemId).pop()).find(Boolean) ?? null
+  if (!first || !latest || first.id === latest.id || photoPreviewBlocked(role, first) || photoPreviewBlocked(role, latest)) return null
+  return <div className="max-w-xl">
+    <h3 className={heading}>Before and after</h3>
+    <BeforeAfter bucket="pin-photos" labels={["Original request", draftPhotos.length ? "Correction" : "Latest request"]} before={{ path: first.path, at: first.created_at, caption: first.caption, photo: { ...first, label: `${label} · Original request` } }} after={{ path: latest.path, at: latest.created_at, caption: latest.caption, photo: { ...latest, label: `${label} · Latest` } }} />
+  </div>
+}
+
+// Evidence of an item that was never submitted: remark, photos and the Ready tick (the Foreman's declaration, not a result).
+function InitialEvidence({ item, pin, canWork, meId, onTick, busy, onChanged }: { item: NonNullable<ReturnType<typeof useWorkItem>["item"]>; pin: NonNullable<ReturnType<typeof useWorkItem>["pin"]>; canWork: boolean; meId: string; onTick: (value: boolean) => Promise<void>; busy: boolean; onChanged: () => Promise<void> }) {
+  const toast = useToast()
+  const [remark, setRemark] = useState(item.remark ?? "")
+  const [saving, setSaving] = useState(false)
+  useEffect(() => { setRemark(item.remark ?? "") }, [item.remark])
+  const save = async () => {
+    setSaving(true)
+    const { data, error } = await supabase.from("pin_checklist_items").update({ remark: remark.trim() || null }).eq("id", item.id).select("id")
+    setSaving(false)
+    if (error || !data?.length) return toast.error("Remark not saved", error ? dbMessage(error) : "Only the Foreman assigned to this work can add evidence.")
+    toast.success("Remark saved")
+    await onChanged()
+  }
+  return <div className="space-y-3">
+    <h3 className={heading}>Evidence for the first request</h3>
+    {canWork ? <span className="flex flex-wrap gap-3"><ChecklistUploadButton pin={pin} itemId={item.id} label={item.text} onAdded={() => void onChanged()} /></span> : null}
+    <PinPhotos pin={pin} checklistItemId={item.id} attemptId={null} canAdd={false} canRemoveAny={false} meId={meId} columns={3} onChanged={() => void onChanged()} />
+    {canWork ? <div>
+      <label className="block text-[11px] font-bold uppercase tracking-wider text-fg-muted" htmlFor={`remark-${item.id}`}>Remark</label>
+      <textarea id={`remark-${item.id}`} className={field} rows={2} maxLength={1000} value={remark} onChange={(event) => setRemark(event.target.value)} placeholder="What was done or measured" />
+      <button type="button" disabled={saving || remark.trim() === (item.remark ?? "")} onClick={() => void save()} className={buttonSecondary + " mt-1 !py-1 !text-xs"}>{saving ? "Saving…" : "Save remark"}</button>
+    </div> : item.remark ? <p className="whitespace-pre-wrap text-sm"><strong>Remark:</strong> {item.remark}</p> : null}
+    {canWork ? <label className="flex items-center gap-2 text-sm font-semibold">
+      <input type="checkbox" className="h-4 w-4 accent-[#9e1f93]" checked={item.done} disabled={busy} onChange={(event) => void onTick(event.target.checked)} />
+      Ready: {item.text} is finished and the photos show it
+    </label> : <p className="text-sm">{item.done ? `Ready${item.done_at ? ` since ${formatStamp(item.done_at)}` : ""}.` : "Not ready yet."}</p>}
+  </div>
+}
+
+function ConnectedHistory({ inspections, events, ncrs, nameOf }: { inspections: Inspection[]; events: Array<{ id: number; inspection_id: string; actor_id: string | null; note: string; created_at: string }>; ncrs: Defect[]; nameOf: (id: string | null) => string }) {
+  const defectEvents = useDefectHistory(ncrs.map((row) => row.id))
+  const entries = useMemo(() => {
+    const ids = new Set(inspections.map((row) => row.id))
+    return connectedHistory(events.filter((row) => ids.has(row.inspection_id)), defectEvents,
+      (id) => { const row = inspections.find((candidate) => candidate.id === id); return row ? irRef(row.number) : "Inspection" },
+      (id) => { const row = ncrs.find((candidate) => candidate.id === id); return row ? ncrRef(row.number) : "NCR" })
+  }, [inspections, events, defectEvents, ncrs])
+  if (!entries.length) return null
+  return <section aria-label="Connected history" className="space-y-2">
+    <h3 className={heading}>Connected history (inspections and NCRs)</h3>
+    <LimitedTimeline entries={entries} entryKey={(row) => row.key} label="Work item history" renderEntry={(row) => <><strong className="text-xs">{formatStamp(row.at)} · {row.ref} · {nameOf(row.actor)}</strong><p className="whitespace-pre-wrap text-xs">{row.text}</p></>} />
+  </section>
+}
+
+function ReturnDialog({ name, reopen, busy, onClose, onSubmit }: { name: string; reopen: boolean; busy: boolean; onClose: () => void; onSubmit: (reason: string) => Promise<void> }) {
+  const [reason, setReason] = useState("")
+  return <Modal title={reopen ? `Reopen ${name}` : `Return ${name} for correction`} onClose={busy ? () => undefined : onClose} footer={<>
+    <button type="button" className={buttonSecondary} disabled={busy} onClick={onClose}>Cancel</button>
+    <button type="button" className={buttonDanger} disabled={busy || reason.trim().length < 5} onClick={() => void onSubmit(reason)}>{reopen ? "Reopen item" : "Return item"}</button>
+  </>}>
+    <label className="block text-sm font-semibold">What must be corrected? *
+      <textarea className={`${inputClass} mt-1`} rows={3} maxLength={1000} autoFocus value={reason} onChange={(event) => setReason(event.target.value)} placeholder="At least 5 characters" />
+    </label>
+    <p className="mt-2 text-xs text-fg-muted">The Foreman is notified and corrects {name} through its correction form.</p>
+  </Modal>
+}

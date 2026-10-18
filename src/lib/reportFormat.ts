@@ -2,7 +2,15 @@ import { manilaToday } from "./progress.ts"
 import { reportHtml } from "./printReport.ts"
 
 export type Weather = "sunny" | "cloudy" | "rainy" | "stormy"
+// A daily report link: the work pin and the checklist item (work item) worked on that day.
+export type ReportWork = { pin_id: string; item_id: string | null }
 export type DailyReport = {
+  linked_work?: ReportWork[]
+  review_state?: "pending" | "reviewed" | "returned"
+  review_note?: string | null
+  reviewed_by?: string | null
+  reviewed_at?: string | null
+  revision?: number
   id: string
   project_id: string
   report_date: string
@@ -36,7 +44,12 @@ export function reportError(error: { code?: string; message: string }): string {
   return error.message
 }
 
-export function dailyReportHtml(report: DailyReport, project: { code: string; name: string; location: string | null }, authorName: string): string {
+export function linkedWorkLabel(work: ReportWork, pinTitle: (id: string) => string | undefined, itemText: (id: string) => string | undefined) {
+  const pin = pinTitle(work.pin_id) ?? "Work pin"
+  return work.item_id ? `${pin} → ${itemText(work.item_id) ?? "Checklist item"}` : pin
+}
+
+export function dailyReportHtml(report: DailyReport, project: { code: string; name: string; location: string | null }, authorName: string, workLabel: (work: ReportWork) => string = (work) => work.pin_id): string {
   return reportHtml({
     title: "Daily site report",
     subtitle: `${project.name} (${project.code})${project.location ? " - " + project.location : ""}`,
@@ -48,9 +61,12 @@ export function dailyReportHtml(report: DailyReport, project: { code: string; na
     ],
     sections: [
       { heading: "Work done", body: report.work_done || "-" },
-      { heading: "Issues and problems", body: report.issues || "None reported" },
-      { heading: "Delays", body: report.delays || "None reported" },
-      { heading: "Safety", body: report.safety || "No incidents reported" },
+      // Issues, delays and safety are no longer asked for; older reports that have them still print them.
+      ...(report.issues ? [{ heading: "Issues and problems", body: report.issues }] : []),
+      ...(report.delays ? [{ heading: "Delays", body: report.delays }] : []),
+      ...(report.safety ? [{ heading: "Safety", body: report.safety }] : []),
+      ...((report.linked_work ?? []).length ? [{ heading: "Linked work", table: { head: ["Work pin and checklist item"], rows: (report.linked_work ?? []).map(row => [workLabel(row)]) } }] : []),
+      { heading: "Engineer review", rows: [["Review", report.review_state ?? "pending"], ["Revision", String(report.revision ?? 0)], ["Feedback", report.review_note || "Awaiting review"], ["Reviewed at", report.reviewed_at ? new Date(report.reviewed_at).toLocaleString("en-PH", { timeZone: "Asia/Manila" }) : "-"]] },
       { heading: "Status", rows: [["Report status", report.status === "submitted" ? "Submitted" : "Draft"], ["Submitted at", report.submitted_at ? new Date(report.submitted_at).toLocaleString("en-PH", { timeZone: "Asia/Manila" }) : "-"]] },
     ],
   })

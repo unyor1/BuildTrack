@@ -5,14 +5,14 @@ import { getSelectedProjectId } from "../../lib/projects"
 import { useQaWorkspace } from "../../lib/qaWorkspace"
 import type { ForemanPageProps } from "./types"
 
-// The checklists the engineer will inspect against, so the crew can self-check before asking.
+// Reference only: the inspection criteria the Engineer inspects against, so the crew can self-check. Nothing is requested from here.
 export default function ForemanQAWorkflow(_: ForemanPageProps) {
   const projectId = getSelectedProjectId()
   const ws = useQaWorkspace(projectId)
   return (
     <div className="foreman-page">
-      <ProjectContextBar listPath="/foreman/dashboard" listLabel="My projects" />
-      <PageHead eyebrow="Quality assurance" title="Inspection checklists" description="What the engineer checks for each kind of work. Go through the list yourself first: items marked as hold points stop the next stage until they pass." />
+      <ProjectContextBar listPath="/foreman/projects" listLabel="My projects" />
+      <PageHead eyebrow="Quality assurance" title="Checklist reference" description="Inspection criteria (measurements, material checks, workmanship requirements) the Engineer inspects your work items against. Use them to self-check. Work items (FLOOR, WALL…) are submitted from the work itself; stage and hold-point requests from QA requests." />
       {projectId ? <QaView ws={ws} mode="foreman" tabs={["checklists"]} /> : null}
     </div>
   )

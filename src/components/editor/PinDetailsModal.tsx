@@ -1,7 +1,8 @@
 import { useState } from "react"
 import Modal from "../Modal"
-import { PinDetailsTab, type InspectorProps } from "./Inspector"
-import { PinChecklist, PinFields, PinPhotos, PinTimeline } from "./PinParts"
+import { PinDetailsTab, canWorkOn, checklistNotice, type InspectorProps } from "./Inspector"
+import { PinChecklist, PinFields, PinTimeline } from "./PinParts"
+import ChecklistPhotos from "../ChecklistPhotos"
 import { statusChip, statusDot, statusLabels, type Pin } from "../../lib/blueprints"
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
@@ -48,13 +49,13 @@ export default function PinDetailsModal({ pin, inspector, onClose, onDelete }: {
               <PinFields pin={pin} team={inspector.team} onSaved={changed} idPrefix="dialog-pin" />
             </Section>
           ) : null}
-          <Section title="Photos">
-            <PinPhotos pin={pin} canAdd={inspector.canReport} canRemoveAny={inspector.canEdit} meId={inspector.meId} columns={3} onChanged={changed} />
-          </Section>
+          {inspector.role !== "client" ? <Section title="Checklist photos">
+            <ChecklistPhotos pin={pin} />
+          </Section> : null}
         </div>
         <div className="space-y-6">
           <Section title="Checklist">
-            <PinChecklist pinId={pin.id} canEdit={inspector.canEdit} canTick={inspector.canReport} onChange={undefined} />
+            <PinChecklist pin={pin} canEdit={inspector.canEdit} canTick={canWorkOn(inspector, pin)} notice={checklistNotice(inspector, pin, pin.assigned_to ? inspector.team.find((member) => member.user_id === pin.assigned_to)?.full_name : undefined)} onPinChanged={changed} />
           </Section>
           {inspector.role !== "client" ? (
             <Section title="Timeline and comments">

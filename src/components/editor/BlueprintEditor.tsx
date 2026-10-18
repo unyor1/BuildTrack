@@ -78,7 +78,8 @@ function useMediaQuery(query: string) {
 // The workspace editor: sheet strip on the left, the sheet in the middle, an inspector on the right and a presentation-style
 // toolbar on top. Every panel can be hidden, floated or docked; Focus mode hides everything; Presentation mode is a clean
 // read-only show. `canEdit` is what the role may do; the database enforces it as well.
-export default function BlueprintEditor({ projectId, role, canEdit, onExit }: { projectId: string; role: EditorRole; canEdit: boolean; onExit: () => void }) {
+// `canUpload` (sheets and revisions) defaults to `canEdit`; Admins get uploads without editing (0040).
+export default function BlueprintEditor({ projectId, role, canEdit, canUpload = canEdit, onExit }: { projectId: string; role: EditorRole; canEdit: boolean; canUpload?: boolean; onExit: () => void }) {
   const { profile, can } = useAuth()
   const toast = useToast()
   const confirm = useConfirm()
@@ -149,7 +150,8 @@ export default function BlueprintEditor({ projectId, role, canEdit, onExit }: { 
   const { url } = useSignedUrl("blueprints", revision?.preview_path ?? null)
 
   const editable = canEdit && isLatest && !present
-  const canReport = role === "engineer" || role === "foreman" || (role === "admin" && can("blueprints.manage"))
+  // Admins read and upload sheets only; field reporting is for the project's Engineers and Foremen (0040).
+  const canReport = role === "engineer" || role === "foreman"
   const canStamp = (editable || (role === "foreman" && !present)) && !present
   const canSeeHistory = role !== "client"
   const stampStatuses: PinStatus[] = editable ? allStatuses : ["in_progress", "for_review"]
@@ -222,6 +224,12 @@ export default function BlueprintEditor({ projectId, role, canEdit, onExit }: { 
 
   // Deep link from other pages (verification queue, issue register): ?pin=<id> opens that pin on its own sheet, once.
   const pendingPin = useRef<string | null>(new URLSearchParams(window.location.search).get("pin"))
+  const [pinLinkVersion, setPinLinkVersion] = useState(0)
+  useEffect(() => {
+    const changed = () => { pendingPin.current = new URLSearchParams(window.location.search).get("pin"); setPinLinkVersion(v => v + 1) }
+    window.addEventListener("popstate", changed)
+    return () => window.removeEventListener("popstate", changed)
+  }, [])
   useEffect(() => {
     const id = pendingPin.current
     if (!id || loading || pinsLoading) return
@@ -236,7 +244,7 @@ export default function BlueprintEditor({ projectId, role, canEdit, onExit }: { 
     const url = new URL(window.location.href)
     url.searchParams.delete("pin")
     window.history.replaceState({}, "", url)
-  }, [pins, blueprintId, loading, pinsLoading, select])
+  }, [pins, blueprintId, loading, pinsLoading, select, pinLinkVersion])
 
   const pick = useCallback((target: Pick, additive: boolean) => {
     if (!target) {
@@ -284,7 +292,7 @@ export default function BlueprintEditor({ projectId, role, canEdit, onExit }: { 
 
   const report = async (pin: Pin, status: "in_progress" | "for_review", note: string) => {
     const { error: rpcError } = await supabase.rpc("report_pin_progress", { p_pin: pin.id, p_status: status, p_note: note.trim() || null })
-    if (rpcError) throw new Error(rpcError.message.replace(/^.*?(Only a Foreman|Foremen can|A verified|This pin is assigned)/i, "$1"))
+    if (rpcError) throw new Error(rpcError.message.replace(/^.*?(Only a Foreman|Foremen can|A verified|This work is not assigned|Complete every checklist item)/i, "$1"))
     toast.success(status === "for_review" ? "Sent to the engineer for review" : "Marked as in progress")
     await reloadPins()
     touched()
@@ -294,6 +302,7 @@ export default function BlueprintEditor({ projectId, role, canEdit, onExit }: { 
     const pin = pins.find((item) => item.id === pinId)
     if (!pin) return
     if (editable) return setStatus(pin, stampStatus)
+    if (pin.assigned_to !== profile?.id) return toast.info("Not your work", "Only the foreman this pin is assigned to can report on it.")
     if (stampStatus === "in_progress" || stampStatus === "for_review") {
       try {
         await report(pin, stampStatus, "")
@@ -352,7 +361,7 @@ export default function BlueprintEditor({ projectId, role, canEdit, onExit }: { 
     if (!(await confirm({ title: `Delete "${pin.title}"?`, message: "Its checklist, comments and photos are deleted too. This cannot be undone.", confirmLabel: "Delete pin", tone: "danger" }))) return
     const { data, error: deleteError } = await supabase.from("pins").delete().eq("id", pin.id).select("id")
     if (deleteError) return toast.error("Could not delete the pin", dbMessage(deleteError))
-    if (!data?.length) return toast.error("Could not delete the pin", pin.status === "verified" ? "Verified pins can only be deleted by an administrator." : "You are not allowed to delete this pin.")
+    if (!data?.length) return toast.error("Could not delete the pin", pin.status === "verified" ? "Verified work is evidence and cannot be deleted." : "You are not allowed to delete this pin.")
     setPins((current) => current.filter((item) => item.id !== pin.id))
     setSelection(NO_SELECTION)
     setDetailsOpen(false)
@@ -1091,8 +1100,8 @@ export default function BlueprintEditor({ projectId, role, canEdit, onExit }: { 
     { id: "add-image", label: "Add an image to the sheet", group: "Sheet", keywords: "picture photo logo spec upload", disabled: !editable, run: () => fileInput.current?.click() },
     { id: "show-base", label: showBase ? "Hide the blueprint (backdrop)" : "Show the blueprint (backdrop)", group: "View", run: () => setShowBase((value) => !value) },
     { id: "delete-sheet", label: "Delete this sheet", group: "Sheet", disabled: !canDeleteSheet || !blueprint, run: () => void deleteSheet() },
-    { id: "upload", label: "Upload a new sheet", group: "Sheet", disabled: !canEdit, run: () => setUpload("new") },
-    { id: "revision", label: "Upload a new revision", group: "Sheet", disabled: !canEdit || !blueprint || baseLocked, run: () => setUpload("revision") },
+    { id: "upload", label: "Upload a new sheet", group: "Sheet", disabled: !canUpload, run: () => setUpload("new") },
+    { id: "revision", label: "Upload a new revision", group: "Sheet", disabled: !canUpload || !blueprint || baseLocked, run: () => setUpload("revision") },
     { id: "history", label: "Show the edit history", group: "View", disabled: !canSeeHistory, run: () => { setSelection(NO_SELECTION); setSheetTab("history"); setRightOpen(true); if (prefs.inspector === "hidden") setPrefs({ inspector: "docked" }) } },
     { id: "layers", label: "Show the layers panel", group: "View", run: () => { setSelection(NO_SELECTION); setSheetTab("layers"); setRightOpen(true); if (prefs.inspector === "hidden") setPrefs({ inspector: "docked" }) } },
     { id: "focus", label: "Focus mode", group: "View", hint: "F", keywords: "hide panels distraction", run: toggleFocus },
@@ -1130,6 +1139,7 @@ export default function BlueprintEditor({ projectId, role, canEdit, onExit }: { 
             revisions={revisions}
             onRevision={setRevisionId}
             canEdit={editable}
+            canUpload={canUpload && !present}
             zoomPercent={zoomPercent}
             onZoomIn={() => zoom.current?.zoomIn()}
             onZoomOut={() => zoom.current?.zoomOut()}
@@ -1210,7 +1220,7 @@ export default function BlueprintEditor({ projectId, role, canEdit, onExit }: { 
       <div className="relative flex min-h-0 flex-1">
         {showSheets ? (
           <div className={`flex-none ${desktop ? "static w-52 xl:w-60" : "absolute inset-y-0 left-0 z-30 w-60 shadow-2xl"}`}>
-            <SheetSorter blueprints={blueprints} selectedId={blueprintId} counts={counts} loading={loading} canEdit={canEdit} onSelect={(id) => { setBlueprintId(id); setLeftOpen(false) }} onAdd={() => setUpload("new")} />
+            <SheetSorter blueprints={blueprints} selectedId={blueprintId} counts={counts} loading={loading} canEdit={canUpload} onSelect={(id) => { setBlueprintId(id); setLeftOpen(false) }} onAdd={() => setUpload("new")} />
           </div>
         ) : null}
 
@@ -1232,8 +1242,8 @@ export default function BlueprintEditor({ projectId, role, canEdit, onExit }: { 
             </div>
           ) : !blueprint || !revision ? (
             <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
-              <p className="max-w-sm text-fg-muted">{blueprint ? "This sheet has no file yet." : canEdit ? "No sheet has been uploaded for this project yet. Upload the first plan to start placing pins." : "No sheet has been uploaded for this project yet."}</p>
-              {canEdit ? <button type="button" className={primary} onClick={() => setUpload(blueprint ? "revision" : "new")}>{blueprint ? "Upload a file" : "Upload a sheet"}</button> : null}
+              <p className="max-w-sm text-fg-muted">{blueprint ? "This sheet has no file yet." : canUpload ? "No sheet has been uploaded for this project yet. Upload the first plan to start placing pins." : "No sheet has been uploaded for this project yet."}</p>
+              {canUpload ? <button type="button" className={primary} onClick={() => setUpload(blueprint ? "revision" : "new")}>{blueprint ? "Upload a file" : "Upload a sheet"}</button> : null}
             </div>
           ) : (
             <StageCanvas
@@ -1324,7 +1334,7 @@ export default function BlueprintEditor({ projectId, role, canEdit, onExit }: { 
             />
           ) : null}
         </main>
-        {showFilmstrip ? <SheetFilmstrip blueprints={blueprints} selectedId={blueprintId} counts={counts} loading={loading} canEdit={canEdit} onSelect={setBlueprintId} onAdd={() => setUpload("new")} onHide={() => setPrefs({ filmstrip: false })} /> : null}
+        {showFilmstrip ? <SheetFilmstrip blueprints={blueprints} selectedId={blueprintId} counts={counts} loading={loading} canEdit={canUpload} onSelect={setBlueprintId} onAdd={() => setUpload("new")} onHide={() => setPrefs({ filmstrip: false })} /> : null}
         </div>
 
         {showDocked ? (

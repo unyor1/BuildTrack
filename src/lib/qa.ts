@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { prepareImage } from "./sheetImages"
 import { supabase } from "./supabase"
 import { stampFields, type PhotoStamp, type StampFlag } from "./photoStamp"
@@ -37,6 +37,8 @@ export type Template = {
 }
 
 export type Inspection = {
+  target_at?: string
+  escalation_owner?: string | null
   id: string
   project_id: string
   number: number
@@ -107,6 +109,7 @@ export type Defect = {
   closed_at: string | null
   closed_by: string | null
   closing_note: string | null
+  correction_attempt_id?: string | null // the correction package (remarks + photos) that answered it
 }
 
 export type DefectEvent = { id: number; defect_id: string; actor_id: string | null; kind: "raised" | "edited" | "status" | "rejected" | "closed"; from_status: string | null; to_status: string | null; note: string | null; created_at: string }
@@ -126,23 +129,29 @@ function useLoad<T>(enabled: boolean, empty: T, fetcher: () => Promise<{ data: T
   const [data, setData] = useState<T>(empty)
   const [loading, setLoading] = useState(enabled)
   const [error, setError] = useState("")
+  const sequence = useRef(0)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const run = useCallback(fetcher, deps)
   const reload = useCallback(async () => {
+    const request = ++sequence.current
     if (!enabled) {
       setData(empty)
       setLoading(false)
       return
     }
     const result = await run()
+    if (request !== sequence.current) return
     setError(result.error ? "Could not load this. Check your connection and try again." : "")
     if (result.data !== null) setData(result.data)
     setLoading(false)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled, run])
   useEffect(() => {
+    setData(empty)
+    setError("")
     setLoading(enabled)
     void reload()
+    return () => { sequence.current++ }
   }, [reload, enabled])
   useLiveReload(enabled ? live : [], reload)
   return { data, setData, loading, error, reload }
@@ -324,6 +333,13 @@ export const qaActions = {
   updateDefect: (input: { id: string; status: "open" | "in_progress" | "for_verification"; corrective?: string; rootCause?: string; preventive?: string; note?: string }) =>
     call("update_defect", { p_id: input.id, p_status: input.status, p_corrective_action: input.corrective ?? null, p_root_cause: input.rootCause ?? null, p_preventive_action: input.preventive ?? null, p_note: input.note ?? null }),
   verifyDefect: (id: string, close: boolean, note: string) => call("verify_defect", { p_id: id, p_close: close, p_note: note }),
+  // Work items (checklist items of a work pin): first request, correction package, Engineer acceptance.
+  submitItems: (pinId: string, itemIds: string[], note?: string) => call<string>("submit_checklist_qa", { p_pin: pinId, p_items: itemIds, p_note: note?.trim() || null }),
+  beginCorrection: (itemId: string) => call<string>("begin_checklist_resubmission", { p_item: itemId }),
+  saveCorrection: (attemptId: string, remarks: string) => call("save_checklist_attempt", { p_attempt: attemptId, p_remarks: remarks }),
+  submitCorrection: (input: { itemIds: string[]; defectIds: string[]; rootCause?: string; preventive?: string }) =>
+    call<string>("submit_correction_package", { p_items: input.itemIds, p_defects: input.defectIds, p_root_cause: input.rootCause?.trim() || null, p_preventive: input.preventive?.trim() || null }),
+  reviewItem: (itemId: string, accept: boolean, reason?: string) => call("review_checklist_item", { p_item: itemId, p_accept: accept, p_reason: reason?.trim() || null }),
   saveTemplate: (input: { id: string | null; projectId: string | null; name: string; trade: Trade; description: string; standards: string[]; items: unknown[] }) =>
     call<string>("save_qa_template", { p_id: input.id, p_project: input.projectId, p_name: input.name, p_trade: input.trade, p_description: input.description, p_standards: input.standards, p_items: input.items }),
   duplicateTemplate: (templateId: string, projectId: string | null, name?: string) => call<string>("duplicate_qa_template", { p_template: templateId, p_project: projectId, p_name: name ?? null }),

@@ -30,6 +30,7 @@ async function refreshReminders() {
   await supabase.rpc("generate_due_notifications")
   await supabase.rpc("generate_defect_reminders")
   await supabase.rpc("generate_escalations") // engineers: late-work digest; admins: serious cases only (0038)
+  await supabase.rpc("generate_inspection_reminders")
 }
 
 // The signed-in user's latest notifications. Polls once a minute while the tab is visible and again on focus.

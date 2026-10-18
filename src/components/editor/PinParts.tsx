@@ -1,8 +1,16 @@
-import { useEffect, useRef, useState, type FormEvent } from "react"
+import { Suspense, lazy, useEffect, useMemo, useRef, useState, type FormEvent } from "react"
+import LimitedTimeline from "../ui/LimitedTimeline"
+import PhotoViewer from "../PhotoViewer"
 import { Skeleton, SkeletonList } from "../ui/Skeleton"
 import BeforeAfter from "../BeforeAfter"
 import StampChip from "../StampChip"
-import { captureStamp, stampFields, stampSummary } from "../../lib/photoStamp"
+import PinQaSubmission from "../qa/PinQaSubmission"
+import { usePinQa } from "../../lib/pinQa"
+import { captureStamp, stampFields, stampSummary, photoEligible, photoPreviewBlocked } from "../../lib/photoStamp"
+import { StageChip } from "../qa/WorkItemParts"
+import { useWorkQaHistory } from "../../lib/qaAttempts"
+import { stageOf, usePinDefects } from "../../lib/workItem"
+import type { SubmissionRef } from "../../lib/workItemModel"
 import {
   categoryLabels,
   compressPhoto,
@@ -15,6 +23,7 @@ import {
   usePinPhotos,
   usePinTimeline,
   useSignedUrl,
+  type ChecklistItem,
   type Pin,
   type PinCategory,
   type PinSeverity,
@@ -29,6 +38,9 @@ import { enqueue } from "../../lib/offlineQueue"
 import { disciplineLabels, type Discipline, type TeamMember } from "../../lib/projects"
 import { supabase } from "../../lib/supabase"
 import { useToast } from "../../lib/toast"
+
+// Loaded on demand: the work item workspace also uses the parts below.
+const WorkItemWorkspace = lazy(() => import("../qa/WorkItemWorkspace"))
 
 export const field = "mt-1 w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-fg"
 
@@ -94,16 +106,42 @@ export function ChecklistProgress({ done, total }: { done: number; total: number
   )
 }
 
-export function PinChecklist({ pinId, canEdit, canTick, onChange }: { pinId: string; canEdit: boolean; canTick: boolean; onChange?: (done: number, total: number) => void }) {
+// Work items of this work (FLOOR, WALL…). Each row shows its stage and the one next action; "Open" shows the item's whole QA record
+// (evidence, inspection, corrections and NCRs, attempts). The database refuses "ready" without a photo.
+export function PinChecklist({ pin, canEdit, canTick, notice = "", onChange, onPinChanged, submissionNote }: { pin: Pin; canEdit: boolean; canTick: boolean; notice?: string; onChange?: (done: number, total: number) => void; onPinChanged?: () => void | Promise<void>; submissionNote?: string }) {
+  const pinId = pin.id
+  const qa = usePinQa(pinId)
+  const locked = !qa.state || qa.state.open || qa.state.status === "for_review" || qa.state.status === "verified"
+  canEdit = canEdit && !locked
+  canTick = canTick && !locked
   const toast = useToast()
-  const { items, setItems, loading, reload } = useChecklist(pinId)
+  const { profile } = useAuth()
+  // QA records are staff-only: clients see the items and whether each is accepted, never the QA workspace.
+  const staff = profile?.role !== "client" && profile?.role !== "user"
+  const { items, setItems, loading, error: checklistError, reload } = useChecklist(pinId)
+  const { photos, reload: reloadPhotos } = usePinPhotos(pinId)
+  const history = useWorkQaHistory(pinId)
+  const defects = usePinDefects(pinId)
   const [text, setText] = useState("")
   const [busy, setBusy] = useState(false)
+  const [openId, setOpenId] = useState<string | null>(null)
   const done = items.filter((item) => item.done).length
+  const stages = useMemo(() => new Map(items.map((item) => [item.id, stageOf({
+    item, pin, pinItems: items, submissions: history.submissions as unknown as SubmissionRef[], inspections: history.inspections, defects,
+    draft: history.attempts.find((row) => row.item_id === item.id && !row.submitted_inspection_id) ?? null, photos,
+  })])), [items, pin, history.submissions, history.inspections, history.attempts, defects, photos])
+  const firstTimeReady = items.filter((item) => item.done && stages.get(item.id)?.view.stage === "ready" && !stages.get(item.id)?.attempts.length)
+  const changed = useRef(onPinChanged)
+  changed.current = onPinChanged
+  useEffect(() => {
+    if (qa.state && qa.state.status !== pin.status) void changed.current?.()
+  }, [qa.state?.status, pin.status])
 
   useEffect(() => {
     onChange?.(done, items.length)
   }, [done, items.length, onChange])
+
+  const refresh = async () => { await Promise.all([reload(), reloadPhotos(), history.reload(), qa.reload()]); await onPinChanged?.() }
 
   const add = async (event: FormEvent) => {
     event.preventDefault()
@@ -119,6 +157,9 @@ export function PinChecklist({ pinId, canEdit, canTick, onChange }: { pinId: str
   }
 
   const tick = async (id: string, value: boolean) => {
+    if (value && !photos.some((photo) => photo.checklist_item_id === id && !photo.qa_attempt_id && photoEligible(photo))) {
+      return toast.info("Upload a photo first", "Use Upload on this item to add a photo of the finished work, then tick it.")
+    }
     setItems((current) => current.map((item) => (item.id === id ? { ...item, done: value } : item)))
     const { data, error } = await supabase.from("pin_checklist_items").update({ done: value }).eq("id", id).select("id")
     if (error || !data?.length) {
@@ -135,29 +176,47 @@ export function PinChecklist({ pinId, canEdit, canTick, onChange }: { pinId: str
 
   return (
     <div className="space-y-3">
-      {loading ? <SkeletonList rows={3} label="Loading the checklist" /> : (
+      {checklistError ? <p role="alert" className="rounded-lg bg-danger-soft p-3 text-sm text-danger-fg">{checklistError}</p> : null}
+      {notice && !canTick ? <p role="status" className="rounded-lg bg-amber-100 px-3 py-2 text-xs font-semibold text-amber-950 dark:bg-amber-900/40 dark:text-amber-100">{notice}</p> : null}
+      {loading ? <SkeletonList rows={3} label="Loading the work items" /> : (
         <>
-          {items.length ? <ChecklistProgress done={done} total={items.length} /> : <p className="text-sm text-fg-muted">{canEdit ? "No checklist yet. Add the steps that must be done before this pin can be verified." : "No checklist for this pin."}</p>}
+          {items.length ? <ChecklistProgress done={done} total={items.length} /> : <p className="text-sm text-fg-muted">{canEdit ? "No work items yet. Add the parts of this work the Foreman prepares and the Engineer accepts one by one (e.g. FLOOR, WALL, CEILING)." : "No work items for this pin."}</p>}
+          {items.length ? <p className="text-xs text-fg-muted">Ready: {done}/{items.length} · Accepted by the Engineer: {items.filter((item) => item.review_status === "verified").length}/{items.length}</p> : null}
           <ul className="space-y-1">
-            {items.map((item) => (
-              <li key={item.id} className="group flex items-start gap-2 rounded-lg px-1 py-1 hover:bg-surface-muted/60">
-                <input type="checkbox" className="mt-1 h-4 w-4 flex-none accent-[#9e1f93]" checked={item.done} disabled={!canTick} onChange={(e) => void tick(item.id, e.target.checked)} aria-label={item.text} />
-                <span className={`flex-1 text-sm ${item.done ? "text-fg-muted line-through" : ""}`}>
-                  {item.text}
-                  {item.done_at ? <span className="block text-[11px] text-fg-muted">Done {formatStamp(item.done_at)}</span> : null}
-                </span>
-                {canEdit ? <button type="button" aria-label={`Remove ${item.text}`} onClick={() => void remove(item.id)} className="px-1 text-fg-muted opacity-0 hover:text-danger-fg focus:opacity-100 group-hover:opacity-100">&times;</button> : null}
-              </li>
-            ))}
+            {items.map((item) => {
+              const stage = stages.get(item.id)
+              const fresh = !stage?.attempts.length && item.review_status !== "for_review" && item.review_status !== "verified"
+              const count = photos.filter((photo) => photo.checklist_item_id === item.id && !photo.qa_attempt_id).length
+              return (
+                <li key={item.id} className="group flex items-start gap-2 rounded-lg border border-line p-3 hover:bg-surface-muted/60">
+                  <input type="checkbox" className="mt-1 h-4 w-4 flex-none accent-[#9e1f93]" checked={item.done} disabled={!canTick || !fresh} onChange={(e) => void tick(item.id, e.target.checked)} aria-label={`${item.text} ready`} />
+                  <div className="min-w-0 flex-1 text-sm">
+                    <span className="flex flex-wrap items-center gap-2">
+                      <span className="font-semibold">{item.text}</span>
+                      {stage && staff ? <StageChip stage={stage.view.stage} /> : !staff && item.review_status === "verified" ? <StageChip stage="accepted" /> : null}
+                    </span>
+                    {stage && staff ? <span className="mt-0.5 block text-xs text-fg-muted">{stage.view.blocker ? `Blocked: ${stage.view.blocker}` : `Next: ${stage.view.next}`}</span> : null}
+                    <span className="mt-0.5 flex flex-wrap items-center gap-x-3">
+                      {canTick && fresh ? <ChecklistUploadButton pin={pin} itemId={item.id} label={item.text} onAdded={() => void reloadPhotos()} /> : null}
+                      {fresh ? <span className="text-[11px] text-fg-muted">{count} photo{count === 1 ? "" : "s"}{item.remark ? " · remark" : ""}</span> : null}
+                      {staff ? <button type="button" aria-haspopup="dialog" onClick={() => setOpenId(item.id)} className="min-h-6 text-[11px] font-bold text-brand-text underline underline-offset-2 hover:no-underline">Open {item.text}</button> : null}
+                    </span>
+                  </div>
+                  {canEdit && item.review_status !== "verified" ? <button type="button" aria-label={`Remove ${item.text}`} onClick={() => void remove(item.id)} className="px-1 text-fg-muted opacity-0 hover:text-danger-fg focus:opacity-100 group-hover:opacity-100">&times;</button> : null}
+                </li>
+              )
+            })}
           </ul>
         </>
       )}
       {canEdit ? (
         <form className="flex gap-2" onSubmit={(event) => void add(event)}>
-          <input className={field + " mt-0"} value={text} onChange={(e) => setText(e.target.value)} placeholder="Add a step" maxLength={200} aria-label="New checklist step" />
+          <input className={field + " mt-0"} value={text} onChange={(e) => setText(e.target.value)} placeholder="Add a work item" maxLength={200} aria-label="New work item" />
           <button type="submit" disabled={busy || !text.trim()} className="rounded-lg bg-brand px-3 py-2 text-sm font-bold text-white hover:bg-brand-hover disabled:opacity-60">Add</button>
         </form>
       ) : null}
+      <PinQaSubmission pin={pin} qa={qa} items={items} firstTimeReady={firstTimeReady} onChanged={refresh} note={submissionNote} />
+      {openId ? <Suspense fallback={null}><WorkItemWorkspace itemId={openId} fromPlan onClose={() => setOpenId(null)} onChanged={refresh} /></Suspense> : null}
     </div>
   )
 }
@@ -171,6 +230,7 @@ const describe = (entry: TimelineEntry) => {
   if (entry.kind === "photo") return `added a photo${entry.note ? `: ${entry.note}` : ""}`
   if (entry.kind === "photo_removed") return `removed a photo${entry.note && entry.note !== "Photo removed" ? `: ${entry.note}` : ""}`
   if (entry.kind === "checklist") return entry.note ?? "updated the checklist"
+  if (entry.kind === "assigned") return entry.to_name ? (entry.from_name ? `reassigned the work from ${entry.from_name} to ${entry.to_name}` : `assigned the work to ${entry.to_name}`) : `removed the assignment${entry.from_name ? ` from ${entry.from_name}` : ""}`
   return "commented"
 }
 
@@ -198,15 +258,11 @@ export function PinTimeline({ pinId, canComment, refreshKey = 0 }: { pinId: stri
   return (
     <div className="space-y-3">
       {loading ? <SkeletonList rows={4} label="Loading the timeline" /> : entries.length === 0 ? <p className="text-sm text-fg-muted">No activity yet.</p> : (
-        <ol className="space-y-3">
-          {[...entries].reverse().map((entry) => (
-            <li key={entry.id} className="border-l-2 border-line pl-3 text-sm">
+        <LimitedTimeline entries={[...entries].reverse()} resetKey={pinId} entryKey={entry => entry.id} renderEntry={entry => <>
               <span className="font-semibold">{entry.actor_name}</span> <span className="text-fg-muted">{describe(entry)}</span>
               {entry.kind === "comment" && entry.note ? <p className="mt-1 whitespace-pre-wrap rounded-lg bg-surface-muted px-2 py-1.5">{entry.note}</p> : null}
               <span className="block text-[11px] text-fg-muted">{formatStamp(entry.created_at)}</span>
-            </li>
-          ))}
-        </ol>
+            </>} />
       )}
       {canComment ? (
         <form className="flex gap-2" onSubmit={(event) => void post(event)}>
@@ -220,13 +276,16 @@ export function PinTimeline({ pinId, canComment, refreshKey = 0 }: { pinId: stri
 
 // ---------- Photos ----------
 function Thumb({ photo, onRemove }: { photo: PinPhoto; onRemove?: () => void }) {
-  const { url, failed } = useSignedUrl("pin-photos", photo.path)
+  const { profile } = useAuth()
+  const [viewing,setViewing] = useState(false)
+  const blocked = photoPreviewBlocked(profile?.role, photo)
+  const { url, failed } = useSignedUrl("pin-photos", blocked ? null : photo.path)
   return (
-    <figure className="relative">
-      {url ? (
-        <a href={url} target="_blank" rel="noreferrer">
+    <><figure className="relative">
+      {blocked ? <div className="flex h-24 items-center justify-center rounded-lg bg-danger-soft p-2 text-xs text-danger-fg">Image blocked: site/time check failed</div> : url ? (
+        <button type="button" aria-label="Zoom photo and view details" onClick={()=>setViewing(true)} className="block w-full cursor-zoom-in">
           <img src={url} alt={photo.caption ?? `Pin photo added ${formatStamp(photo.created_at)}`} loading="lazy" className="h-24 w-full rounded-lg border border-line object-cover transition hover:opacity-90" />
-        </a>
+        </button>
       ) : failed ? (
         <div className="flex h-24 items-center justify-center rounded-lg border border-line bg-surface-muted text-xs text-fg-muted">Unavailable</div>
       ) : (
@@ -235,38 +294,37 @@ function Thumb({ photo, onRemove }: { photo: PinPhoto; onRemove?: () => void }) 
       {photo.caption ? <figcaption className="truncate text-[11px] text-fg-muted">{photo.caption}</figcaption> : null}
       <div className="mt-0.5"><StampChip photo={photo} /></div>
       {onRemove ? <button type="button" aria-label="Remove photo" onClick={onRemove} className="absolute right-1 top-1 rounded bg-black/60 px-1.5 text-xs text-white hover:bg-black/80">&times;</button> : null}
-    </figure>
+    </figure>{viewing ? <PhotoViewer photo={{...photo,label:photo.checklist_item_id ? "Checklist evidence" : "Work photo"}} bucket="pin-photos" onClose={()=>setViewing(false)} /> : null}</>
   )
 }
 
-export function PinPhotos({ pin, canAdd, canRemoveAny, meId, onChanged, columns = 3 }: { pin: Pin; canAdd: boolean; canRemoveAny: boolean; meId: string; onChanged?: () => void; columns?: 2 | 3 | 4 }) {
+// Compress, stamp and upload photos of a pin (optionally for one checklist item); without signal they wait in the offline queue.
+function usePhotoUpload(pin: Pin, checklistItemId: string | undefined, onAdded: () => Promise<void> | void, attemptId?: string | null) {
   const toast = useToast()
-  const confirm = useConfirm()
   const { profile } = useAuth()
-  const { photos, reload } = usePinPhotos(pin.id)
-  const evidence = usePinEvidence(pin.id, pin.status)
-  const fileInput = useRef<HTMLInputElement>(null)
   const [busy, setBusy] = useState(false)
-  const [savedOffline, setSavedOffline] = useState(0)
+  const uploading = useRef(false)
+  const itemLink = { ...(checklistItemId ? { checklist_item_id: checklistItemId } : {}), ...(attemptId ? { qa_attempt_id: attemptId } : {}) }
 
   const add = async (files: FileList | null) => {
-    if (!files?.length) return
+    if (!files?.length || uploading.current) return
+    uploading.current = true
     setBusy(true)
     let added = 0
+    try {
     const stamp = await captureStamp() // the phone's time and (if allowed) position, checked against the site by the database
-    for (const file of Array.from(files).slice(0, 5)) {
+    for (const file of Array.from(files)) {
       if (!file.type.startsWith("image/")) {
         toast.error("Not an image", `${file.name} was skipped.`)
         continue
       }
       try {
         const blob = await compressPhoto(file)
-        const path = `${pin.project_id}/${pin.id}/${Date.now()}-${added + savedOffline}.jpg`
+        const path = `${pin.project_id}/${pin.id}/${crypto.randomUUID()}.jpg`
         // No signal: keep the compressed photo on this device; it is uploaded when the connection is back.
         const keepOffline = async () => {
           if (!profile) throw new Error("You are signed out.")
-          await enqueue({ userId: profile.id, kind: "pin_photo", label: pin.title, payload: { projectId: pin.project_id, pinId: pin.id, path, blob, stamp } })
-          setSavedOffline((count) => count + 1)
+          await enqueue({ userId: profile.id, kind: "pin_photo", label: pin.title, payload: { projectId: pin.project_id, pinId: pin.id, itemId: checklistItemId ?? null, attemptId: attemptId ?? null, path, blob, stamp } })
           toast.info("Photo saved on this device", "It will be uploaded when you are back online.")
         }
         if (!navigator.onLine) {
@@ -279,7 +337,7 @@ export function PinPhotos({ pin, canAdd, canRemoveAny, meId, onChanged, columns 
           continue
         }
         if (upload.error) throw new Error(upload.error.message)
-        const { error } = await supabase.from("pin_photos").insert({ pin_id: pin.id, project_id: pin.project_id, path, ...stampFields(stamp) })
+        const { error } = await supabase.from("pin_photos").insert({ pin_id: pin.id, project_id: pin.project_id, path, ...itemLink, ...stampFields(stamp) })
         if (error) {
           await supabase.storage.from("pin-photos").remove([path])
           throw new Error(error.message)
@@ -289,14 +347,56 @@ export function PinPhotos({ pin, canAdd, canRemoveAny, meId, onChanged, columns 
         toast.error("Photo not added", error instanceof Error ? dbMessage({ message: error.message }) : "Upload failed.")
       }
     }
-    setBusy(false)
-    if (fileInput.current) fileInput.current.value = ""
-    if (added) {
-      toast.success(`${added} photo${added === 1 ? "" : "s"} added`)
-      await reload()
-      onChanged?.()
+    if (added) toast.success(`${added} photo${added === 1 ? "" : "s"} added`)
+    await onAdded()
+    } catch (error) {
+      toast.error("Photos could not be processed", error instanceof Error ? error.message : "Please try again.")
+    } finally {
+      setBusy(false)
+      uploading.current = false
     }
   }
+
+  return { add, busy }
+}
+
+// The upload button on a checklist item: opens the camera / gallery and links the photos to that item.
+export function ChecklistUploadButton({ pin, itemId, label, onAdded, attemptId }: { pin: Pin; itemId: string; label: string; onAdded: () => void; attemptId?: string }) {
+  const fileInput = useRef<HTMLInputElement>(null)
+  const cameraInput = useRef<HTMLInputElement>(null)
+  const { add, busy } = usePhotoUpload(pin, itemId, () => {
+    if (fileInput.current) fileInput.current.value = ""
+    if (cameraInput.current) cameraInput.current.value = ""
+    onAdded()
+  }, attemptId)
+  return (
+    <>
+      <input ref={fileInput} type="file" accept="image/*" multiple hidden onChange={(e) => void add(e.target.files)} />
+      <input ref={cameraInput} type="file" accept="image/*" capture="environment" hidden onChange={(e) => void add(e.target.files)} />
+      <button type="button" disabled={busy} onClick={() => fileInput.current?.click()} aria-label={`Upload photos for: ${label}`} className="min-h-6 text-[11px] font-bold text-brand-text underline underline-offset-2 hover:no-underline disabled:opacity-60">
+        {busy ? "Uploading..." : "Upload photos"}
+      </button>
+      <button type="button" disabled={busy} onClick={() => cameraInput.current?.click()} aria-label={`Take a photo for: ${label}`} className="min-h-6 text-[11px] font-semibold text-brand-text underline underline-offset-2 hover:no-underline disabled:opacity-60">Take photo</button>
+    </>
+  )
+}
+
+// With checklistItemId: only that item's photos, and new photos are linked to it (evidence for one checklist item).
+// Without it: only the pin's progress photos; checklist photos are shown under their checklist item, never mixed in here.
+export function PinPhotos({ pin, checklistItemId, canAdd, canRemoveAny, meId, onChanged, columns = 3, attemptId }: { pin: Pin; checklistItemId?: string; attemptId?: string | null; canAdd: boolean; canRemoveAny: boolean; meId: string; onChanged?: () => void; columns?: 2 | 3 | 4 }) {
+  const toast = useToast()
+  const confirm = useConfirm()
+  const { profile } = useAuth()
+  const { photos: allPhotos, reload } = usePinPhotos(pin.id)
+  const photos = allPhotos.filter((photo) => (checklistItemId ? photo.checklist_item_id === checklistItemId : !photo.checklist_item_id) && (attemptId === undefined || (photo.qa_attempt_id ?? null) === attemptId))
+  const evidence = usePinEvidence(pin.id, pin.status)
+  const fileInput = useRef<HTMLInputElement>(null)
+
+  const { add, busy } = usePhotoUpload(pin, checklistItemId, async () => {
+    if (fileInput.current) fileInput.current.value = ""
+    await reload()
+    onChanged?.()
+  }, attemptId)
 
   const remove = async (photo: PinPhoto) => {
     if (!(await confirm({ title: "Remove this photo?", confirmLabel: "Remove", tone: "danger" }))) return
@@ -313,15 +413,16 @@ export function PinPhotos({ pin, canAdd, canRemoveAny, meId, onChanged, columns 
     <div className="space-y-2">
       {canAdd ? (
         <div>
-          <input ref={fileInput} type="file" accept="image/*" capture="environment" multiple hidden onChange={(e) => void add(e.target.files)} />
+          <input ref={fileInput} type="file" accept="image/*" multiple hidden onChange={(e) => void add(e.target.files)} />
           <button type="button" disabled={busy} onClick={() => fileInput.current?.click()} className="rounded-lg border border-line px-3 py-1.5 text-sm font-semibold hover:bg-surface-muted disabled:opacity-60">{busy ? "Uploading..." : "Add photos"}</button>
+          {checklistItemId ? <p className="mt-1 text-xs text-fg-muted">Select multiple photos or add more later. Every photo stays linked to this checklist item.</p> : null}
         </div>
       ) : null}
       {photos.length === 0 ? <p className="text-sm text-fg-muted">No photos yet.</p> : (
         <>
-          {photos.length > 1 ? <BeforeAfter bucket="pin-photos" before={{ path: photos[0].path, at: photos[0].created_at, caption: photos[0].caption }} after={{ path: photos[photos.length - 1].path, at: photos[photos.length - 1].created_at, caption: photos[photos.length - 1].caption }} /> : null}
+          {photos.length > 1 && !checklistItemId && photos.every(photo => !photoPreviewBlocked(profile?.role, photo)) ? <BeforeAfter bucket="pin-photos" before={{ path: photos[0].path, at: photos[0].created_at, caption: photos[0].caption,photo:{...photos[0],label:`${pin.title} · First photo`} }} after={{ path: photos[photos.length - 1].path, at: photos[photos.length - 1].created_at, caption: photos[photos.length - 1].caption,photo:{...photos[photos.length - 1],label:`${pin.title} · Latest photo`} }} /> : null}
           <div className={`grid gap-2 ${grid}`}>
-            {photos.map((photo) => <Thumb key={photo.id} photo={photo} onRemove={!evidence && (canRemoveAny || photo.uploaded_by === meId) ? () => void remove(photo) : undefined} />)}
+            {photos.map((photo) => <Thumb key={photo.id} photo={photo} onRemove={(!evidence || Boolean(attemptId)) && (canRemoveAny || photo.uploaded_by === meId) ? () => void remove(photo) : undefined} />)}
           </div>
         </>
       )}
@@ -395,7 +496,7 @@ export function PinFields({ pin, team, onSaved, idPrefix = "pin" }: { pin: Pin; 
         </label>
         <label className="block text-sm font-semibold">Assigned foreman
           <select className={field} value={form.assigned_to} onChange={(e) => setForm({ ...form, assigned_to: e.target.value })}>
-            <option value="">Anyone on the project</option>
+            <option value="">Not assigned yet</option>
             {foremen.map((f) => <option key={f.user_id} value={f.user_id}>{f.full_name}</option>)}
           </select>
         </label>

@@ -1,4 +1,5 @@
 // Tests for 0010 (pins, timeline, photos, foreman progress reports, pin-photo storage).
+import { passWorkFixture } from "./qa-fixtures.mjs"
 export default async function ({ db, ids, as, asOwner, test, expectOk, expectFail, count, addUser }) {
   const P1 = ids.p1
   const OTHER = ids.other
@@ -103,20 +104,19 @@ export default async function ({ db, ids, as, asOwner, test, expectOk, expectFai
     await as("fore1", "aal2")
     await expectOk("select public.report_pin_progress($1, 'in_progress', 'Rebar tied, waiting for inspection')", [ids.pin1])
     if ((await field(ids.pin1, "status")) !== "in_progress") throw new Error("status not updated")
-    await expectOk("select public.report_pin_progress($1, 'for_review')", [ids.pin1])
-    if ((await field(ids.pin1, "status")) !== "for_review") throw new Error("for_review not set")
+    await expectFail("select public.report_pin_progress($1, 'for_review')", [ids.pin1], /Submit for QA inspection/)
     await asOwner()
     if ((await count("select count(*) n from public.pin_events where pin_id = $1 and kind = 'comment' and note like 'Rebar tied%'", [ids.pin1])) !== 1) throw new Error("note not recorded as a comment")
-    if ((await count("select count(*) n from public.pin_events where pin_id = $1 and kind = 'status'", [ids.pin1])) < 2) throw new Error("status events missing")
+    if ((await count("select count(*) n from public.pin_events where pin_id = $1 and kind = 'status'", [ids.pin1])) < 1) throw new Error("status events missing")
   })
 
   await test("Foreman cannot set Verified / Issue / Not started, cannot report on pins of others or when not on the project", async () => {
     await as("fore1", "aal2")
     for (const status of ["verified", "issue", "not_started"]) {
-      await expectFail("select public.report_pin_progress($1, $2)", [ids.pin1, status], /only report In progress or For review/)
+      await expectFail("select public.report_pin_progress($1, $2)", [ids.pin1, status], /Submit for QA inspection/)
     }
     await as("fore2", "aal2")
-    await expectFail("select public.report_pin_progress($1, 'in_progress')", [ids.pin1], /assigned to another Foreman/)
+    await expectFail("select public.report_pin_progress($1, 'in_progress')", [ids.pin1], /not assigned to you/)
     await as("fore3", "aal2")
     await expectFail("select public.report_pin_progress($1, 'in_progress')", [ids.pin1], /Only a Foreman assigned/)
     for (const who of ["eng1", "client1"]) {
@@ -129,6 +129,7 @@ export default async function ({ db, ids, as, asOwner, test, expectOk, expectFai
 
   await test("Verification: Engineer verifies (who/when recorded); Foreman can no longer change it; un-verifying clears it", async () => {
     await as("eng1", "aal2")
+    await passWorkFixture({db,ids,as,asOwner},ids.pin1)
     await expectOk("update public.pins set status = 'verified' where id = $1", [ids.pin1])
     if ((await field(ids.pin1, "verified_by")) !== ids.eng1) throw new Error("verified_by")
     if (!(await field(ids.pin1, "verified_at"))) throw new Error("verified_at")
@@ -139,14 +140,15 @@ export default async function ({ db, ids, as, asOwner, test, expectOk, expectFai
     if ((await field(ids.pin1, "verified_by")) !== null) throw new Error("verified_by not cleared")
   })
 
-  await test("Verified pins are evidence: neither the Engineer nor an admin with blueprints.manage can delete them (0033)", async () => {
+  await test("Verified pins are evidence: the Engineer cannot delete them; admins cannot delete pins at all (0033, 0040)", async () => {
     const pin = await newPin("eng1", "Slab pour check")
     await as("eng1", "aal2")
+    await passWorkFixture({db,ids,as,asOwner},pin)
     await expectOk("update public.pins set status = 'verified' where id = $1", [pin])
     const del = await db.query("delete from public.pins where id = $1 returning id", [pin])
     if (del.rows.length) throw new Error("engineer deleted a verified pin")
     await as("admin", "aal2")
-    await expectFail("delete from public.pins where id = $1", [pin], /evidence/)
+    if ((await db.query("delete from public.pins where id = $1 returning id", [pin])).rows.length) throw new Error("admin deleted a pin")
   })
 
   await test("Engineer can delete an unverified pin", async () => {
@@ -199,15 +201,16 @@ export default async function ({ db, ids, as, asOwner, test, expectOk, expectFai
   // ---- Photos ----
   const photoSql = "insert into public.pin_photos (pin_id, project_id, path, caption) values ($1, $2, $3, 'Rebar after tying') returning id"
   await test("Photos: Foreman adds one (a timeline entry is written); wrong project folder is rejected", async () => {
+    const before = await events(ids.pin1, "photo")
     await as("fore1", "aal2")
     ids.photo1 = (await db.query(photoSql, [ids.pin1, P1, `${P1}/${ids.pin1}/a.jpg`])).rows[0].id
     await expectFail(photoSql, [ids.pin1, P1, `${OTHER}/${ids.pin1}/b.jpg`], /inside the project folder/)
-    if ((await events(ids.pin1, "photo")) !== 1) throw new Error("photo event missing")
+    if ((await events(ids.pin1, "photo")) !== before + 1) throw new Error("photo event missing")
   })
 
   await test("Photos: Client sees them, cannot add; outsiders see nothing; evidence photos cannot be deleted by anyone", async () => {
     await as("client1")
-    if ((await count("select count(*) n from public.pin_photos where pin_id = $1", [ids.pin1])) !== 1) throw new Error("client cannot see photo")
+    if ((await count("select count(*) n from public.pin_photos where id = $1", [ids.photo1])) !== 1) throw new Error("client cannot see photo")
     await as("client1", "aal2")
     await expectFail(photoSql, [ids.pin1, P1, `${P1}/${ids.pin1}/c.jpg`], /row-level security/)
     await as("eng2")
@@ -248,7 +251,7 @@ export default async function ({ db, ids, as, asOwner, test, expectOk, expectFai
     await expectFail("delete from public.blueprints where id = $1", [bpId], /evidence/)
     await as("eng1", "aal2")
     const spare = (await db.query("insert into public.blueprints (project_id, title) values ($1, 'Spare plan') returning id", [P1])).rows[0].id
-    const pin = (await db.query("insert into public.pins (project_id, blueprint_id, x, y, title) values ($1, $2, 10, 10, 'Cascade pin') returning id", [P1, spare])).rows[0].id
+    const pin = (await db.query("insert into public.pins (project_id, blueprint_id, x, y, title, assigned_to) values ($1, $2, 10, 10, 'Cascade pin', $3) returning id", [P1, spare, ids.fore1])).rows[0].id
     await as("fore1", "aal2")
     await expectOk(photoSql, [pin, P1, `${P1}/${pin}/draft.jpg`])
     await as("admin", "aal2")

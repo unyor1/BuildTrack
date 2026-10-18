@@ -11,7 +11,7 @@ import type { AdminPageProps } from "./types"
 type Row = { id: number; created_at: string; actor_name: string; actor_email: string | null; action: string; target_name: string | null; summary: string | null }
 
 const PAGE = 100
-const knownActions = ["profile.status_changed", "profile.role_changed", "oauth.enroll", "oauth.blocked", "registration.submitted", "whitelist.apply", "whitelist.add", "whitelist.remove", "access.approve", "access.reject", "user.reopen", "user.create", "user.update", "user.approve", "user.reject", "user.enable", "user.disable", "user.impersonate", "user.set_permissions", "settings.update", "project.export", "invite.create", "invite.disable", "invite.enable", "invite.redeem", "projects.insert", "projects.update", "projects.delete", "project_members.insert", "project_members.update", "project_members.delete"]
+const knownActions = ["profile.status_changed", "profile.role_changed", "oauth.enroll", "oauth.blocked", "registration.submitted", "whitelist.apply", "whitelist.add", "whitelist.remove", "access.approve", "access.reject", "user.reopen", "user.create", "user.update", "user.promote_admin", "user.approve", "user.reject", "user.enable", "user.disable", "user.impersonate", "user.set_permissions", "settings.update", "project.export", "invite.create", "invite.disable", "invite.enable", "invite.redeem", "projects.insert", "projects.update", "projects.delete", "project_members.insert", "project_members.update", "project_members.delete"]
 
 // "{"role":"foreman","max_uses":1}" -> "role: foreman, max uses: 1" (the database stores details as JSON text)
 const readable = (summary: string | null) => {

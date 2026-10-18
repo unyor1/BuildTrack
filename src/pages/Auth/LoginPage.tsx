@@ -1,10 +1,10 @@
-import { useState, type FormEvent } from "react"
+import { useEffect, useState, type FormEvent } from "react"
 import type { Page } from "../../App"
 import Brand from "../../components/Brand"
 import FormField from "../../components/FormField"
 import Header from "../../components/Header"
 import { PrivacyNoticeModal } from "../../components/PrivacyNotice"
-import { setOAuthIntent, takeLoginNotice } from "../../lib/oauthIntent"
+import { setOAuthIntent, takeLoginNotice, takeLoginSuccessNotice } from "../../lib/oauthIntent"
 import { supabase } from "../../lib/supabase"
 import { useToast } from "../../lib/toast"
 
@@ -18,6 +18,11 @@ export default function LoginPage({ navigate }: LoginPageProps) {
   const [info, setInfo] = useState("")
   const [busy, setBusy] = useState(false)
   const [privacy, setPrivacy] = useState(false)
+
+  useEffect(() => {
+    const notice = takeLoginSuccessNotice()
+    if (notice) toast.success(notice.title, notice.detail)
+  }, [toast])
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -134,13 +139,12 @@ export default function LoginPage({ navigate }: LoginPageProps) {
             Sign in with Google
           </button>
           <p className="support-note">New to BuildTrack? Google sign-in only works for registered accounts.</p>
-          <button
-            className="button button--outline-light button--wide"
-            type="button"
-            onClick={() => navigate("register")}
-          >
-            Create new account
-          </button>
+          <p className="support-note">
+            New to BuildTrack?{" "}
+            <button className="text-button" type="button" onClick={() => navigate("register")}>
+              Register
+            </button>
+          </p>
           <p className="support-note">
             Account pending approval?{" "}
             <button type="button" className="text-button">

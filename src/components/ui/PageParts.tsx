@@ -26,7 +26,7 @@ export function StatCard({ label, value, note, tone = "brand", onClick }: { labe
       {note ? <span className="mt-2 block text-xs leading-snug text-fg-muted">{note}</span> : null}
     </>
   )
-  const base = "bt-stat relative block w-full overflow-hidden rounded-2xl border border-line bg-surface px-5 py-4 text-left shadow-[var(--bt-shadow)]"
+  const base = "bt-stat relative block h-full w-full overflow-hidden rounded-2xl border border-line bg-surface px-5 py-4 text-left shadow-[var(--bt-shadow)]"
   return onClick ? (
     <button type="button" onClick={onClick} className={`${base} transition hover:-translate-y-0.5 hover:shadow-[var(--bt-shadow-hover)]`}>{body}</button>
   ) : (

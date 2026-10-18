@@ -1,7 +1,7 @@
 import { defineConfig, type HtmlTagDescriptor, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
-import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 import siteConfiguration from './.figma/make/site.json'
 
@@ -28,7 +28,7 @@ react(),
     resolve: {
       dedupe: ['react', 'react-dom'],
       alias: {
-        '@': path.resolve(__dirname, './src'),
+        '@': fileURLToPath(new URL('./src', import.meta.url)),
       },
     },
     server: {

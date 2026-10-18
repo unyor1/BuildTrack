@@ -9,7 +9,7 @@ export default async function ({ db, as, test }) {
     pins: "public.can_view_project(project_id)",
     pin_photos: "public.can_view_project(project_id)",
     pin_events: "public.can_view_project(project_id) and not public.is_project_client(project_id)",
-    daily_reports: "public.can_view_project(project_id) and (author_id = auth.uid() or status = 'submitted')",
+    daily_reports: "public.can_view_project(project_id) and (author_id = auth.uid() or status = 'submitted' or (public.is_staff() and revision>0 and review_state='returned'))",
     project_questions: "public.can_view_project(project_id) and (author_id = auth.uid() or not public.is_project_client(project_id))",
     qa_inspections: "public.is_staff() and public.can_view_project(project_id)",
     qa_inspection_items: "public.is_staff() and public.can_view_project(project_id)",

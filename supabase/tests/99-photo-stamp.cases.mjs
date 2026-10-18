@@ -6,8 +6,8 @@ export default async function ({ db, ids, as, asOwner, test, expectFail, count }
   await db.query("insert into public.project_members (project_id, user_id) values ($1, $2), ($1, $3), ($4, $2), ($4, $3)", [project, ids.eng1, ids.fore1, bare])
   const sheet = (await db.query("insert into public.blueprints (project_id, title) values ($1, 'Stamp plan') returning id", [project])).rows[0].id
   const sheet2 = (await db.query("insert into public.blueprints (project_id, title) values ($1, 'Plan 2') returning id", [bare])).rows[0].id
-  const pin = (await db.query("insert into public.pins (project_id, blueprint_id, x, y, title) values ($1, $2, 5, 5, 'Stamped pin') returning id", [project, sheet])).rows[0].id
-  const pin2 = (await db.query("insert into public.pins (project_id, blueprint_id, x, y, title) values ($1, $2, 5, 5, 'Pin without a site') returning id", [bare, sheet2])).rows[0].id
+  const pin = (await db.query("insert into public.pins (project_id, blueprint_id, x, y, title, assigned_to) values ($1, $2, 5, 5, 'Stamped pin', $3) returning id", [project, sheet, ids.fore1])).rows[0].id
+  const pin2 = (await db.query("insert into public.pins (project_id, blueprint_id, x, y, title, assigned_to) values ($1, $2, 5, 5, 'Pin without a site', $3) returning id", [bare, sheet2, ids.fore1])).rows[0].id
   let n = 0
   const photo = async (over = {}, forPin = pin, forProject = project) => {
     await as("fore1")

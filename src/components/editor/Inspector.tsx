@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react"
 import { Icon } from "./EditorToolbar"
 import LayerStack, { EyeButton, describe } from "./LayerStack"
-import { ChecklistProgress, PinChecklist, PinPhotos, PinTimeline, ProgressTracker, field } from "./PinParts"
+import { ChecklistProgress, PinChecklist, PinTimeline, ProgressTracker, field } from "./PinParts"
+import ChecklistPhotos from "../ChecklistPhotos"
 import { useToast } from "../../lib/toast"
+import { usePinQa } from "../../lib/pinQa"
 import { SkeletonList } from "../ui/Skeleton"
 import {
   annotationColors,
@@ -63,6 +65,22 @@ function ChecklistSummary({ pinId }: { pinId: string }) {
   if (loading) return <SkeletonList rows={1} label="Loading checklist" />
   if (!items.length) return <p className="text-xs text-fg-muted">No checklist items yet.</p>
   return <ChecklistProgress done={items.filter((item) => item.done).length} total={items.length} />
+}
+
+// Checklist ticks, remarks and photo uploads: ONLY the Foreman the pin is assigned to. Engineers build the checklist and
+// approve; the database enforces the same rule (can_work_on_pin, 0040).
+export const canWorkOn = (props: Pick<InspectorProps, "role" | "canReport" | "meId">, pin: Pin) =>
+  props.role === "foreman" && props.canReport && pin.assigned_to === props.meId && pin.status !== "for_review" && pin.status !== "verified"
+
+// Why the checklist is read-only for this person (shown above the items so nobody wonders where the Upload button went).
+export const checklistNotice = (props: Pick<InspectorProps, "role" | "canReport" | "meId">, pin: Pin, assigneeName?: string) => {
+  if (props.role === "foreman" && pin.assigned_to !== props.meId) {
+    return pin.assigned_to
+      ? `This work is assigned to ${assigneeName ?? "another foreman"}. Only that foreman can upload photos and tick the checklist. Ask the engineer to reassign it if it is yours.`
+      : "This work is not assigned to anyone yet. The engineer must assign this pin to you (Details > Assigned foreman) before you can upload photos and tick the checklist."
+  }
+  if (props.role === "engineer") return "The assigned foreman uploads a photo on each item and ticks it. You verify the work once every item is done and QA is clear."
+  return ""
 }
 
 export type InspectorProps = {
@@ -138,14 +156,15 @@ export default function Inspector(props: InspectorProps) {
   const [pinTab, setPinTab] = useState<"details" | "timeline" | "checklist" | "photos">("details")
 
   useEffect(() => {
-    setPinTab("details")
+    setPinTab(new URLSearchParams(window.location.search).get("worktab") === "checklist" ? "checklist" : "details")
   }, [pin?.id])
 
   if (props.selectedAnnotations.length >= 2) return <MultiPanel {...props} />
   if (annotation) return <AnnotationEditor {...props} annotation={annotation} />
 
   if (pin) {
-    const tabs = props.role === "client" ? [{ key: "details" as const, label: "Details" }, { key: "checklist" as const, label: "Checklist" }, { key: "photos" as const, label: "Photos" }] : [{ key: "details" as const, label: "Details" }, { key: "timeline" as const, label: "Timeline" }, { key: "checklist" as const, label: "Checklist" }, { key: "photos" as const, label: "Photos" }]
+    // Photos are checklist evidence (staff only); clients see the checklist with each item's acceptance.
+    const tabs = props.role === "client" ? [{ key: "details" as const, label: "Details" }, { key: "checklist" as const, label: "Checklist" }] : [{ key: "details" as const, label: "Details" }, { key: "timeline" as const, label: "Timeline" }, { key: "checklist" as const, label: "Checklist" }, { key: "photos" as const, label: "Photos" }]
     return (
       <aside className="flex h-full w-full flex-col border-l border-line bg-surface">
         <div className="flex items-start gap-2 px-4 pb-3 pt-4">
@@ -159,8 +178,8 @@ export default function Inspector(props: InspectorProps) {
         <div className="flex-1 overflow-y-auto p-4">
           {pinTab === "details" ? <PinDetailsTab {...props} pin={pin} /> : null}
           {pinTab === "timeline" ? <PinTimeline pinId={pin.id} canComment={props.canReport} /> : null}
-          {pinTab === "checklist" ? <PinChecklist pinId={pin.id} canEdit={props.canEdit} canTick={props.canReport} /> : null}
-          {pinTab === "photos" ? <PinPhotos pin={pin} canAdd={props.canReport} canRemoveAny={props.canEdit} meId={props.meId} columns={2} onChanged={props.onPinChanged} /> : null}
+          {pinTab === "checklist" ? <PinChecklist pin={pin} canEdit={props.canEdit} canTick={canWorkOn(props, pin)} notice={checklistNotice(props, pin, pin.assigned_to ? props.team.find((member) => member.user_id === pin.assigned_to)?.full_name : undefined)} onPinChanged={props.onPinChanged} /> : null}
+          {pinTab === "photos" && props.role !== "client" ? <ChecklistPhotos pin={pin} /> : null}
         </div>
       </aside>
     )
@@ -183,10 +202,11 @@ export default function Inspector(props: InspectorProps) {
 
 export function PinDetailsTab(props: InspectorProps & { pin: Pin; inDialog?: boolean }) {
   const { pin, team } = props
+  const qa = usePinQa(pin.id)
   const toast = useToast()
   const [note, setNote] = useState("")
   const [busy, setBusy] = useState(false)
-  const nameOf = (id: string | null) => (id ? (team.find((member) => member.user_id === id)?.full_name ?? "Administrator") : "Anyone on the project")
+  const nameOf = (id: string | null) => (id ? (team.find((member) => member.user_id === id)?.full_name ?? "Administrator") : "Not assigned yet")
   const overdue = pin.due_date && pin.due_date < today() && pin.status !== "verified"
 
   const report = async (status: "in_progress" | "for_review") => {
@@ -209,30 +229,31 @@ export function PinDetailsTab(props: InspectorProps & { pin: Pin; inDialog?: boo
           <p className="mb-1 text-xs font-bold uppercase tracking-wider text-fg-muted">Set status</p>
           <div className="flex flex-wrap gap-1">
             {allStatuses.map((status) => (
-              <button key={status} type="button" onClick={() => props.onSetStatus(pin, status)} disabled={pin.status === status} className={`flex items-center gap-1 rounded-full border px-2 py-1 text-[11px] font-semibold transition disabled:cursor-default ${pin.status === status ? "border-transparent text-white" : "border-line hover:bg-surface-muted"}`} style={pin.status === status ? { background: statusDot[status] } : undefined}>
+              <button key={status} type="button" onClick={() => props.onSetStatus(pin, status)} disabled={pin.status === status || (status === "verified" && (!qa.state || Boolean(qa.state.problem) || Boolean(qa.error)))} title={status === "verified" ? qa.error || qa.state?.problem || undefined : undefined} className={`flex items-center gap-1 rounded-full border px-2 py-1 text-[11px] font-semibold transition disabled:cursor-default disabled:opacity-50 ${pin.status === status ? "border-transparent text-white" : "border-line hover:bg-surface-muted"}`} style={pin.status === status ? { background: statusDot[status] } : undefined}>
                 <span className="h-2 w-2 rounded-full" style={{ background: statusDot[status] }} />
                 {statusLabels[status]}
               </button>
             ))}
           </div>
+          {qa.state?.problem && pin.status !== "verified" ? <p className="mt-2 text-xs text-fg-muted">Cannot complete yet: {qa.state.problem}</p> : null}
         </div>
       ) : props.role === "foreman" ? (
         <div className="space-y-2 rounded-xl border border-line p-3">
           <p className="text-xs font-bold uppercase tracking-wider text-fg-muted">Report progress</p>
-          {pin.status === "verified" ? <p className="text-sm text-fg-muted">Verified pins can only be changed by the engineer.</p> : (
+          {pin.assigned_to !== props.meId ? <p className="text-sm text-fg-muted">{pin.assigned_to ? "This work is assigned to another foreman." : "This work is not assigned yet. The engineer assigns each pin to a foreman."}</p> : pin.status === "verified" ? <p className="text-sm text-fg-muted">Completed work can only be reopened by the Engineer.</p> : (
             <>
               <textarea className={field} rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Note for the engineer (optional)" maxLength={2000} aria-label="Progress note" />
               <div className="flex gap-2">
-                <button type="button" disabled={busy} onClick={() => void report("in_progress")} className="flex-1 rounded-lg border border-line px-2 py-2 text-xs font-bold hover:bg-surface-muted disabled:opacity-60">Work in progress</button>
-                <button type="button" disabled={busy} onClick={() => void report("for_review")} className="flex-1 rounded-lg bg-brand px-2 py-2 text-xs font-bold text-white hover:bg-brand-hover disabled:opacity-60">Ready for review</button>
+                <button type="button" disabled={busy || pin.status === "for_review"} onClick={() => void report("in_progress")} className="flex-1 rounded-lg border border-line px-2 py-2 text-xs font-bold hover:bg-surface-muted disabled:opacity-60">Work in progress</button>
               </div>
+              <p role="status" className="text-xs text-fg-muted">{pin.status === "for_review" ? "Awaiting Engineer inspection" : "Request QA inspection from the Checklist, including for partially completed work."}</p>
             </>
           )}
         </div>
       ) : null}
 
       <dl className="grid grid-cols-2 gap-3 text-sm">
-        <div><dt className="text-[11px] font-bold uppercase tracking-wider text-fg-muted">Assigned</dt><dd className="font-semibold">{nameOf(pin.assigned_to)}</dd></div>
+        <div><dt className="text-[11px] font-bold uppercase tracking-wider text-fg-muted">Assigned</dt><dd className="font-semibold">{nameOf(pin.assigned_to)}{pin.assigned_to && pin.assigned_at ? <span className="block text-[11px] font-normal text-fg-muted">by {nameOf(pin.assigned_by ?? null)} on {prettyDate(pin.assigned_at.slice(0, 10))}</span> : null}</dd></div>
         <div>
           <dt className="text-[11px] font-bold uppercase tracking-wider text-fg-muted">Deadline</dt>
           <dd className={`font-semibold ${overdue ? "text-danger-fg" : ""}`}>{pin.due_date ? prettyDate(pin.due_date) : "Not set"}{overdue ? " (overdue)" : ""}</dd>
@@ -240,7 +261,7 @@ export function PinDetailsTab(props: InspectorProps & { pin: Pin; inDialog?: boo
         <div><dt className="text-[11px] font-bold uppercase tracking-wider text-fg-muted">Category</dt><dd className="font-semibold">{categoryLabels[pin.category]}</dd></div>
         <div><dt className="text-[11px] font-bold uppercase tracking-wider text-fg-muted">Discipline</dt><dd className="font-semibold">{pin.discipline ? disciplineLabels[pin.discipline] : "Not set"}</dd></div>
       </dl>
-      {pin.verified_at ? <p className="text-xs font-semibold text-ok-fg">Verified by {nameOf(pin.verified_by)} on {prettyDate(pin.verified_at.slice(0, 10))}</p> : null}
+      {pin.verified_at ? <p className="text-xs font-semibold text-ok-fg">Completed · accepted by {nameOf(pin.verified_by)} on {prettyDate(pin.verified_at.slice(0, 10))}</p> : null}
       {pin.description ? <p className="whitespace-pre-wrap rounded-lg bg-surface-muted/60 p-3 text-sm">{pin.description}</p> : null}
       {props.canEdit ? (
         <button type="button" onClick={() => props.onToggleLocked({ type: "pin", id: pin.id })} className="flex w-full items-center justify-between rounded-lg border border-line px-3 py-2 text-sm font-semibold hover:bg-surface-muted" title="A locked pin cannot be moved, renamed or deleted. Its status can still change.">

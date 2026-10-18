@@ -1,4 +1,4 @@
-export type ForemanPageKey = "dashboard" | "attendance" | "daily-work" | "daily-report" | "photo-documentation" | "quality-control" | "qa-workflow" | "issues" | "corrective-action"
+export type ForemanPageKey = "projects" | "dashboard" | "attendance" | "daily-work" | "daily-report" | "photo-documentation" | "quality-control" | "qa-workflow" | "issues"
 
 export type ForemanNavigate = (page: ForemanPageKey) => void
 export type ForemanPageProps = { onNavigate: ForemanNavigate }

@@ -39,7 +39,6 @@ const navItems: Array<{
   { key: "biometrics", label: "Biometric Registration", icon: "fingerprint" },
   { key: "project-management", label: "Project Management", icon: "building" },
   { key: "project-overview", label: "Project Overview", icon: "building" },
-  { key: "blueprint-upload", label: "Blueprint Upload", icon: "blueprint" },
   { key: "blueprint-mapping", label: "Blueprint Mapping", icon: "pin" },
   { key: "blueprint-progress", label: "Progress Tracking", icon: "chart" },
   { key: "blueprint-version", label: "Version Control", icon: "history" },
@@ -282,6 +281,7 @@ export default function AdminShell({
   const reviewCount = useReviewCount(can("users.approve"))
 
   const visible = navItems.filter((item) => {
+    if (["project-overview", "blueprint-mapping", "blueprint-progress", "blueprint-version"].includes(item.key)) return false
     const need = adminPagePermission[item.key]
     return !need || can(need)
   })
@@ -293,7 +293,7 @@ export default function AdminShell({
     group("Overview", ["dashboard"]),
     group("People & access", ["user-management", "invites", "access-review", "audit-log"]),
     group("Projects", ["project-management", "project-overview"]),
-    group("Plans & quality", ["blueprint-upload", "blueprint-mapping", "blueprint-progress", "blueprint-version", "qa-checklists"]),
+    group("Plans & quality", ["blueprint-mapping", "blueprint-progress", "blueprint-version", "qa-checklists"]),
     group("Operations", ["biometrics", "backup", "settings"]),
   ].filter((entry) => entry.items.length)
 

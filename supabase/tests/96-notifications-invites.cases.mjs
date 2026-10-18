@@ -1,4 +1,5 @@
 // Tests for 0020: notifications, deadline reminders, invitation codes, pin severity, audit log viewer, profile photos.
+import { passWorkFixture, submitWorkFixture } from "./qa-fixtures.mjs"
 export default async function ({ db, ids, as, asOwner, test, expectOk, expectFail, count, addUser }) {
   const P1 = ids.p1
   // Notifications of one person, optionally narrowed to a kind and to the thing they are about (earlier test files created others).
@@ -63,15 +64,16 @@ export default async function ({ db, ids, as, asOwner, test, expectOk, expectFai
 
   await test("Sending a pin for review notifies the project's Engineers except the sender; sending it back and verifying reach the Foreman; Clients hear about verified milestones", async () => {
     await as("fore1", "aal2")
-    await expectOk("select public.report_pin_progress($1, 'for_review', 'Done, please check')", [pin])
+    await submitWorkFixture({db,ids,as,asOwner},pin)
     const review = await mine("eng1", "pin.review", pin)
     if (review.length !== 1 || review[0].link !== `/engineer/verification?project=${P1}`) throw new Error("review request not delivered")
     if ((await mine("fore1", "pin.review", pin)).length !== 0) throw new Error("sender notified")
     if ((await mine("eng2", "pin.review", pin)).length !== 0) throw new Error("an engineer of another project was notified")
     await as("eng1", "aal2")
-    await expectOk("update public.pins set status = 'in_progress' where id = $1", [pin])
+    await expectOk("select public.return_pin_for_correction($1,'Test step needs correction')", [pin])
     if ((await mine("fore1", "pin.returned", pin)).length !== 1) throw new Error("sent-back not delivered")
     await as("eng1", "aal2") // mine() above switched roles
+    await passWorkFixture({db,ids,as,asOwner},pin)
     await expectOk("update public.pins set status = 'verified' where id = $1", [pin])
     const st = (await db.query("select status, assigned_to from public.pins where id = $1", [pin])).rows[0]
     const got = await mine("fore1", "pin.verified", pin)

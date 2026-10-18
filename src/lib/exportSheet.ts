@@ -335,21 +335,28 @@ export async function renderSheet(options: ExportOptions): Promise<HTMLCanvasEle
   if (show.pins) {
     for (const pin of pins) {
       const [x, y] = px([pin.x, pin.y])
-      ctx.beginPath()
-      ctx.arc(x, y, 12 * u, 0, Math.PI * 2)
+      ctx.save()
+      ctx.translate(x - 16 * u, y - 44 * u)
+      ctx.scale(u, u)
+      const marker = new Path2D("M16 44 3.8 24A15 15 0 1 1 28.2 24Z")
       ctx.fillStyle = statusDot[pin.status]
       ctx.shadowColor = "rgba(0,0,0,0.35)"
       ctx.shadowBlur = 5 * u
-      ctx.fill()
+      ctx.fill(marker)
       ctx.shadowColor = "transparent"
-      ctx.lineWidth = 2.2 * u
+      ctx.lineWidth = 1
       ctx.strokeStyle = "#fff"
-      ctx.stroke()
+      ctx.stroke(marker)
+      ctx.beginPath()
+      ctx.arc(16, 16, 8.5, 0, Math.PI * 2)
       ctx.fillStyle = "#fff"
-      ctx.font = `700 ${11 * u}px ${FONT}`
+      ctx.fill()
+      ctx.fillStyle = "#211f20"
+      ctx.font = `800 ${options.numberOf(pin) > 99 ? 8 : 11}px ${FONT}`
       ctx.textAlign = "center"
       ctx.textBaseline = "middle"
-      ctx.fillText(String(options.numberOf(pin)), x, y + 0.5 * u)
+      ctx.fillText(String(options.numberOf(pin)), 16, 16.5)
+      ctx.restore()
     }
   }
 

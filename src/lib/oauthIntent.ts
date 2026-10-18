@@ -3,6 +3,7 @@
 // The note only steers the screens: the database never gives such an account access (it stays pending until an administrator decides).
 const INTENT_KEY = "buildtrack.oauthIntent"
 const NOTICE_KEY = "buildtrack.loginNotice"
+const SUCCESS_NOTICE_KEY = "buildtrack.loginSuccessNotice"
 const MAX_AGE_MS = 15 * 60_000
 
 export type OAuthIntent = "login" | "register"
@@ -55,4 +56,27 @@ export function takeLoginNotice(): string {
   } catch {
     return ""
   }
+}
+
+// A one-time positive message survives the sign-out and route change that follows registration.
+// It is intentionally separate from login errors so the Login page can render it as a success toast.
+export function setLoginSuccessNotice(title: string, detail: string) {
+  try {
+    sessionStorage.setItem(SUCCESS_NOTICE_KEY, JSON.stringify({ title, detail }))
+  } catch {
+    // The redirect still succeeds if session storage is unavailable.
+  }
+}
+
+export function takeLoginSuccessNotice(): { title: string; detail: string } | null {
+  try {
+    const raw = sessionStorage.getItem(SUCCESS_NOTICE_KEY)
+    sessionStorage.removeItem(SUCCESS_NOTICE_KEY)
+    if (!raw) return null
+    const notice = JSON.parse(raw) as { title?: unknown; detail?: unknown }
+    if (typeof notice.title === "string" && typeof notice.detail === "string") return { title: notice.title, detail: notice.detail }
+  } catch {
+    // Treat malformed or unavailable storage as no notice.
+  }
+  return null
 }

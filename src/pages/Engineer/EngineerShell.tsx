@@ -1,25 +1,28 @@
 import type { ReactNode } from "react"
+import FieldProjects from "../../components/FieldProjects"
 import AppShell from "../../components/shell/AppShell"
 import { useAuth } from "../../lib/auth"
 import { usePinCounts } from "../../lib/pinCounts"
 import { useQaBadge } from "../../lib/qaLite"
-import { getSelectedProjectId, phaseLabels, useProject } from "../../lib/projects"
+import { phaseLabels, useFieldProject } from "../../lib/projects"
 import type { AdminIconName } from "../Admin/AdminIcon"
 import type { EngineerNavigate, EngineerPageKey } from "./types"
 
 const labels: Record<EngineerPageKey, { label: string; icon: AdminIconName }> = {
-  dashboard: { label: "Dashboard", icon: "grid" },
-  projects: { label: "Assigned Projects", icon: "building" },
+  projects: { label: "My projects", icon: "building" },
+  dashboard: { label: "Project dashboard", icon: "grid" },
   "project-blueprint": { label: "Blueprints", icon: "blueprint" },
   annotation: { label: "Plan Editor", icon: "pin" },
-  verification: { label: "Verification Queue", icon: "check" },
+  verification: { label: "Review Inbox", icon: "inbox" },
   "report-issue": { label: "Issue Register", icon: "close" },
   progress: { label: "Progress by Zone", icon: "chart" },
   assignments: { label: "Assignment Board", icon: "users" },
   reports: { label: "Site Logs & Reports", icon: "file" },
-  qa: { label: "QA / QC", icon: "clipboard" },
+  qa: { label: "QA Register", icon: "clipboard" },
+  checklists: { label: "Checklist Configuration", icon: "settings" },
 }
 
+// First the Engineer's assigned projects; inside a project, the sidebar shows only that project's sections (and its own badges).
 export default function EngineerShell({
   activePage,
   onNavigate,
@@ -30,29 +33,30 @@ export default function EngineerShell({
   children: ReactNode
 }) {
   const { profile } = useAuth()
-  const { project } = useProject(getSelectedProjectId())
-  const counts = usePinCounts(activePage)
-  const qaCount = useQaBadge("engineer", profile?.id ?? null, activePage)
-  const badge = (key: EngineerPageKey) => (key === "verification" ? counts.review : key === "report-issue" ? counts.issue : key === "qa" ? qaCount : 0) || undefined
+  const { projectId, project, notFound, mode } = useFieldProject(activePage)
+  const inProject = mode === "project"
+  const counts = usePinCounts(activePage, projectId)
+  const qaCount = useQaBadge("engineer", profile?.id ?? null, activePage, projectId)
+  const badge = (key: EngineerPageKey) => (!inProject ? 0 : key === "verification" ? counts.review : key === "report-issue" ? counts.issue : key === "qa" ? qaCount : 0) || undefined
   const item = (key: EngineerPageKey) => ({ key, ...labels[key], badge: badge(key) })
 
   return (
     <AppShell
       persona="engineer"
       workspace="Engineering office"
-      groups={[
-        { label: "Workspace", items: [item("dashboard"), item("projects")] },
+      groups={inProject ? [
+        { label: "Project", items: [item("dashboard")] },
         { label: "Plans", items: [item("project-blueprint"), item("annotation")] },
-        { label: "Field & quality", items: [item("verification"), item("qa"), item("report-issue"), item("progress")] },
+        { label: "Field & quality", items: [item("verification"), item("qa"), item("checklists"), item("report-issue"), item("progress")] },
         { label: "Team & reports", items: [item("assignments"), item("reports")] },
-      ]}
-      active={activePage}
+      ] : [{ label: "Workspace", items: [item("projects")] }]}
+      active={inProject ? activePage : "projects"}
       onNavigate={(key) => onNavigate(key as EngineerPageKey)}
-      project={project ? { code: project.code, name: project.name, sub: phaseLabels[project.phase] } : null}
-      projectEmpty="Pick one under Assigned Projects"
-      mobileTabs={["dashboard", "verification", "qa", "annotation"]}
+      project={inProject ? (project ? { code: project.code, name: project.name, sub: phaseLabels[project.phase] } : null) : undefined}
+      onAllProjects={inProject ? () => onNavigate("projects") : undefined}
+      mobileTabs={inProject ? ["dashboard", "verification", "qa", "annotation"] : []}
     >
-      {children}
+      {inProject || activePage === "projects" ? children : <FieldProjects role="engineer" notice={notFound ? "That project is not available: it was removed or is no longer assigned to you." : "Choose a project to open that page."} />}
     </AppShell>
   )
 }

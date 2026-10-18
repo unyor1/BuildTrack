@@ -9,7 +9,9 @@ export default async function ({ db, ids, as, asOwner, test, count, addUser }) {
   const sheet = (await db.query("insert into public.blueprints (project_id, title) values ($1, 'Alert plan') returning id", [project])).rows[0].id
   const pin = (title, extra = "") => db.query(`insert into public.pins (project_id, blueprint_id, x, y, title, due_date ${extra ? ", " + extra.split("=")[0] : ""}) values ($1, $2, 1, 1, $3, current_date - 5 ${extra ? ", " + extra.split("=")[1] : ""})`, [project, sheet, title])
   await pin("Late 5 days")
-  await pin("Verified long ago", "status='verified'")
+  await pin("Verified long ago")
+  await db.query("select set_config('request.jwt.claims', '', false)") // trusted historical fixture, not an authenticated verification
+  await db.query("update public.pins set status = 'verified' where project_id = $1 and title = 'Verified long ago'", [project]) // a new pin cannot start verified (0040)
   await db.query("insert into public.pins (project_id, blueprint_id, x, y, title, category, due_date) values ($1, $2, 2, 2, 'A note', 'note', current_date - 30)", [project, sheet])
   await db.query("insert into public.pins (project_id, blueprint_id, x, y, title, due_date) values ($1, $2, 3, 3, 'Only 1 day late', current_date - 1)", [project, sheet])
   const notes = async (who, kind) => {

@@ -40,10 +40,13 @@ export function useQaLite(refreshKey = "") {
   return { inspections, defects, loading }
 }
 
-// Sidebar badge (see qaBadge for what it counts).
-export function useQaBadge(role: "engineer" | "foreman", userId: string | null, refreshKey: string) {
+// Sidebar badge (see qaBadge for what it counts). With a project, only that project's inspections and NCRs count.
+export function useQaBadge(role: "engineer" | "foreman", userId: string | null, refreshKey: string, projectId: string | null = null) {
   const { inspections, defects } = useQaLite(refreshKey)
-  return useMemo(() => qaBadge(role, userId, inspections, defects), [role, userId, inspections, defects])
+  return useMemo(() => {
+    const mine = <T extends { project_id: string }>(rows: T[]) => (projectId ? rows.filter((row) => row.project_id === projectId) : rows)
+    return qaBadge(role, userId, mine(inspections), mine(defects))
+  }, [role, userId, inspections, defects, projectId])
 }
 
 // Quality record of one pin (inspections and defects linked to it), for the verification queue.
@@ -51,6 +54,8 @@ export type PinQuality = { inspections: Array<Pick<Inspection, "id" | "number" |
 
 export function usePinQuality(pinId: string) {
   const [data, setData] = useState<PinQuality | null>(null)
+  const [tick, setTick] = useState(0)
+  useLiveReload([{ table: "qa_inspections", filter: `pin_id=eq.${pinId}` }, { table: "qa_defects", filter: `pin_id=eq.${pinId}` }], () => setTick(value => value + 1))
   useEffect(() => {
     let active = true
     setData(null)
@@ -58,11 +63,11 @@ export function usePinQuality(pinId: string) {
       supabase.from("qa_inspections").select("id,number,title,status,score,completed_at,requested_at").eq("pin_id", pinId).neq("status", "cancelled").order("number", { ascending: false }),
       supabase.from("qa_defects").select("id,number,title,severity,status").eq("pin_id", pinId).order("number", { ascending: false }),
     ]).then(([ir, ncr]) => {
-      if (active) setData({ inspections: (ir.data as PinQuality["inspections"] | null) ?? [], defects: (ncr.data as PinQuality["defects"] | null) ?? [] })
+      if (active) setData(ir.error || ncr.error ? null : { inspections: (ir.data as PinQuality["inspections"] | null) ?? [], defects: (ncr.data as PinQuality["defects"] | null) ?? [] })
     })
     return () => {
       active = false
     }
-  }, [pinId])
+  }, [pinId, tick])
   return data
 }

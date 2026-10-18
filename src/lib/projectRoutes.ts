@@ -1,0 +1,34 @@
+export const projectSections = {
+  "project-overview": "overview",
+  "blueprint-upload": "blueprints",
+  "blueprint-mapping": "mapping",
+  "blueprint-progress": "progress",
+  "blueprint-version": "versions",
+} as const
+
+export type ProjectSection = keyof typeof projectSections
+
+export function readProjectRoute(path: string): { projectId: string; section: ProjectSection } | null {
+  const match = path.match(/^\/admin\/projects\/([0-9a-f-]+)\/(overview|blueprints|mapping|progress|versions)\/?$/i)
+  if (!match || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(match[1])) return null
+  const section = (Object.keys(projectSections) as ProjectSection[]).find((key) => projectSections[key] === match[2])
+  return section ? { projectId: match[1], section } : null
+}
+
+export function projectPath(projectId: string, section: ProjectSection = "project-overview") {
+  return `/admin/projects/${encodeURIComponent(projectId)}/${projectSections[section]}`
+}
+
+// Engineer and Foreman work one project at a time: "projects" is the list of their assigned projects (no project context);
+// every other page belongs to the selected project, which travels in ?project= so each project stays separate and shareable.
+export type FieldRole = "engineer" | "foreman"
+export const FIELD_PROJECT_LIST = "projects"
+
+export function fieldPagePath(role: FieldRole, page: string, projectId: string | null) {
+  return page === FIELD_PROJECT_LIST || !projectId ? `/${role}/${page}` : `/${role}/${page}?project=${encodeURIComponent(projectId)}`
+}
+
+// Which sidebar a field workspace shows: the project list, or the sections of one project.
+export function fieldShellMode(input: { page: string; projectId: string | null; notFound: boolean }): "list" | "project" {
+  return input.page === FIELD_PROJECT_LIST || !input.projectId || input.notFound ? "list" : "project"
+}

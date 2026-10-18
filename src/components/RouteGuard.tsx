@@ -11,8 +11,8 @@ import { supabase } from "../lib/supabase"
 
 const homeFor = (role: AppRole | null): Page => {
   if (role === "super_admin" || role === "admin") return "admin/dashboard"
-  if (role === "engineer") return "engineer/dashboard"
-  if (role === "foreman") return "foreman/dashboard"
+  if (role === "engineer") return "engineer/projects"
+  if (role === "foreman") return "foreman/projects"
   if (role === "client") return "client/overview"
   if (role === "user") return "user/home"
   return "login"
@@ -74,6 +74,7 @@ export default function RouteGuard({
   // Right after Google sign-in from the LOGIN page: check the account before showing anything (see lib/oauthIntent.ts).
   const [gate, setGate] = useState<"idle" | "checking">(() => (readOAuthIntent() === "login" ? "checking" : "idle"))
   const gateRan = useRef(false)
+  const pendingExitRan = useRef(false)
 
   useEffect(() => {
     if (loading || gateRan.current) return
@@ -144,12 +145,30 @@ export default function RouteGuard({
     else if (session && active && !isPublic && !allowed) navigate(homeFor(profile?.role ?? null))
   }, [loading, gate, session, unregistered, active, isPublic, allowed, page, profile, navigate])
 
+  // A completed pending registration never gets a workspace or the old full-page approval screen.
+  // An incomplete Google registration is the one exception: it must stay signed in long enough to
+  // finish the registration form. Once completed, its session is ended and it returns to Login.
+  useEffect(() => {
+    if (loading || pendingExitRan.current || !session || profile?.status !== "pending" || unregistered) return
+    pendingExitRan.current = true
+    setLoginNotice("Your registration is awaiting administrator approval. You will be able to sign in after your access is approved.")
+    void supabase.auth.signOut().finally(() => window.location.assign("/login"))
+  }, [loading, session, profile?.status, unregistered])
+
   if (loading || (gate === "checking" && Boolean(session))) {
     return (
       <div className="min-h-screen bg-surface-muted" role="status" aria-label="Checking your account">
         <SkeletonPage />
       </div>
     )
+  }
+
+  if (session && profile?.status === "pending" && !unregistered) {
+    return <div className="min-h-screen bg-surface-muted" role="status" aria-label="Returning to login"><SkeletonPage /></div>
+  }
+
+  if (session && unregistered && page !== "register") {
+    return <div className="min-h-screen bg-surface-muted" role="status" aria-label="Opening registration"><SkeletonPage /></div>
   }
 
   let content: ReactNode = children
@@ -159,15 +178,8 @@ export default function RouteGuard({
     content = children
   } else if (session && !active && (!isPublic || page === "login" || page === "register")) {
     const status = profile?.status
-    const asked = profile?.requested_role ? ` You asked for ${profile.requested_role} access.` : ""
     const screen =
-      status === "pending"
-        ? {
-            title: "Awaiting administrator approval",
-            tone: "#f18b00",
-            message: `Your registration was received and is waiting for an administrator to review it and assign your role.${asked} You can close this page: it updates by itself once a decision is made.`,
-          }
-        : status === "rejected"
+      status === "rejected"
           ? {
               title: "Registration not approved",
               tone: "#d93a3a",

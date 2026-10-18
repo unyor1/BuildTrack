@@ -8,6 +8,11 @@ const PERMISSIONS = [
 ]
 const DISCIPLINES = ["civil_structural", "architectural", "mep"]
 const isPrivileged = (role: string) => role === "super_admin" || role === "admin"
+const decisionNote = (value: unknown, required = false) => {
+  const note = typeof value === "string" ? value.trim().slice(0, 500) : ""
+  if (required && note.length < 5) throw new HttpError(400, "Give the person a reason (at least 5 characters)")
+  return note || null
+}
 
 async function loadTarget(caller: Caller, id: unknown) {
   if (typeof id !== "string") throw new HttpError(400, "Missing user id")
@@ -83,6 +88,7 @@ Deno.serve(async (req) => {
     if (action === "update") {
       if (!can(caller, "users.edit")) throw new HttpError(403, "Missing permission: users.edit")
       const target = await loadTarget(caller, body.id)
+      if (target.id === caller.id) throw new HttpError(400, "You cannot change your own account from User Management")
       const patch: Record<string, unknown> = {}
       for (const key of ["full_name", "phone", "company", "position"]) {
         if (typeof body[key] === "string") patch[key] = body[key].trim()
@@ -92,18 +98,18 @@ Deno.serve(async (req) => {
       }
       if (body.role !== undefined && body.role !== target.role) {
         assertAssignableRole(caller, body.role)
-        if (target.id === caller.id) throw new HttpError(400, "You cannot change your own role")
         patch.role = body.role
       }
       const { error } = await caller.admin.from("profiles").update(patch).eq("id", target.id)
       if (error) throw new HttpError(500, error.message)
-      await audit(caller, "user.update", target.id, patch)
+      await audit(caller, patch.role === "admin" && target.role !== "admin" ? "user.promote_admin" : "user.update", target.id, patch)
       return json({ ok: true })
     }
 
     if (action === "approve" || action === "reject") {
       if (!can(caller, "users.approve")) throw new HttpError(403, "Missing permission: users.approve")
       const target = await loadTarget(caller, body.id)
+      if (target.id === caller.id) throw new HttpError(400, "You cannot approve or reject your own account")
       if (target.status !== "pending") throw new HttpError(400, "User is not pending")
       const patch: Record<string, unknown> = {
         status: action === "approve" ? "active" : "rejected",
@@ -117,10 +123,11 @@ Deno.serve(async (req) => {
         patch.role = role
         if (DISCIPLINES.includes(body.discipline)) patch.discipline = body.discipline
       }
+      const note = decisionNote(body.note, action === "reject")
       const { error } = await caller.admin.from("profiles").update(patch).eq("id", target.id)
       if (error) throw new HttpError(500, error.message)
       const revoked = action === "reject" ? await revokeSessions(caller, target.id) : 0
-      await audit(caller, `user.${action}`, target.id, { role: patch.role ?? null, sessions_revoked: revoked })
+      await audit(caller, `user.${action}`, target.id, { role: patch.role ?? null, decision_note: note, sessions_revoked: revoked })
       return json({ ok: true })
     }
 
@@ -134,11 +141,12 @@ Deno.serve(async (req) => {
       const { data: target } = await caller.admin.from("profiles").select("id, role, status").eq("id", request.user_id).single()
       if (!target || target.status !== "active") throw new HttpError(400, "The account is not active")
       if (target.role !== "user") throw new HttpError(400, "This account no longer has a basic role")
+      if (target.id === caller.id) throw new HttpError(400, "You cannot decide your own access request")
 
       const approving = action === "approve_request"
       const role = approving ? String(body.role ?? request.requested_role) : null
       if (approving && !REQUESTABLE_ROLES.includes(role!)) throw new HttpError(400, "Choose Engineer, Foreman or Client")
-      const note = typeof body.note === "string" ? body.note.trim().slice(0, 500) || null : null
+      const note = decisionNote(body.note, !approving)
 
       // Claim the request first so two admins cannot decide it twice.
       const { data: claimed, error: claimError } = await caller.admin.from("access_requests")
@@ -210,6 +218,7 @@ Deno.serve(async (req) => {
     if (action === "reopen") {
       if (!can(caller, "users.approve")) throw new HttpError(403, "Missing permission: users.approve")
       const target = await loadTarget(caller, body.id)
+      if (target.id === caller.id) throw new HttpError(400, "You cannot reconsider your own account")
       if (target.status !== "rejected") throw new HttpError(400, "Only a rejected account can be reconsidered")
       const { error } = await caller.admin.from("profiles").update({ status: "pending", approved_by: null, approved_at: null }).eq("id", target.id)
       if (error) throw new HttpError(500, error.message)
@@ -235,6 +244,7 @@ Deno.serve(async (req) => {
     if (action === "set_permissions") {
       if (caller.role !== "super_admin") throw new HttpError(403, "Only a Super Admin can grant permissions")
       const target = await loadTarget(caller, body.id)
+      if (target.id === caller.id) throw new HttpError(400, "You cannot change your own permissions")
       if (target.role !== "admin") throw new HttpError(400, "Permissions apply to Admin accounts only")
       const list = Array.isArray(body.permissions) ? body.permissions : []
       if (!list.every((p: unknown) => typeof p === "string" && PERMISSIONS.includes(p))) {

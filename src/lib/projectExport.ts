@@ -5,7 +5,8 @@ import { buildZip, textBytes, type ZipEntry } from "./zipWriter"
 // pictures on sheets, pin photos) under the same paths they have in storage. Built in the admin's browser from what that admin may read;
 // the database only records that it happened (log_project_export). See docs/BUILDTRACK_BACKUP_RESTORE.md for putting it back.
 
-export const EXPORT_TABLES = ["project_members", "blueprints", "blueprint_revisions", "pins", "pin_events", "pin_checklist_items", "pin_photos", "blueprint_annotations", "daily_reports", "project_questions", "qa_inspections", "qa_inspection_items", "qa_defects", "qa_defect_events", "qa_photos"] as const
+export const EXPORT_TABLES = ["project_members", "blueprints", "blueprint_revisions", "pins", "pin_events", "pin_checklist_items", "pin_photos", "blueprint_annotations", "daily_reports", "daily_report_photos", "project_questions", "qa_inspections", "qa_inspection_items", "qa_defects", "qa_defect_events", "qa_photos", "pin_qa_submissions"] as const
+const REVIEW_EXPORT_TABLES = ["daily_report_revisions", "biometric_daily_totals", "qa_work_attempts", "qa_inspection_events"]
 const MAX_FILE_BYTES = 450 * 1024 * 1024 // keeps the archive inside what a browser tab can hold
 
 export type ExportProgress = { step: string; done: number; total: number }
@@ -71,16 +72,22 @@ export async function exportProject(projectId: string, options: { withFiles: boo
     entries.push({ name: `data/${table}.json`, data: json(tables[table]) })
   }
   const { data: team } = await supabase.rpc("get_project_team", { pid: projectId })
+  for (const table of REVIEW_EXPORT_TABLES) {
+    const records = await fetchAll(table, "project_id", projectId)
+    counts[table] = records.length
+    rows += records.length
+    entries.push({ name: `data/${table}.json`, data: json(records) })
+  }
   entries.push({ name: "data/team.json", data: json(team ?? []) })
 
-  const files: Array<{ bucket: "blueprints" | "pin-photos" | "qa-evidence"; path: string }> = []
+  const files: Array<{ bucket: "blueprints" | "pin-photos" | "qa-evidence" | "daily-photos"; path: string }> = []
   const missing: string[] = []
   let skippedForSize = 0
   let fileBytes = 0
   const downloaded: Array<{ path: string; bytes: number }> = []
   if (options.withFiles) {
     const seen = new Set<string>()
-    const add = (bucket: "blueprints" | "pin-photos" | "qa-evidence", path: unknown) => {
+    const add = (bucket: "blueprints" | "pin-photos" | "qa-evidence" | "daily-photos", path: unknown) => {
       if (typeof path !== "string" || !path) return
       const key = `${bucket}/${path}`
       if (!seen.has(key)) {
@@ -95,6 +102,7 @@ export async function exportProject(projectId: string, options: { withFiles: boo
     }
     for (const annotation of tables.blueprint_annotations) add("blueprints", annotation.image_path)
     for (const photo of tables.pin_photos) add("pin-photos", photo.path)
+    for (const photo of tables.daily_report_photos) add("daily-photos", photo.path)
     for (const photo of tables.qa_photos) add("qa-evidence", photo.path)
 
     for (let index = 0; index < files.length; index += 1) {

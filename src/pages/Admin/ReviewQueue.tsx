@@ -44,7 +44,7 @@ const norm = (value: string | null | undefined) => (value ?? "").toLowerCase().r
 
 // Split view for decisions: waiting registrations and identity checks on the left, the person's details and the decision on the right.
 // Keys: J / K move through the list, A approves, R jumps to the rejection reason.
-export default function ReviewQueue({ users, onChanged, onDecideRegistration }: { users: Profile[]; onChanged: () => Promise<void> | void; onDecideRegistration: (user: Profile, action: "approve" | "reject", role: Requested) => Promise<void> }) {
+export default function ReviewQueue({ users, onChanged, onDecideRegistration }: { users: Profile[]; onChanged: () => Promise<void> | void; onDecideRegistration: (user: Profile, action: "approve" | "reject", role: Requested, note?: string) => Promise<void> }) {
   const toast = useToast()
   const confirm = useConfirm()
   const [verifications, setVerifications] = useState<Verification[]>([])
@@ -171,7 +171,7 @@ export default function ReviewQueue({ users, onChanged, onDecideRegistration }: 
         {!current ? (
           <p className="py-16 text-center text-sm text-fg-muted">Choose someone from the list.</p>
         ) : current.kind === "registration" ? (
-          <RegistrationPane user={current.user} busy={busy} onDecide={async (action, role) => { setBusy(true); await onDecideRegistration(current.user, action, role); setBusy(false) }} />
+          <RegistrationPane user={current.user} busy={busy} onDecide={async (action, role, note) => { setBusy(true); await onDecideRegistration(current.user, action, role, note); setBusy(false) }} />
         ) : (
           <IdentityPane
             item={current}
@@ -196,12 +196,13 @@ export default function ReviewQueue({ users, onChanged, onDecideRegistration }: 
   )
 }
 
-function RegistrationPane({ user, busy, onDecide }: { user: Profile; busy: boolean; onDecide: (action: "approve" | "reject", role: Requested) => Promise<void> }) {
+function RegistrationPane({ user, busy, onDecide }: { user: Profile; busy: boolean; onDecide: (action: "approve" | "reject", role: Requested, note?: string) => Promise<void> }) {
   const ready = Boolean(user.registration_completed_at)
+  const [reason, setReason] = useState("")
   return (
     <div>
       <div className="flex flex-wrap items-start justify-between gap-2">
-        <div><p className="text-xs font-extrabold uppercase tracking-wider text-brand-text">Registration</p><h2 className="text-xl font-extrabold">{user.full_name || user.email}</h2><p className="text-sm text-fg-muted">{user.email}</p></div>
+        <div><p className="text-xs font-extrabold uppercase tracking-wider text-brand-text">Registration</p><h2 className="text-xl font-extrabold">{user.full_name || user.email}</h2><p className="text-sm text-fg-muted">{user.email} • Admin approval required</p></div>
         <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-extrabold text-amber-900 dark:bg-amber-900/40 dark:text-amber-200">Pending</span>
       </div>
       <dl className="mt-4 divide-y divide-line">
@@ -213,14 +214,17 @@ function RegistrationPane({ user, busy, onDecide }: { user: Profile; busy: boole
         <Row label="Registered">{`${formatDate(user.created_at)} ${formatTime(user.created_at)}`}</Row>
       </dl>
       {ready ? (
-        <div className="mt-5 flex flex-wrap gap-2">
-          {(["engineer", "foreman", "client"] as Requested[]).sort((a, b) => Number(b === user.requested_role) - Number(a === user.requested_role)).map((role) => (
-            <button key={role} type="button" disabled={busy} className={role === user.requested_role ? primary : secondary} onClick={() => void onDecide("approve", role)}>Approve as {roleLabel[role]}</button>
-          ))}
-          <button type="button" disabled={busy} className={secondary + " !text-danger-fg"} onClick={() => void onDecide("reject", "client")}>Reject</button>
-        </div>
+        <>
+          <div className="mt-5 flex flex-wrap gap-2">
+            {(["engineer", "foreman", "client"] as Requested[]).sort((a, b) => Number(b === user.requested_role) - Number(a === user.requested_role)).map((role) => (
+              <button key={role} type="button" disabled={busy} className={role === user.requested_role ? primary : secondary} onClick={() => void onDecide("approve", role)}>Approve as {roleLabel[role]}</button>
+            ))}
+            <button type="button" disabled={busy || reason.trim().length < 5} className={secondary + " !text-danger-fg"} onClick={() => void onDecide("reject", "client", reason)}>Reject</button>
+          </div>
+          <label className="mt-4 block text-xs font-extrabold uppercase tracking-wider text-fg-muted">Reason required to reject<textarea rows={2} maxLength={500} value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Explain what needs to change or why this registration cannot be approved." className="mt-1 w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm font-normal normal-case tracking-normal text-fg" /></label>
+        </>
       ) : (
-        <div className="mt-5"><p className="mb-2 text-sm text-fg-muted">This person has not sent their registration details yet, so there is nothing to approve.</p><button type="button" disabled={busy} className={secondary + " !text-danger-fg"} onClick={() => void onDecide("reject", "client")}>Reject</button></div>
+        <div className="mt-5"><p className="mb-2 text-sm text-fg-muted">This person has not sent their registration details yet, so there is nothing to approve.</p><button type="button" disabled={busy || reason.trim().length < 5} className={secondary + " !text-danger-fg"} onClick={() => void onDecide("reject", "client", reason)}>Reject</button><label className="mt-4 block text-xs font-extrabold uppercase tracking-wider text-fg-muted">Reason required to reject<textarea rows={2} maxLength={500} value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Explain why this registration cannot be approved." className="mt-1 w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm font-normal normal-case tracking-normal text-fg" /></label></div>
       )}
     </div>
   )

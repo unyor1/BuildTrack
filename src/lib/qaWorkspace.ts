@@ -16,10 +16,11 @@ export function useQaWorkspace(projectId: string | null) {
   const { reload: reloadInspections } = inspections
   const { reload: reloadDefects } = defects
   const { reload: reloadSummary } = summary
+  const { reloadPins } = work
 
   const reloadAll = useCallback(async () => {
-    await Promise.all([reloadTemplates(), reloadInspections(), reloadDefects(), reloadSummary()])
-  }, [reloadTemplates, reloadInspections, reloadDefects, reloadSummary])
+    await Promise.all([reloadTemplates(), reloadInspections(), reloadDefects(), reloadSummary(), reloadPins()])
+  }, [reloadTemplates, reloadInspections, reloadDefects, reloadSummary, reloadPins])
 
   const foremen = useMemo(() => work.team.filter((member) => member.role === "foreman"), [work.team])
   const weights = settings.weights

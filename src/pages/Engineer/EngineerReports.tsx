@@ -1,9 +1,10 @@
 import { useMemo, useState } from "react"
 import ProjectContextBar from "../../components/ProjectContextBar"
+import DailyReportPhotos from "../../components/DailyReportPhotos"
+import { AttendanceImport, ReportReviewPanel } from "../../components/DailyReportWorkflow"
 import { EmptyState, PageHead, buttonPrimary, buttonSecondary, inputClass } from "../../components/ui/PageParts"
 import { SkeletonList } from "../../components/ui/Skeleton"
 import { severityLabels, statusLabels } from "../../lib/blueprints"
-import { useConfirm } from "../../lib/confirm"
 import { daysBetween, downloadCsv, isOverdue, byZone, summarize, toCsv } from "../../lib/progress"
 import { printHtml, reportHtml } from "../../lib/printReport"
 import WeeklyReportModal from "../../components/WeeklyReportModal"
@@ -11,6 +12,8 @@ import { useDefects, useInspections } from "../../lib/qa"
 import { getSelectedProjectId } from "../../lib/projects"
 import { useProjectWork } from "../../lib/projectWork"
 import { dailyReportHtml, reportDateLong, useDailyReports, useQuestions, weatherLabels, type DailyReport, type ProjectQuestion } from "../../lib/reports"
+import { linkedWorkLabel, type ReportWork } from "../../lib/reportFormat"
+import { useProjectWorkItems } from "../../lib/dailyPhotos"
 import { supabase } from "../../lib/supabase"
 import { useToast } from "../../lib/toast"
 import type { EngineerPageProps } from "./types"
@@ -23,10 +26,10 @@ const when = (iso: string) => new Date(iso).toLocaleString("en-PH", { timeZone: 
 export default function EngineerReports(_: EngineerPageProps) {
   const projectId = getSelectedProjectId()
   const work = useProjectWork(projectId)
+  const workItems = useProjectWorkItems(projectId, true)
   const { reports, loading: reportsLoading, error: reportsError, reload: reloadReports } = useDailyReports(projectId)
   const { questions, loading: questionsLoading, error: questionsError, reload: reloadQuestions } = useQuestions(projectId)
   const toast = useToast()
-  const confirm = useConfirm()
   const [tab, setTab] = useState<Tab>(initialTab)
   const [openId, setOpenId] = useState<string | null>(null)
   const [query, setQuery] = useState("")
@@ -36,27 +39,20 @@ export default function EngineerReports(_: EngineerPageProps) {
 
   const submitted = useMemo(() => {
     const text = query.trim().toLowerCase()
-    return reports.filter((report) => report.status === "submitted" && (!text || `${report.work_done} ${report.issues ?? ""} ${report.delays ?? ""} ${report.safety ?? ""} ${work.nameOf(report.author_id)}`.toLowerCase().includes(text)))
+    return reports.filter((report) => (report.status === "submitted" || report.review_state === "returned") && (!text || `${report.work_done} ${report.issues ?? ""} ${report.delays ?? ""} ${report.safety ?? ""} ${work.nameOf(report.author_id)}`.toLowerCase().includes(text)))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reports, query, work.team])
   const unanswered = questions.filter((question) => !question.answer).length
 
-  const reopen = async (report: DailyReport) => {
-    if (!(await confirm({ title: "Reopen this report?", message: `${work.nameOf(report.author_id)} gets it back as a draft, can correct it and submit again.`, confirmLabel: "Reopen" }))) return
-    const { error } = await supabase.rpc("reopen_daily_report", { p_id: report.id })
-    if (error) return toast.error("Could not reopen", error.message)
-    toast.success("Report reopened", reportDateLong(report.report_date))
-    await reloadReports()
-  }
-
   const printReport = (report: DailyReport) => {
     if (!work.project) return
-    if (!printHtml(dailyReportHtml(report, work.project, work.nameOf(report.author_id)))) toast.error("Could not open the print dialog")
+    const describe = (link: ReportWork) => linkedWorkLabel(link, (id) => work.pins.find((pin) => pin.id === id)?.title, (id) => workItems.find((item) => item.id === id)?.text)
+    if (!printHtml(dailyReportHtml(report, work.project, work.nameOf(report.author_id), describe))) toast.error("Could not open the print dialog")
   }
 
   const exportReports = () => {
-    const rows = submitted.map((report) => [report.report_date, work.nameOf(report.author_id), weatherLabels[report.weather], report.workers_count, report.work_done, report.issues ?? "", report.delays ?? "", report.safety ?? ""])
-    downloadCsv(`site-logs-${work.project?.code ?? "project"}-${work.today}.csv`, toCsv(["Date", "Prepared by", "Weather", "Workers", "Work done", "Issues", "Delays", "Safety"], rows))
+    const rows = submitted.map((report) => [report.report_date, work.nameOf(report.author_id), weatherLabels[report.weather], report.workers_count, report.work_done, report.issues ?? "", report.delays ?? "", report.safety ?? "", report.review_state ?? "pending", report.revision ?? 0, report.review_note ?? ""])
+    downloadCsv(`site-logs-${work.project?.code ?? "project"}-${work.today}.csv`, toCsv(["Date", "Prepared by", "Weather", "Workers", "Work done", "Issues", "Delays", "Safety", "Review", "Revision", "Review feedback"], rows))
   }
 
   const printProgress = () => {
@@ -103,6 +99,7 @@ export default function EngineerReports(_: EngineerPageProps) {
 
           {tab === "reports" ? (
             <>
+              <AttendanceImport projectId={projectId} />
               <div className="mb-3 flex flex-wrap items-center gap-2">
                 <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search the logs..." aria-label="Search the logs" className={`${inputClass} !w-64`} />
                 <button type="button" className={buttonSecondary} onClick={exportReports} disabled={!submitted.length}>Export CSV</button>
@@ -121,6 +118,7 @@ export default function EngineerReports(_: EngineerPageProps) {
                         <button type="button" aria-expanded={open} onClick={() => setOpenId(open ? null : report.id)} className="flex w-full flex-wrap items-center justify-between gap-2 px-4 py-3 text-left">
                           <span>
                             <span className="block text-sm font-extrabold">{reportDateLong(report.report_date)}</span>
+                            <span className="block text-xs font-bold text-brand-text">{report.review_state === "reviewed" ? "Reviewed" : report.review_state === "returned" ? "Returned · awaiting corrections" : "Awaiting Engineer review"} · revision {report.revision ?? 0}</span>
                             <span className="text-xs text-fg-muted">{work.nameOf(report.author_id)} • {weatherLabels[report.weather]} • {report.workers_count} workers</span>
                           </span>
                           <span className="flex items-center gap-2 text-xs">
@@ -134,9 +132,10 @@ export default function EngineerReports(_: EngineerPageProps) {
                             {([["Work done", report.work_done], ["Issues and problems", report.issues], ["Delays", report.delays], ["Safety", report.safety]] as const).map(([label, value]) => (
                               <div key={label}><p className="text-xs font-extrabold uppercase tracking-wider text-fg-muted">{label}</p><p className="whitespace-pre-wrap">{value || "-"}</p></div>
                             ))}
+                            <DailyReportPhotos projectId={report.project_id} reportId={report.id} />
+                            <ReportReviewPanel report={report} pins={work.pins} nameOf={work.nameOf} onChanged={reloadReports} />
                             <div className="flex flex-wrap justify-end gap-2 pt-1">
                               <button type="button" className={buttonSecondary + " !py-1.5 !text-xs"} onClick={() => printReport(report)}>Print / PDF</button>
-                              <button type="button" className={buttonSecondary + " !py-1.5 !text-xs"} onClick={() => void reopen(report)}>Reopen for correction</button>
                             </div>
                           </div>
                         ) : null}

@@ -76,8 +76,8 @@ const readSaved = (): SavedImpersonation | null => {
 
 export const roleHomePath = (role: AppRole | null): string => {
   if (role === "super_admin" || role === "admin") return "/admin/dashboard"
-  if (role === "engineer") return "/engineer/dashboard"
-  if (role === "foreman") return "/foreman/dashboard"
+  if (role === "engineer") return "/engineer/projects"
+  if (role === "foreman") return "/foreman/projects"
   if (role === "client") return "/client/overview"
   if (role === "user") return "/user/home"
   return "/login"
@@ -156,6 +156,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = useCallback(async () => {
     sessionStorage.removeItem(IMPERSONATION_KEY)
+    sessionStorage.removeItem("buildtrack.project") // the next person starts on their own project list
     setImpersonation(null)
     await supabase.auth.signOut()
     window.location.assign("/login")

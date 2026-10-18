@@ -1,0 +1,45 @@
+import type { ReactNode } from "react"
+import { stageLabels, stageTone, type ItemStage, type StageView } from "../../lib/workItemModel"
+
+export function StageChip({ stage }: { stage: ItemStage }) {
+  return <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-bold ${stageTone[stage]}`}>{stageLabels[stage]}</span>
+}
+
+// Ready -> Passed -> Accepted -> Completed: the four words used everywhere, so readiness never looks like a result.
+const rail: Array<{ key: string; label: string; help: string }> = [
+  { key: "ready", label: "Ready", help: "The Foreman finished preparing the work" },
+  { key: "passed", label: "Passed", help: "The inspection criteria passed" },
+  { key: "accepted", label: "Accepted", help: "The Engineer verified the work item" },
+  { key: "completed", label: "Completed", help: "Every item accepted, all NCRs and hold points cleared" },
+]
+const reached = (stage: ItemStage, completed: boolean): number =>
+  completed ? 4 : stage === "accepted" ? 3 : stage === "passed" ? 2 : stage === "preparing" ? 0 : 1
+
+export function StageRail({ stage, completed }: { stage: ItemStage; completed: boolean }) {
+  const done = reached(stage, completed)
+  return (
+    <ol className="grid grid-cols-4 gap-1" aria-label="Work item progress">
+      {rail.map((step, index) => (
+        <li key={step.key} title={step.help} aria-current={index === done - 1 ? "step" : undefined} className={`rounded-lg border px-2 py-1.5 text-center text-xs font-bold ${index < done ? "border-green-600/50 bg-green-50 text-green-900 dark:bg-green-900/30 dark:text-green-100" : "border-line text-fg-muted"}`}>
+          {index < done ? "✓ " : ""}{step.label}
+        </li>
+      ))}
+    </ol>
+  )
+}
+
+// Current stage, the person who must act, what blocks them and the one next action.
+export function NextActionCard({ view, responsible, children }: { view: StageView; responsible: string; children?: ReactNode }) {
+  return (
+    <section aria-label="Next action" className="space-y-2 rounded-2xl border border-line bg-surface-muted p-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <StageChip stage={view.stage} />
+        <span className="text-xs font-semibold text-fg-muted">Responsible: <span className="text-fg">{view.owner ? responsible : view.stage === "accepted" ? "No one: accepted" : "Nobody yet (blocked)"}</span></span>
+      </div>
+      <p className="text-sm font-semibold">{view.status}</p>
+      {view.blocker ? <p role="status" className="rounded-lg bg-amber-100 px-3 py-2 text-xs font-semibold text-amber-950 dark:bg-amber-900/40 dark:text-amber-100">Blocker: {view.blocker}</p> : null}
+      <p className="text-sm"><strong>Next action:</strong> {view.next}</p>
+      {children}
+    </section>
+  )
+}

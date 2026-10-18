@@ -1,6 +1,8 @@
 // Tests for 0025: QA checklists, inspections (IR), scoring, defects (NCR), evidence photos and the summary.
 export default async function ({ db, ids, as, asOwner, test, expectOk, expectFail, count }) {
-  const P1 = ids.p1
+  await asOwner()
+  const P1 = (await db.query("insert into public.projects(code,name,status) values('QA-ISOLATED','QA test project','active') returning id")).rows[0].id
+  await db.query("insert into public.blueprints(project_id,title) values($1,'QA test plan')",[P1])
   const OTHER = ids.other
 
   await asOwner()
@@ -14,7 +16,7 @@ export default async function ({ db, ids, as, asOwner, test, expectOk, expectFai
 
   const notes = async (who, kind) => {
     await asOwner()
-    return (await db.query("select * from public.notifications where user_id = $1 and kind = $2 order by created_at", [ids[who], kind])).rows
+    return (await db.query("select * from public.notifications where user_id = $1 and kind = $2 and project_id=$3 order by created_at", [ids[who], kind,P1])).rows
   }
   let lib
   await test("The company library ships ten built-in checklists with items; staff read them, clients and outsiders do not", async () => {

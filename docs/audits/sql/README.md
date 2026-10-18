@@ -4,6 +4,7 @@ One document per SQL file in `supabase/`. Same sections every time so changes ar
 
 | Doc | SQL file | Status |
 |---|---|---|
+| [Progress / QA review](../2026-10-18-progress-and-qa-review.md) | `supabase/migrations/20261018124654_report_review_and_checklist_acceptance.sql` | Applied; local checks and live rollback smoke passed |
 | [0001_profiles_rbac](0001_profiles_rbac.md) | `supabase/migrations/0001_profiles_rbac.sql` | Applied |
 | [0002_admin_mfa_aal2](0002_admin_mfa_aal2.md) | `supabase/migrations/0002_admin_mfa_aal2.sql` | Applied |
 | [0003_projects](0003_projects.md) | `supabase/migrations/0003_projects.sql` | Applied |
@@ -40,7 +41,20 @@ One document per SQL file in `supabase/`. Same sections every time so changes ar
 | [0036_rls_performance](0036_rls_performance.md) | `supabase/migrations/0036_rls_performance.sql` | Applied (connector) |
 | [0038_escalation_alerts](0038_escalation_alerts.md) | `supabase/migrations/0038_escalation_alerts.sql` | Applied (connector) |
 | [0039_photo_stamp](0039_photo_stamp.md) | `supabase/migrations/0039_photo_stamp.sql` | Applied (connector) |
+| [0040_pin_assignment_roles](0040_pin_assignment_roles.md) | `supabase/migrations/0040_pin_assignment_roles.sql` | Applied (SQL Editor, by the owner) |
+| [0041_daily_report_photos](0041_daily_report_photos.md) | `supabase/migrations/0041_daily_report_photos.sql` | NOT APPLIED — owner SQL handover prepared; local tests passed |
+| [0042_checklist_qa_submission](0042_checklist_qa_submission.md) | `supabase/migrations/0042_checklist_qa_submission.sql` | NOT APPLIED — owner SQL handover prepared; local checks passed |
 | [seed_super_admin](seed_super_admin.md) | `supabase/seeds/seed_super_admin.sql` | Done (1 Super Admin exists) |
+
+## Latest workflow migrations
+
+- [`20261018172839_daily_report_photo_limit.sql`](20261018172839_daily_report_photo_limit.md): applied via connector; up to 50 photos per daily report.
+- [`20261018170444_daily_report_checklist_links.sql`](20261018170444_daily_report_checklist_links.md): applied via connector; daily report linked work is a work pin + checklist item.
+- [`20261018153632_work_item_correction_package.sql`](20261018153632_work_item_correction_package.md): applied via connector; see [work item QA workspace audit](../2026-10-18-work-item-qa-workspace.md). Live rollback validation: `20261018-correction-package-smoke.sql` (aborts itself with SMOKE_OK).
+- `20261018142455_qa_pending_pin_enforcement.sql`: applied via connector; see [QA photos, tiles and pending audit](../2026-10-18-qa-photos-tiles-pending.md). Live rollback validation: `20261018-pending-pin-smoke.sql`.
+
+- `20261018124654_report_review_and_checklist_acceptance.sql`: applied via connector; see [progress and QA review](../2026-10-18-progress-and-qa-review.md).
+- `20261018133531_qa_resubmission_attempts.sql`: applied via connector; see [QA resubmission audit](../2026-10-18-qa-resubmission-attempts.md). Validation SQL: `20261018-qa-attempts-smoke.sql`, run only inside a transaction ending in ROLLBACK.
 
 ## Document template (copy for every new migration)
 1. Header table: file, date written, date applied, depends on, status, reversible

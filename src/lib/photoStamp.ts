@@ -7,6 +7,11 @@ export type PhotoStamp = { taken_at: string; lat?: number; lng?: number; accurac
 export type StampFlag = "at_site" | "away_from_site" | "no_site_set" | "no_location" | "clock_ahead" | "old_photo"
 export type StampedPhoto = { stamp_flag: StampFlag | null; distance_m: number | null; taken_at: string | null }
 
+export const photoEligible = (photo: { stamp_flag?: StampFlag | null }) =>
+  !photo.stamp_flag || !["away_from_site", "clock_ahead", "old_photo"].includes(photo.stamp_flag)
+export const photoPreviewBlocked = (role: string | null | undefined, photo: { stamp_flag?: StampFlag | null }) =>
+  role === "engineer" && !photoEligible(photo)
+
 // What an insert may carry (never the flag or the distance).
 export function stampFields(stamp?: PhotoStamp | null): Record<string, string | number> {
   if (!stamp) return {}
