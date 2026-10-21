@@ -144,3 +144,12 @@
 *.stl                filter=lfs diff=lfs merge=lfs -text
 *.nc                 filter=lfs diff=lfs merge=lfs -text
 *.mat                filter=lfs diff=lfs merge=lfs -text
+
+# ---------------------------------------------------------------------------
+# Web images (overrides the LFS rules above)
+# ---------------------------------------------------------------------------
+# These pictures are bundled into the website build. Keep them as normal Git files so every deploy host (Vercel)
+# gets the real images instead of LFS pointer text. Binary stays -text from the rules above.
+src/assets/** !filter !diff !merge
+src/imports/** !filter !diff !merge
+public/** !filter !diff !merge
