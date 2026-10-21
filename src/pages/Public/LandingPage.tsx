@@ -4,7 +4,7 @@ import processAction from "../../assets/valencia/process-action.png"
 import processSteps from "../../assets/valencia/process-steps.png"
 import Header from "../../components/Header"
 import Icon from "../../components/Icons"
-import Brand from "../../components/Brand"
+import PublicFooter from "../../components/PublicFooter"
 import { handlePublicNavigation, usePublicHashScroll } from "../../lib/publicNavigation"
 
 type LandingPageProps = { navigate: (page: Page) => void }
@@ -338,83 +338,7 @@ export default function LandingPage({ navigate }: LandingPageProps) {
           </div>
         </section>
       </main>
-      <footer className="site-footer" id="contact">
-        <div className="site-footer__grid">
-          <div className="footer-intro">
-            <Brand inverse />
-            <p>
-              BuildTrack delivers site intelligence. Mapped progress, simplified
-              inspections, automated compliance, and real-time labor security in
-              a single application.
-            </p>
-            <div className="social-links" aria-label="Social media">
-              <a href="#" aria-label="Facebook">
-                f
-              </a>
-              <a href="#" aria-label="LinkedIn">
-                in
-              </a>
-              <a href="#" aria-label="Instagram">
-                ◎
-              </a>
-            </div>
-          </div>
-          <div className="footer-column">
-            <h3>Navigation</h3>
-            <a href="/valencia" onClick={event => handlePublicNavigation(event, "/valencia", navigate)}>Valencia Construction Services</a>
-            <a href="#about">About Us</a>
-            <a href="#services">Our Services</a>
-            <a href="#features">Platform Features</a>
-            <a href="#contact">Contact Page</a>
-          </div>
-          <div className="footer-column">
-            <h3>Platform Services</h3>
-            <span>Blueprint Overlays</span>
-            <span>Checklist Progress</span>
-            <span>Biometrics Hub</span>
-            <span>Documentation API</span>
-          </div>
-          <div className="footer-column footer-contact">
-            <h3>Contact Us</h3>
-            <div>
-              <span className="footer-contact__icon">
-                <Icon name="phone" />
-              </span>
-              <p>
-                <small>Phone support</small>
-                <a href="tel:09971270773">09971270773</a> /{" "}
-                <a href="tel:09104292842">09104292842</a>
-              </p>
-            </div>
-            <div>
-              <span className="footer-contact__icon">
-                <Icon name="mail" />
-              </span>
-              <p>
-                <small>Email queries</small>
-                <a href="mailto:valenciaconstruction2019@gmail.com">
-                  valenciaconstruction2019@gmail.com
-                </a>
-              </p>
-            </div>
-            <div>
-              <span className="footer-contact__icon">
-                <Icon name="building" />
-              </span>
-              <p>
-                <small>Office address</small>Block 31, Berlin St., Purok 8, Sta.
-                Ana, Taytay, Rizal, 1920
-              </p>
-            </div>
-          </div>
-        </div>
-        <div className="site-footer__bottom">
-          <span>
-            © 2025 Valencia Construction Services. All rights reserved.
-          </span>
-          <span>Privacy Policy &nbsp;&nbsp; Terms of Use</span>
-        </div>
-      </footer>
+      <PublicFooter navigate={navigate} />
     </div>
   )
 }

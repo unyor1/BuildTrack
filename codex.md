@@ -121,6 +121,7 @@ Relevant files: `src/pages/Client/`, `src/components/client/PinDailyReports.tsx`
 - Hero refinement (2026-10-22): retain the left headline, actions, colors and readability gradient. Overlay the transparent logo directly over the interior photo at the user's yellow-circled right-center area (desktop center at 68% across / 58% down). Keep it clear of tablet copy and above mobile copy. This supersedes the earlier top-center placement. Do not restore the white/glass logo card or the red less-than/chevron decoration.
 - The enlarged hero logo uses `clamp(320px,34vw,540px)` on desktop, with smaller tablet/mobile bounds. Preserve its marked center when resizing; mobile copy reserves space below the larger logo.
 - The Valencia company header hides Log in and Register using `Header`'s opt-in `showAuthActions={false}`. Keep the main landing page's sign-in controls and the standalone attendance branding-only header unchanged.
+- Both public pages use `src/components/PublicFooter.tsx` for the landing footer layout, contact details and responsive columns. Valencia passes `page="valencia"` for white (not yellow) brand/headings/hover text and its own About/Services/Contact anchors; Platform Features links to `/buildtrack#features`. Do not restore the removed Stay connected/company-site promotion or duplicate the footer markup.
 - Project filters and gallery slides are manual. Keep renderings labelled as perspectives, not finished construction; source-listed ongoing statuses are dated, not live database statuses.
 - The inquiry form prepares a `mailto:` message. It does not store or send inquiries itself; keep this clear to visitors. The address-map link uses the published Taytay office address, not the original site's generic map. No verified company social profile was available.
 - Run `pnpm test:valencia` after changes; it is included in `pnpm check`. See `docs/audits/2026-10-21-valencia-introduction.md` for sources, asset prompts and verification limitations.
@@ -129,6 +130,7 @@ Relevant files: `src/pages/Client/`, `src/components/client/PinDailyReports.tsx`
 
 - `docs/audits/2026-10-22-valencia-opening-and-proprietor.md`
 - `docs/audits/2026-10-22-deployed-public-navigation.md`
+- `docs/audits/2026-10-22-shared-public-footer.md`
 
 - `docs/audits/2026-10-21-work-item-evidence.md`
 - `docs/audits/2026-10-21-manual-checklist-completion.md`

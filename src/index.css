@@ -168,6 +168,9 @@ h1, h2, h3, p { margin-top: 0; }
 .footer-contact p { margin: 0; color: #d0d0d2; line-height: 1.45; overflow-wrap: anywhere; }
 .footer-contact small { display: block; color: #77777c; font-size: 8px; text-transform: uppercase; margin-bottom: 2px; }
 .site-footer__bottom { display: flex; justify-content: space-between; border-top: 1px solid #343436; padding-top: 28px; margin-top: 55px; color: #77777c; }
+.site-footer--neutral .footer-intro .brand__name, .site-footer--neutral .footer-column h3, .site-footer--neutral .footer-column a:hover { color: white; }
+.site-footer--neutral .footer-intro > p { line-height: 1.75; }
+.site-footer--neutral .footer-contact p { line-height: 1.45; }
 
 .auth-page {
   min-height: 100vh; color: white;

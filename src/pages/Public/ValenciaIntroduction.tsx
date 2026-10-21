@@ -1,11 +1,11 @@
 import { useEffect, useState, type FormEvent } from "react"
 import type { Page } from "../../App"
 import Header from "../../components/Header"
-import Brand from "../../components/Brand"
+import PublicFooter from "../../components/PublicFooter"
 import Icon from "../../components/Icons"
 import Modal from "../../components/Modal"
 import { handlePublicNavigation, usePublicHashScroll } from "../../lib/publicNavigation"
-import { companyHeaderNavigation, companyInquiryMailto, companySections, valenciaCompany as company, valenciaProcess, valenciaProjects, valenciaServices } from "./valenciaContent"
+import { companyHeaderNavigation, companyInquiryMailto, valenciaCompany as company, valenciaProcess, valenciaProjects, valenciaServices } from "./valenciaContent"
 import "./valencia.css"
 
 type ProjectFilter = "All projects" | "Residential" | "Sales offices" | "Commercial"
@@ -154,7 +154,7 @@ export default function ValenciaIntroduction({ navigate }: { navigate: (page: Pa
         <section className="valencia-buildtrack" aria-labelledby="valencia-buildtrack-title"><div><span className="valencia-eyebrow">Connected construction</span><h2 id="valencia-buildtrack-title">Meet the platform behind the progress.</h2><p>Explore BuildTrack's blueprint-linked progress, quality workflows and workforce tools.</p></div><button className="button button--outline-light" type="button" onClick={() => navigate("home")}>Explore BuildTrack <Arrow /></button></section>
       </main>
 
-      <footer className="site-footer valencia-footer"><div className="valencia-footer__top"><div><Brand inverse /><p>Construction and fit-out services.<br />Built on commitment. Delivered with quality.</p></div><nav aria-label="Company footer">{companySections.map(link => <a href={link.href} key={link.href}>{link.label}</a>)}</nav><div><strong>Stay connected</strong><p>For project updates and more about Valencia, visit our original company website.</p><a href={company.source} target="_blank" rel="noopener noreferrer">Visit Valencia's website <Arrow /></a></div></div><div className="site-footer__bottom"><span>© {new Date().getFullYear()} {company.name}.</span><button type="button" onClick={() => navigate("home")}>Powered by BuildTrack ↗</button></div></footer>
+      <PublicFooter navigate={navigate} page="valencia" />
 
       {project ? <Modal title={project.name} description={`${project.category} · Valencia company portfolio`} size="2xl" onClose={() => setProjectId(null)} footer={<button className="button valencia-button--brand" type="button" onClick={() => setProjectId(null)}>Close gallery</button>}>
         <div className="valencia-gallery" role="region" aria-label={`${project.name} photo slideshow`} tabIndex={0} onKeyDown={event => {if(event.target !== event.currentTarget) return;if(event.key === "ArrowLeft") {event.preventDefault();changeSlide(-1)} else if(event.key === "ArrowRight") {event.preventDefault();changeSlide(1)}}}>

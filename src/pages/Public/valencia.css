@@ -124,16 +124,6 @@
 .valencia-buildtrack h2 { color: #fff; font-size: clamp(22px,2vw,30px); letter-spacing: -.035em; margin-bottom: 10px; }
 .valencia-buildtrack p { color: #ebd3e9; font-size: 12px; margin: 0; }
 .valencia-buildtrack > button { flex-shrink: 0; text-transform: none; font-size: 11px; }
-.valencia-footer { font-size: 12px; padding-inline: clamp(24px,6vw,112px); }
-.valencia-footer__top { display: grid; grid-template-columns: 1.4fr .7fr 1fr; gap: 50px; }
-.valencia-footer__top > div:first-child > p { margin-top: 22px; }
-.valencia-footer__top nav { display: flex; flex-direction: column; align-items: flex-start; gap: 15px; }
-.valencia-footer__top > div:last-child { max-width: 290px; }
-.valencia-footer__top strong { display: block; color: #fff; margin-bottom: 15px; }
-.valencia-footer__top a:hover, .valencia-footer__top button:hover { color: #fff; }
-.valencia-footer__top > div:last-child > a { color: #eabce7; }
-.valencia-footer .brand__name { font-size: 15px; }
-.valencia-footer .site-footer__bottom button { background: none; border: 0; padding: 0; color: inherit; font-size: inherit; }
 .valencia-gallery { color: inherit; }
 .valencia-gallery__image { display: block; width: 100%; height: min(58vh,650px); object-fit: contain; background: #201b23; border-radius: 10px; }
 .valencia-gallery__controls { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 14px 0; font-size: 12px; }
@@ -155,7 +145,6 @@
   .valencia-about__visual > img { height: 440px; }
   .valencia-about__label { min-width: 200px; padding: 20px; right: 0; }
   .valencia-section { padding-block: 75px; }
-  .valencia-footer__top { gap: 30px; }
 }
 @media (max-width: 720px) {
   .valencia-page .site-header { min-height: 76px; height: auto; }
@@ -194,8 +183,6 @@
   .valencia-process-grid h3 { font-size: 15px; }
   .valencia-process-grid p { font-size: 11px; }
   .valencia-buildtrack { flex-direction: column; align-items: flex-start; }
-  .valencia-footer__top { grid-template-columns: 1fr; gap: 30px; }
-  .valencia-footer__top nav { flex-direction: row; flex-wrap: wrap; gap: 18px; }
   .valencia-gallery__controls { font-size: 10px; }
   .valencia-gallery__controls button { padding: 9px; }
 }

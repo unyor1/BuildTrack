@@ -109,6 +109,11 @@ try {
   assert.equal(portrait.props.loading, "lazy")
   assert.ok(!all(proprietor).some(node => node.type === "span" && text(node) === "RV"), "Proprietor initials are replaced by the supplied portrait")
   assert.equal(header.props.showAuthActions, false, "Company header hides login and registration")
+  const footer = find(node => node.type?.name === "PublicFooter")
+  assert.equal(footer.props.page, "valencia", "Company page uses the shared landing footer with neutral text and company section links")
+  assert.equal(footer.props.navigate, props.navigate)
+  assert.ok(!all(tree).some(node => node.type === "footer"), "No separate legacy company footer remains")
+  assert.ok(!pageResult.source.includes("Stay connected"))
   assert.equal(all(tree).filter(node => node.props?.className === "valencia-project").length, 4)
   assert.ok(all(tree).filter(node => node.type === "img").every(node => typeof node.props.alt === "string"))
   assert.ok(all(tree).filter(node => node.props?.target === "_blank").every(node => /noopener/.test(node.props.rel)))
@@ -164,6 +169,11 @@ try {
   effects.forEach(effect => effect?.cleanup?.())
   assert.equal(document.title, "BuildTrack")
   assert.equal(description.content, "Original description")
+
+  const { module: { default: LandingPage } } = await compile("../src/pages/Public/LandingPage.tsx")
+  tree = LandingPage(props)
+  assert.equal(find(node => node.type?.name === "PublicFooter").props.navigate, props.navigate, "BuildTrack reuses the same footer rather than a duplicated layout")
+  assert.ok(!all(tree).some(node => node.type === "footer"))
 
   const { module: { default: Header } } = await compile("../src/components/Header.tsx")
   tree = Header({ navigate() {} })

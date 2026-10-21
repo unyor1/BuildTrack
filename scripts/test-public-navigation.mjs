@@ -79,6 +79,42 @@ try {
     assert.deepEqual(calls.at(-1), { page, hash }, "Actual header uses the SPA navigation handler")
   }
 
+  const footerSource = readFileSync(new URL("../src/components/PublicFooter.tsx", import.meta.url), "utf8")
+  const footerOutput = transpile(footerSource)
+    .replace('from "react/jsx-runtime"', `from ${JSON.stringify(import.meta.resolve("react/jsx-runtime"))}`)
+    .replace('from "./Brand"', `from ${JSON.stringify(dataUrl("export default function Brand(){return null}"))}`)
+    .replace('from "./Icons"', `from ${JSON.stringify(dataUrl("export default function Icon(){return null}"))}`)
+    .replace('from "../lib/publicNavigation"', `from ${JSON.stringify(navigationUrl)}`)
+  const { default: PublicFooter } = await import(dataUrl(footerOutput))
+  const text = node => Array.isArray(node) ? node.map(text).join("") : node?.props ? text(node.props.children) : typeof node === "string" || typeof node === "number" ? String(node) : ""
+  for (const page of ["buildtrack", "valencia"]) {
+    go(`/${page}`)
+    const footer = PublicFooter({ navigate, page }), nodes = all(footer)
+    assert.equal(footer.type, "footer")
+    assert.equal(footer.props.className, page === "valencia" ? "site-footer site-footer--neutral" : "site-footer")
+    assert.equal(footer.props.id, page === "buildtrack" ? "contact" : undefined, "Valencia retains its actual contact section, not a duplicate footer anchor")
+    for (const heading of ["Navigation", "Platform Services", "Contact Us"]) assert.ok(nodes.some(node => node.type === "h3" && text(node) === heading))
+    assert.ok(nodes.some(node => node.props?.className === "site-footer__grid"), "Both pages share the responsive four-column landing footer")
+    assert.ok(!/Stay connected|Visit Valencia's website/.test(text(footer)), "Remove the unwanted company-site promotion")
+    assert.ok(nodes.some(node => node.props?.href === "mailto:valenciaconstruction2019@gmail.com"))
+    for (const phone of ["09971270773", "09104292842"]) assert.ok(nodes.some(node => node.props?.href === `tel:${phone}`))
+    const links = nodes.find(node => node.props?.["aria-label"] === "Footer navigation").props.children[1]
+    assert.deepEqual(links.map(link => link.props.href), ["/valencia", `/${page}#${page === "valencia" ? "valencia-" : ""}about`, `/${page}#${page === "valencia" ? "valencia-" : ""}services`, "/buildtrack#features", `/${page}#${page === "valencia" ? "valencia-" : ""}contact`])
+    for (const link of links) {
+      const event = click(), destination = new URL(link.props.href, window.location.href)
+      link.props.onClick(event)
+      assert.ok(event.defaultPrevented)
+      assert.deepEqual(calls.at(-1), { page: destination.pathname === "/valencia" ? "valencia" : "home", hash: destination.hash }, "Every footer section/cross-page link uses tested SPA navigation")
+      const modified = click({ ctrlKey: true }), count = calls.length
+      link.props.onClick(modified)
+      assert.ok(!modified.defaultPrevented)
+      assert.equal(calls.length, count)
+    }
+  }
+  const footerStyles = readFileSync(new URL("../src/index.css", import.meta.url), "utf8")
+  assert.match(footerStyles, /\.site-footer--neutral \.footer-intro \.brand__name, \.site-footer--neutral \.footer-column h3, \.site-footer--neutral \.footer-column a:hover \{ color: white; \}/, "Valencia footer brand, headings and hover text remain white, never yellow")
+  assert.ok(!readFileSync(new URL("../src/pages/Public/valencia.css", import.meta.url), "utf8").includes("valencia-footer"), "Remove obsolete company footer overrides")
+
   go("/buildtrack#services")
   targets.set("services", { scrollIntoView: options => scrolls.push({ id: "services", options }) })
   targets.set("valencia-about", { scrollIntoView: options => scrolls.push({ id: "valencia-about", options }) })
@@ -107,7 +143,7 @@ try {
     assert.match(readFileSync(new URL(path, import.meta.url), "utf8"), /usePublicHashScroll\(\)/)
   }
   assert.match(readFileSync(new URL("../src/index.css", import.meta.url), "utf8"), /\.landing \[id\] \{ scroll-margin-top: 96px; \}/)
-  console.log("Public navigation: actual header SPA clicks, same/cross-page fragments, modified/new-tab/external safety, lazy-page and Back/Forward scrolling, cleanup, sticky-header offset and Vercel deep-link rewrite passed")
+  console.log("Public navigation: actual header and shared footer SPA clicks, neutral Valencia footer/no unwanted promotion, same/cross-page fragments, modified/new-tab/external safety, lazy-page and Back/Forward scrolling, cleanup, sticky-header offset and Vercel deep-link rewrite passed")
 } finally {
   globalThis.window = originalWindow
   globalThis.document = originalDocument
