@@ -4,6 +4,7 @@ import Header from "../../components/Header"
 import Brand from "../../components/Brand"
 import Icon from "../../components/Icons"
 import Modal from "../../components/Modal"
+import { handlePublicNavigation, usePublicHashScroll } from "../../lib/publicNavigation"
 import { companyHeaderNavigation, companyInquiryMailto, companySections, valenciaCompany as company, valenciaProcess, valenciaProjects, valenciaServices } from "./valenciaContent"
 import "./valencia.css"
 
@@ -12,6 +13,7 @@ const filters: ProjectFilter[] = ["All projects", "Residential", "Sales offices"
 const Arrow = () => <span aria-hidden="true">↗</span>
 
 export default function ValenciaIntroduction({ navigate }: { navigate: (page: Page) => void }) {
+  usePublicHashScroll()
   const [filter, setFilter] = useState<ProjectFilter>("All projects")
   const [projectId, setProjectId] = useState<string | null>(null)
   const [slide, setSlide] = useState(0)
@@ -50,7 +52,7 @@ export default function ValenciaIntroduction({ navigate }: { navigate: (page: Pa
       <a className="valencia-skip" href="#valencia-main">Skip to company introduction</a>
       <Header navigate={navigate} navigation={companyHeaderNavigation} showAuthActions={false} brandPage="valencia" />
       <nav className="valencia-mobile-nav" aria-label="Company sections">
-        {companyHeaderNavigation.map(link => <a key={link.href} href={link.href}>{link.label}</a>)}
+        {companyHeaderNavigation.map(link => <a key={link.href} href={link.href} onClick={event => handlePublicNavigation(event, link.href, navigate)}>{link.label}</a>)}
       </nav>
       <main id="valencia-main">
         <section className="valencia-hero" aria-labelledby="valencia-title">

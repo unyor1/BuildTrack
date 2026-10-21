@@ -1,8 +1,9 @@
 import type { Page } from "../App"
 import Brand from "./Brand"
+import { handlePublicNavigation } from "../lib/publicNavigation"
 
 type HeaderProps = {
-  navigate: (page: Page) => void
+  navigate: (page: Page, hash?: string) => void
   brandingOnly?: boolean
   showAuthActions?: boolean
   brandPage?: "home" | "valencia"
@@ -38,7 +39,7 @@ export default function Header({
               { label: "Services", href: "/buildtrack#services" },
               { label: "Features", href: "/buildtrack#features" },
               { label: "Contact", href: "/buildtrack#contact" },
-            ]).map(link => <a key={link.href} href={link.href}>{link.label}</a>)}
+            ]).map(link => <a key={link.href} href={link.href} onClick={event => handlePublicNavigation(event, link.href, navigate)}>{link.label}</a>)}
           </nav>
           {showAuthActions ? <div className="header-actions">
             <button

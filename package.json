@@ -28,10 +28,11 @@
     "test:project-records": "node scripts/test-project-records.mjs",
     "test:client-portal": "node scripts/test-client-portal.mjs",
     "test:valencia": "node scripts/test-valencia-introduction.mjs",
+    "test:public-navigation": "node scripts/test-public-navigation.mjs",
     "test:qa-photo-markup": "node scripts/test-qa-photo-markup.mjs",
     "test:assignments": "node scripts/test-assignments.mjs",
     "test:load": "node scripts/load-test.mjs",
-    "check": "tsc --noEmit && pnpm test:lib && pnpm test:comparison && pnpm test:issue-editor && pnpm test:attendance && pnpm test:biometric-access && pnpm test:worker-camera && pnpm test:worker-enrollment && pnpm test:foreman-attendance && pnpm test:admin-worker-profiles && pnpm test:attendance-reports && pnpm test:direct-qa && pnpm test:work-item-evidence && pnpm test:qa-board-layout && pnpm test:project-records && pnpm test:client-portal && pnpm test:valencia && pnpm test:qa-photo-markup && pnpm test:assignments && pnpm test:sql && pnpm build"
+    "check": "tsc --noEmit && pnpm test:lib && pnpm test:comparison && pnpm test:issue-editor && pnpm test:attendance && pnpm test:biometric-access && pnpm test:worker-camera && pnpm test:worker-enrollment && pnpm test:foreman-attendance && pnpm test:admin-worker-profiles && pnpm test:attendance-reports && pnpm test:direct-qa && pnpm test:work-item-evidence && pnpm test:qa-board-layout && pnpm test:project-records && pnpm test:client-portal && pnpm test:valencia && pnpm test:public-navigation && pnpm test:qa-photo-markup && pnpm test:assignments && pnpm test:sql && pnpm build"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.117.3",

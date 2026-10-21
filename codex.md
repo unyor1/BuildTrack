@@ -113,6 +113,7 @@ Relevant files: `src/pages/Client/`, `src/components/client/PinDailyReports.tsx`
 
 - Opening `/` replaces the URL with `/valencia`. The separate BuildTrack landing page is at `/buildtrack`; internal `navigate("home")` must use that path. Preserve both pages and protected workspace/deep-link routes. Legacy explicit `/#about`, `/#services`, `/#features` and `/#contact` bookmarks redirect to their corresponding `/buildtrack` sections.
 - The Valencia desktop/mobile header includes a **BuildTrack** link to `/buildtrack`; its brand logo returns to `/valencia`. The BuildTrack header, About section and footer link back to Valencia. Landing section links must use `/buildtrack#...`, not the new opening `/` URL.
+- Vercel requires the root `vercel.json` SPA rewrite to `/index.html` for direct visits/refreshes of `/valencia`, `/buildtrack`, login and workspace URLs. Do not remove it or bypass RouteGuard to address a hosting 404. Public header/mobile/cross-page links use `handlePublicNavigation` for normal same-tab clicks; preserve external, modified/new-tab and download behavior. `usePublicHashScroll` scrolls sections after lazy page mounting and on hash/Back/Forward changes; keep the sticky-header offset.
 - Sources: the Home, About Us, Services, Projects and Contact pages at `https://valenciaconstructionservices.mystrikingly.com/`, checked 2026-10-21. Keep company facts separate from private project records and do not invent project completion dates, statistics, staff, certifications or testimonials.
 - `src/pages/Public/ValenciaIntroduction.tsx`, `valenciaContent.ts` and scoped `valencia.css` reuse the public Header and its brand colors. `/valencia` is rendered as static public content; workspace routes retain their existing RouteGuard.
 - `src/assets/valencia/introduction/` holds local source photos, an enhanced interior hero and the transparent logo. Preserve source images and do not flatten the logo's alpha channel.
@@ -127,6 +128,7 @@ Relevant files: `src/pages/Client/`, `src/components/client/PinDailyReports.tsx`
 ## Recent implementation records
 
 - `docs/audits/2026-10-22-valencia-opening-and-proprietor.md`
+- `docs/audits/2026-10-22-deployed-public-navigation.md`
 
 - `docs/audits/2026-10-21-work-item-evidence.md`
 - `docs/audits/2026-10-21-manual-checklist-completion.md`

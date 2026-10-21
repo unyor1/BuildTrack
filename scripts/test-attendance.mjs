@@ -559,6 +559,7 @@ const brand = moduleUrl(
 
 const { default: Header } = await compile("../src/components/Header.tsx", {
   "./Brand": brand,
+  "../lib/publicNavigation": moduleUrl("export function handlePublicNavigation(){throw new Error('Rendering the attendance header must not navigate')}"),
 })
 
 tree = Header({ navigate: () => {}, brandingOnly: true })

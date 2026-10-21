@@ -58,7 +58,7 @@ const updateLocation = path => {
   const target = new URL(path, "https://buildtrack.test")
   Object.assign(globalThis.window.location, { href: target.href, pathname: target.pathname, search: target.search, hash: target.hash })
 }
-globalThis.window = { location: { href: "", pathname: "/valencia", search: "", hash: "" }, history: {
+globalThis.window = { location: { href: "", pathname: "/valencia", search: "", hash: "" }, dispatchEvent() {}, history: {
   replaceState(_state, _title, path) { historyCalls.push({ method: "replace", path }); updateLocation(path) },
   pushState(_state, _title, path) { historyCalls.push({ method: "push", path }); updateLocation(path) },
 }, scrollTo() {} }
@@ -201,6 +201,8 @@ try {
   navigationApp.setState = patch => { navigationApp.state = { ...navigationApp.state, ...patch } }
   navigationApp.navigate("home")
   assert.deepEqual(historyCalls.at(-1), { method: "push", path: "/buildtrack" })
+  navigationApp.navigate("home", "#services")
+  assert.deepEqual(historyCalls.at(-1), { method: "push", path: "/buildtrack#services" }, "SPA header navigation preserves section hashes")
   navigationApp.navigate("valencia")
   assert.equal(window.location.pathname, "/valencia")
   for (const [path, expected] of [["/login", "login"], ["/register", "register"], ["/pin?pin=one", "pin-link"], ["/attendance?project=one", "attendance"]]) {

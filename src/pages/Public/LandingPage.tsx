@@ -5,6 +5,7 @@ import processSteps from "../../assets/valencia/process-steps.png"
 import Header from "../../components/Header"
 import Icon from "../../components/Icons"
 import Brand from "../../components/Brand"
+import { handlePublicNavigation, usePublicHashScroll } from "../../lib/publicNavigation"
 
 type LandingPageProps = { navigate: (page: Page) => void }
 
@@ -90,6 +91,7 @@ const processCards = [
 ] as const
 
 export default function LandingPage({ navigate }: LandingPageProps) {
+  usePublicHashScroll()
   return (
     <div className="landing">
       <Header navigate={navigate} />
@@ -151,7 +153,7 @@ export default function LandingPage({ navigate }: LandingPageProps) {
                 adherence to safety standards, and a commitment to client
                 satisfaction.
               </p>
-              <a className="button" href="/valencia" style={{ background: "var(--purple)", color: "white", marginTop: 12, textTransform: "none" }}>Get to know Valencia <span aria-hidden="true">↗</span></a>
+              <a className="button" href="/valencia" onClick={event => handlePublicNavigation(event, "/valencia", navigate)} style={{ background: "var(--purple)", color: "white", marginTop: 12, textTransform: "none" }}>Get to know Valencia <span aria-hidden="true">↗</span></a>
             </div>
             <article className="mission-card">
               <span>Our mission</span>
@@ -359,7 +361,7 @@ export default function LandingPage({ navigate }: LandingPageProps) {
           </div>
           <div className="footer-column">
             <h3>Navigation</h3>
-            <a href="/valencia">Valencia Construction Services</a>
+            <a href="/valencia" onClick={event => handlePublicNavigation(event, "/valencia", navigate)}>Valencia Construction Services</a>
             <a href="#about">About Us</a>
             <a href="#services">Our Services</a>
             <a href="#features">Platform Features</a>

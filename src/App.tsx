@@ -196,11 +196,13 @@ export default class App extends Component<Record<string, never>, AppState> {
     this.setState({ page: pageFromPath() })
   }
 
-  navigate = (nextPage: Page) => {
+  navigate = (nextPage: Page, hash = "") => {
     const path = nextPage === "home" ? "/buildtrack" : nextPage === "pin-link" ? "/pin" : `/${nextPage}`
-    window.history.pushState({}, "", path)
-    window.scrollTo({ top: 0, behavior: "smooth" })
+    const fragment = hash.startsWith("#") ? hash : ""
+    window.history.pushState({}, "", `${path}${fragment}`)
+    if (!fragment) window.scrollTo({ top: 0, behavior: "smooth" })
     this.setState({ page: nextPage })
+    if (fragment) window.dispatchEvent(new Event("hashchange"))
   }
 
   navigateAdmin = (nextPage: AdminPageKey, search = "") => {

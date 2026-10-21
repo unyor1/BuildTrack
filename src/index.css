@@ -83,6 +83,7 @@ h1, h2, h3, p { margin-top: 0; }
 .hero__stats span { font-size: 11px; color: #c8c8ca; }
 
 .section { padding: 86px clamp(24px, 6vw, 112px); }
+.landing [id] { scroll-margin-top: 96px; }
 .section--soft { background: var(--soft); }
 .about-grid { display: grid; grid-template-columns: 1.7fr .75fr .75fr; gap: 26px; align-items: stretch; }
 .section h2 { font-size: clamp(27px, 3vw, 42px); line-height: 1.08; letter-spacing: -.04em; }
