@@ -111,10 +111,12 @@ Relevant files: `src/pages/Client/`, `src/components/client/PinDailyReports.tsx`
 
 ## Public Valencia introduction
 
-- `/valencia` is a standalone public company introduction, separate from the BuildTrack landing page. The landing header, About section and footer link to it. Do not replace the existing home page.
+- Opening `/` replaces the URL with `/valencia`. The separate BuildTrack landing page is at `/buildtrack`; internal `navigate("home")` must use that path. Preserve both pages and protected workspace/deep-link routes. Legacy explicit `/#about`, `/#services`, `/#features` and `/#contact` bookmarks redirect to their corresponding `/buildtrack` sections.
+- The Valencia desktop/mobile header includes a **BuildTrack** link to `/buildtrack`; its brand logo returns to `/valencia`. The BuildTrack header, About section and footer link back to Valencia. Landing section links must use `/buildtrack#...`, not the new opening `/` URL.
 - Sources: the Home, About Us, Services, Projects and Contact pages at `https://valenciaconstructionservices.mystrikingly.com/`, checked 2026-10-21. Keep company facts separate from private project records and do not invent project completion dates, statistics, staff, certifications or testimonials.
 - `src/pages/Public/ValenciaIntroduction.tsx`, `valenciaContent.ts` and scoped `valencia.css` reuse the public Header and its brand colors. `/valencia` is rendered as static public content; workspace routes retain their existing RouteGuard.
 - `src/assets/valencia/introduction/` holds local source photos, an enhanced interior hero and the transparent logo. Preserve source images and do not flatten the logo's alpha channel.
+- `proprietor-roxan-valencia.png` is the original supplied proprietor portrait, also published by Valencia. It replaces the initials beside Roxan D. Valencia in About; preserve the actual portrait rather than generating a substitute.
 - Hero refinement (2026-10-22): retain the left headline, actions, colors and readability gradient. Overlay the transparent logo directly over the interior photo at the user's yellow-circled right-center area (desktop center at 68% across / 58% down). Keep it clear of tablet copy and above mobile copy. This supersedes the earlier top-center placement. Do not restore the white/glass logo card or the red less-than/chevron decoration.
 - The enlarged hero logo uses `clamp(320px,34vw,540px)` on desktop, with smaller tablet/mobile bounds. Preserve its marked center when resizing; mobile copy reserves space below the larger logo.
 - The Valencia company header hides Log in and Register using `Header`'s opt-in `showAuthActions={false}`. Keep the main landing page's sign-in controls and the standalone attendance branding-only header unchanged.
@@ -123,6 +125,8 @@ Relevant files: `src/pages/Client/`, `src/components/client/PinDailyReports.tsx`
 - Run `pnpm test:valencia` after changes; it is included in `pnpm check`. See `docs/audits/2026-10-21-valencia-introduction.md` for sources, asset prompts and verification limitations.
 
 ## Recent implementation records
+
+- `docs/audits/2026-10-22-valencia-opening-and-proprietor.md`
 
 - `docs/audits/2026-10-21-work-item-evidence.md`
 - `docs/audits/2026-10-21-manual-checklist-completion.md`

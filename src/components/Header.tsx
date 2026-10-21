@@ -5,6 +5,7 @@ type HeaderProps = {
   navigate: (page: Page) => void
   brandingOnly?: boolean
   showAuthActions?: boolean
+  brandPage?: "home" | "valencia"
   navigation?: { label: string; href: string }[]
 }
 
@@ -12,6 +13,7 @@ export default function Header({
   navigate,
   brandingOnly = false,
   showAuthActions = true,
+  brandPage = "home",
   navigation,
 }: HeaderProps) {
   return (
@@ -21,8 +23,8 @@ export default function Header({
       ) : (
         <button
           className="brand-button"
-          onClick={() => navigate("home")}
-          aria-label="Go to homepage"
+          onClick={() => navigate(brandPage)}
+          aria-label={brandPage === "valencia" ? "Go to Valencia introduction" : "Go to homepage"}
         >
           <Brand inverse />
         </button>
@@ -32,10 +34,10 @@ export default function Header({
           <nav className="main-nav" aria-label="Main navigation">
             {(navigation ?? [
               { label: "Valencia", href: "/valencia" },
-              { label: "About", href: "/#about" },
-              { label: "Services", href: "/#services" },
-              { label: "Features", href: "/#features" },
-              { label: "Contact", href: "/#contact" },
+              { label: "About", href: "/buildtrack#about" },
+              { label: "Services", href: "/buildtrack#services" },
+              { label: "Features", href: "/buildtrack#features" },
+              { label: "Contact", href: "/buildtrack#contact" },
             ]).map(link => <a key={link.href} href={link.href}>{link.label}</a>)}
           </nav>
           {showAuthActions ? <div className="header-actions">

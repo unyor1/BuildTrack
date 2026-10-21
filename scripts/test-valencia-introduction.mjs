@@ -53,7 +53,15 @@ const find = predicate => { const node = all(tree).find(predicate); assert.ok(no
 const oldWindow = globalThis.window, oldDocument = globalThis.document
 const description = { content: "Original description" }
 globalThis.document = { title: "BuildTrack", querySelector: () => description }
-globalThis.window = { location: { href: "", pathname: "/valencia" }, history: {}, scrollTo() {} }
+const historyCalls = []
+const updateLocation = path => {
+  const target = new URL(path, "https://buildtrack.test")
+  Object.assign(globalThis.window.location, { href: target.href, pathname: target.pathname, search: target.search, hash: target.hash })
+}
+globalThis.window = { location: { href: "", pathname: "/valencia", search: "", hash: "" }, history: {
+  replaceState(_state, _title, path) { historyCalls.push({ method: "replace", path }); updateLocation(path) },
+  pushState(_state, _title, path) { historyCalls.push({ method: "push", path }); updateLocation(path) },
+}, scrollTo() {} }
 try {
   const contentResult = await compile("../src/pages/Public/valenciaContent.ts")
   const content = contentResult.module
@@ -62,6 +70,8 @@ try {
   assert.equal(content.valenciaProcess.length, 4)
   assert.deepEqual(content.valenciaCompany.phones, ["09971270773", "09104292842"])
   assert.equal(content.valenciaCompany.email, "valenciaconstruction2019@gmail.com")
+  const portraitBytes = readFileSync(content.valenciaCompany.proprietorPhoto)
+  assert.equal(portraitBytes.subarray(1, 4).toString(), "PNG", "Proprietor portrait must be a real local image, not a Git LFS pointer")
   const inquiry = content.companyInquiryMailto("  Alex & Co  ", "alex+site@example.com", "A & B\nPlease call.")
   const params = new URLSearchParams(inquiry.split("?")[1])
   assert.match(params.get("body"), /^Name: Alex & Co\nEmail: alex\+site@example.com\n\nA & B\nPlease call\.$/)
@@ -88,7 +98,16 @@ try {
   assert.match(text(find(node => node.props?.id === "valencia-title")), /Built oncommitment\.Delivered with quality\./, "Keep the existing hero headline")
   for (const link of content.companySections) assert.ok(all(tree).some(node => node.props?.id === link.href.slice(1)), `Missing anchor ${link.href}`)
   const header = find(node => node.type?.name === "Header")
-  assert.deepEqual(header.props.navigation, content.companySections)
+  assert.deepEqual(header.props.navigation, content.companyHeaderNavigation)
+  assert.equal(header.props.brandPage, "valencia", "Company logo returns to its own introduction")
+  assert.deepEqual(content.companyHeaderNavigation[0], { label: "BuildTrack", href: "/buildtrack" })
+  assert.ok(all(tree).some(node => node.props?.href === "/buildtrack" && text(node) === "BuildTrack"), "Mobile company header also links to BuildTrack")
+  const proprietor = find(node => node.props?.className === "valencia-proprietor")
+  const portrait = all(proprietor).find(node => node.type === "img")
+  assert.equal(portrait.props.src, content.valenciaCompany.proprietorPhoto)
+  assert.match(portrait.props.alt, /Roxan D\. Valencia/)
+  assert.equal(portrait.props.loading, "lazy")
+  assert.ok(!all(proprietor).some(node => node.type === "span" && text(node) === "RV"), "Proprietor initials are replaced by the supplied portrait")
   assert.equal(header.props.showAuthActions, false, "Company header hides login and registration")
   assert.equal(all(tree).filter(node => node.props?.className === "valencia-project").length, 4)
   assert.ok(all(tree).filter(node => node.type === "img").every(node => typeof node.props.alt === "string"))
@@ -151,14 +170,43 @@ try {
   assert.ok(all(tree).some(node => node.props?.href === "/valencia"))
   assert.ok(all(tree).some(node => node.type === "button" && text(node) === "Log in"), "Main landing header retains login")
   assert.ok(all(tree).some(node => node.type === "button" && text(node) === "Register"), "Main landing header retains registration")
-  tree = Header({ navigate() {}, navigation: content.companySections, showAuthActions: false })
+  assert.ok(all(tree).some(node => node.props?.href === "/buildtrack#features"), "Landing links use the new explicit route")
+  tree = Header({ navigate: page => { navigated = page }, navigation: content.companyHeaderNavigation, showAuthActions: false, brandPage: "valencia" })
   assert.ok(!all(tree).some(node => node.props?.className === "header-actions"), "No hidden authentication button container")
   assert.ok(!all(tree).some(node => node.type === "button" && /^(Log in|Register)$/.test(text(node))))
-  assert.deepEqual(all(tree).filter(node => node.type === "a").map(node => node.props.href), content.companySections.map(link => link.href), "Company navigation remains visible")
+  assert.deepEqual(all(tree).filter(node => node.type === "a").map(node => node.props.href), content.companyHeaderNavigation.map(link => link.href), "Company navigation and BuildTrack link remain visible")
+  find(node => node.props?.className === "brand-button").props.onClick()
+  assert.equal(navigated, "valencia")
   tree = Header({ navigate() {}, brandingOnly: true })
   assert.ok(!all(tree).some(node => node.type === "nav" || node.type === "button"), "Standalone attendance header must remain branding-only")
 
   const { module: { default: App } } = await compile("../src/App.tsx", { react })
+  updateLocation("/?campaign=company")
+  const openingApp = new App({})
+  assert.equal(openingApp.state.page, "valencia")
+  assert.deepEqual(historyCalls.at(-1), { method: "replace", path: "/valencia?campaign=company" }, "Opening the site replaces the root URL instead of creating a Back loop")
+  assert.equal(openingApp.render().type.name, "ErrorBoundary")
+  updateLocation("/#features")
+  assert.equal(new App({}).state.page, "home", "Legacy explicit landing-section links remain usable")
+  assert.equal(window.location.pathname, "/buildtrack")
+  assert.equal(window.location.hash, "#features")
+  for (const path of ["/buildtrack", "/buildtrack/"]) {
+    updateLocation(path)
+    const landing = new App({})
+    assert.equal(landing.state.page, "home")
+    assert.equal(landing.render().type.name, "RouteGuard")
+    assert.match(String(landing.renderPage().props.children.type._payload._result), /pages\/Public\/LandingPage/, "BuildTrack still renders the existing landing page")
+  }
+  const navigationApp = new App({})
+  navigationApp.setState = patch => { navigationApp.state = { ...navigationApp.state, ...patch } }
+  navigationApp.navigate("home")
+  assert.deepEqual(historyCalls.at(-1), { method: "push", path: "/buildtrack" })
+  navigationApp.navigate("valencia")
+  assert.equal(window.location.pathname, "/valencia")
+  for (const [path, expected] of [["/login", "login"], ["/register", "register"], ["/pin?pin=one", "pin-link"], ["/attendance?project=one", "attendance"]]) {
+    updateLocation(path)
+    assert.equal(new App({}).state.page, expected, `Preserve ${path}`)
+  }
   for (const path of ["/valencia", "/valencia/"]) {
     window.location.pathname = path
     const app = new App({})

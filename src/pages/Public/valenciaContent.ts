@@ -10,12 +10,14 @@ import review from "../../assets/valencia/introduction/process-review.jpg"
 import briefing from "../../assets/valencia/introduction/process-briefing.jpg"
 import team from "../../assets/valencia/introduction/process-team.jpg"
 import execution from "../../assets/valencia/introduction/process-execution.jpg"
+import proprietorPhoto from "../../assets/valencia/introduction/proprietor-roxan-valencia.png"
 
 // Public company information checked against the five Strikingly pages on 2026-10-21.
 // Keep this independent of private project, worker and client data.
 export const valenciaCompany = {
   name: "Valencia Construction Services",
   proprietor: "Roxan D. Valencia",
+  proprietorPhoto,
   source: "https://valenciaconstructionservices.mystrikingly.com/",
   checkedOn: "2026-10-21",
   address: "Block 31, Berlin St., Purok 8, Sta. Ana, Taytay, Rizal, 1920",
@@ -33,6 +35,11 @@ export const companySections = [
   { label: "Projects", href: "#valencia-projects" },
   { label: "Our process", href: "#valencia-process" },
   { label: "Contact", href: "#valencia-contact" },
+]
+
+export const companyHeaderNavigation = [
+  { label: "BuildTrack", href: "/buildtrack" },
+  ...companySections,
 ]
 
 export const valenciaServices = [

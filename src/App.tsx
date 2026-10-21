@@ -72,6 +72,17 @@ const withLoading = (node: ReactNode) => (
 export type Page = "home" | "valencia" | "login" | "register" | "pin-link" | "attendance" | `admin/${AdminPageKey}` | `engineer/${EngineerPageKey}` | `foreman/${ForemanPageKey}` | `client/${ClientPageKey}` | `user/${UserPageKey}`
 
 function pageFromPath(): Page {
+  const publicPath = window.location.pathname.replace(/\/$/, "") || "/"
+  if (publicPath === "/") {
+    // Replace, rather than push, so Back cannot loop through the opening redirect.
+    // Preserve old explicit landing-section bookmarks while changing the default entrance.
+    const hash = window.location.hash ?? ""
+    const landingSection = ["#about", "#services", "#features", "#contact"].includes(hash)
+    const destination = landingSection ? "/buildtrack" : "/valencia"
+    window.history.replaceState({}, "", `${destination}${window.location.search ?? ""}${hash}`)
+    return landingSection ? "home" : "valencia"
+  }
+  if (publicPath === "/buildtrack") return "home"
   const projectRoute = readProjectRoute(window.location.pathname)
   if (projectRoute) return `admin/${projectRoute.section}`
   if (window.location.pathname.startsWith("/admin/")) {
@@ -186,7 +197,7 @@ export default class App extends Component<Record<string, never>, AppState> {
   }
 
   navigate = (nextPage: Page) => {
-    const path = nextPage === "home" ? "/" : nextPage === "pin-link" ? "/pin" : `/${nextPage}`
+    const path = nextPage === "home" ? "/buildtrack" : nextPage === "pin-link" ? "/pin" : `/${nextPage}`
     window.history.pushState({}, "", path)
     window.scrollTo({ top: 0, behavior: "smooth" })
     this.setState({ page: nextPage })

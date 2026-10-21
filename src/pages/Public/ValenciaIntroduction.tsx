@@ -4,7 +4,7 @@ import Header from "../../components/Header"
 import Brand from "../../components/Brand"
 import Icon from "../../components/Icons"
 import Modal from "../../components/Modal"
-import { companyInquiryMailto, companySections, valenciaCompany as company, valenciaProcess, valenciaProjects, valenciaServices } from "./valenciaContent"
+import { companyHeaderNavigation, companyInquiryMailto, companySections, valenciaCompany as company, valenciaProcess, valenciaProjects, valenciaServices } from "./valenciaContent"
 import "./valencia.css"
 
 type ProjectFilter = "All projects" | "Residential" | "Sales offices" | "Commercial"
@@ -48,9 +48,9 @@ export default function ValenciaIntroduction({ navigate }: { navigate: (page: Pa
   return (
     <div className="landing valencia-page">
       <a className="valencia-skip" href="#valencia-main">Skip to company introduction</a>
-      <Header navigate={navigate} navigation={companySections} showAuthActions={false} />
+      <Header navigate={navigate} navigation={companyHeaderNavigation} showAuthActions={false} brandPage="valencia" />
       <nav className="valencia-mobile-nav" aria-label="Company sections">
-        {companySections.map(link => <a key={link.href} href={link.href}>{link.label}</a>)}
+        {companyHeaderNavigation.map(link => <a key={link.href} href={link.href}>{link.label}</a>)}
       </nav>
       <main id="valencia-main">
         <section className="valencia-hero" aria-labelledby="valencia-title">
@@ -88,7 +88,7 @@ export default function ValenciaIntroduction({ navigate }: { navigate: (page: Pa
               <span><Icon name="people" /> Client-focused service</span>
               <span><Icon name="building" /> Safe site practice</span>
             </div>
-            <div className="valencia-proprietor"><span aria-hidden="true">RV</span><div><strong>{company.proprietor}</strong><small>Proprietor · Valencia Construction Services</small></div></div>
+            <div className="valencia-proprietor"><img src={company.proprietorPhoto} alt={`${company.proprietor}, proprietor of Valencia Construction Services`} width={422} height={643} loading="lazy" /><div><strong>{company.proprietor}</strong><small>Proprietor · Valencia Construction Services</small></div></div>
           </div>
         </section>
 

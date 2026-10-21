@@ -49,8 +49,8 @@
 .valencia-values { display: flex; flex-wrap: wrap; gap: 15px; border-block: 1px solid #e7dfe6; padding: 18px 0; margin: 25px 0; }
 .valencia-values > span { display: flex; align-items: center; gap: 7px; font-size: 10px; font-weight: 800; }
 .valencia-values svg { width: 17px; height: 17px; color: #9e1f93; }
-.valencia-proprietor { display: flex; align-items: center; gap: 13px; }
-.valencia-proprietor > span { display: grid; place-items: center; height: 43px; width: 43px; background: #eee2ec; border-radius: 50%; color: #9e1f93; font-size: 13px; font-weight: 800; }
+.valencia-proprietor { display: flex; align-items: center; gap: 18px; }
+.valencia-proprietor > img { display: block; width: 96px; height: 120px; flex-shrink: 0; object-fit: cover; object-position: center 20%; border: 1px solid #e7dfe6; border-radius: 12px; background: #fff; }
 .valencia-proprietor strong { font-size: 13px; }
 .valencia-proprietor small { display: block; font-size: 10px; margin-top: 3px; color: #706773; }
 .valencia-services { background: #f0eaf0; max-width: none; }
