@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react"
 import DailyReportPhotos from "../../components/DailyReportPhotos"
 import { LinkedWorkEditor, ReportHistory } from "../../components/DailyReportWorkflow"
 import { useProjectPins } from "../../lib/blueprints"
@@ -45,9 +45,19 @@ export default function ForemanDailyProgressReport(_: ForemanPageProps) {
   const dirty = useRef(false)
   const formScope = useRef("")
 
-  const mine = reports.filter((report) => report.author_id === profile?.id && report.project_id === projectId)
+  const mine = useMemo(() => reports.filter((report) => report.author_id === profile?.id && report.project_id === projectId), [reports, profile?.id, projectId])
+  const reportDays = [...new Set([...dates, ...mine.map(report => report.report_date)])].sort().reverse()
   const existing = mine.find((report) => report.report_date === date) ?? null
-  const readOnly = existing?.status === "submitted"
+  const historical = !dates.includes(date)
+  const readOnly = existing?.status === "submitted" || historical
+  const openedLink = useRef("")
+  const openLinkedReport = useCallback(() => {
+    const id = new URLSearchParams(window.location.search).get("report")
+    const linked = mine.find(report => report.id === id)
+    const key = `${projectId}:${id}`
+    if (linked && openedLink.current !== key) { openedLink.current = key; setDate(linked.report_date) }
+  }, [mine, projectId])
+  useEffect(() => { openLinkedReport(); window.addEventListener("popstate", openLinkedReport); return () => window.removeEventListener("popstate", openLinkedReport) }, [openLinkedReport])
 
   // Load the report for the chosen day into the form (or a blank one).
   useEffect(() => {
@@ -146,8 +156,8 @@ export default function ForemanDailyProgressReport(_: ForemanPageProps) {
             {loading ? (
               <SkeletonList rows={4} label="Loading reports" />
             ) : (
-              <ul className="space-y-1.5">
-                {dates.slice(0, 14).map((day) => {
+              <ul className="max-h-[38rem] space-y-1.5 overflow-y-auto">
+                {reportDays.map((day) => {
                   const report = mine.find((item) => item.report_date === day)
                   return (
                     <li key={day}>
@@ -164,7 +174,7 @@ export default function ForemanDailyProgressReport(_: ForemanPageProps) {
                 })}
               </ul>
             )}
-            <p className="mt-3 text-xs text-fg-muted">You can write a report for today and the 13 days before.</p>
+            <p className="mt-3 text-xs text-fg-muted">You can write a report for today and the 13 days before. Older saved reports remain available here as read-only history.</p>
           </aside>
 
           <section className="min-w-0 rounded-2xl border border-line bg-surface p-5 shadow-sm">
@@ -172,7 +182,7 @@ export default function ForemanDailyProgressReport(_: ForemanPageProps) {
             <header className="mb-4 flex flex-wrap items-center justify-between gap-2">
               <div>
                 <h2 className="text-lg font-extrabold">{reportDateLong(date)}</h2>
-                <p className="text-xs text-fg-muted">{readOnly ? existing?.review_state === "reviewed" ? "Reviewed by the Engineer. Report locked." : "Submitted · awaiting Engineer review. Report locked." : existing?.review_state === "returned" ? "Returned by the Engineer. Correct the report and submit a new revision." : existing ? "Draft: only you can see it." : "New report"}</p>
+                <p className="text-xs text-fg-muted">{historical ? "Historical report · outside the 14-day editing window. Read only." : readOnly ? existing?.review_state === "reviewed" ? "Reviewed by the Engineer. Report locked." : "Submitted · awaiting Engineer review. Report locked." : existing?.review_state === "returned" ? "Returned by the Engineer. Correct the report and submit a new revision." : existing ? "Draft: only you can see it." : "New report"}</p>
               </div>
               {existing ? <button type="button" className={buttonSecondary} onClick={print}>Print / Save as PDF</button> : null}
             </header>

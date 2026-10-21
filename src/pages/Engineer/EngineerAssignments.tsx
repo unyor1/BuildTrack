@@ -3,7 +3,7 @@ import ProjectContextBar from "../../components/ProjectContextBar"
 import { dbMessage } from "../../components/editor/PinParts"
 import { EmptyState, PageHead, inputClass } from "../../components/ui/PageParts"
 import { SkeletonList } from "../../components/ui/Skeleton"
-import { severityChip, severityLabels, statusChip, statusLabels, type Pin } from "../../lib/blueprints"
+import { severityChip, severityLabels, statusChip, statusLabels, type Pin, type PinStatus } from "../../lib/blueprints"
 import { followLink } from "../../lib/notifications"
 import { isOverdue } from "../../lib/progress"
 import { getSelectedProjectId } from "../../lib/projects"
@@ -14,7 +14,7 @@ import type { EngineerPageProps } from "./types"
 
 const UNASSIGNED = "unassigned"
 type AssignmentFilter = "all" | "assigned" | "unassigned"
-const filterLabels: Record<AssignmentFilter, string> = { all: "All open work", assigned: "Assigned", unassigned: "Unassigned" }
+const filterLabels: Record<AssignmentFilter, string> = { assigned: "Assigned", unassigned: "Unassigned", all: "All work" }
 
 // A detailed work list, including assignees no longer in the team. Filtering never changes assignments.
 export default function EngineerAssignments(_: EngineerPageProps) {
@@ -23,31 +23,41 @@ export default function EngineerAssignments(_: EngineerPageProps) {
   const toast = useToast()
   const [sheet, setSheet] = useState("all")
   const [assignment, setAssignment] = useState<AssignmentFilter>("all")
+  const [status, setStatus] = useState<"all" | "open" | PinStatus>("all")
   const [saving, setSaving] = useState<string | null>(null)
   const pending = useRef(false)
-  useEffect(() => { setSheet("all"); setAssignment("all") }, [projectId])
+  const currentProject = useRef(projectId)
+  currentProject.current = projectId
+  useEffect(() => { setSheet("all"); setAssignment("all"); setStatus("all") }, [projectId])
 
   const foremen = work.team.filter(member => member.role === "foreman")
-  const open = useMemo(() => work.pins.filter(pin => pin.status !== "verified" && pin.category !== "note" && (sheet === "all" || pin.blueprint_id === sheet)), [work.pins, sheet])
-  const assigned = open.filter(pin => Boolean(pin.assigned_to)).length
-  const counts = { all: open.length, assigned, unassigned: open.length - assigned }
-  const shown = open.filter(pin => assignment === "all" || (assignment === "assigned" ? Boolean(pin.assigned_to) : !pin.assigned_to))
+  const allWork = useMemo(() => work.pins.filter(pin => pin.project_id === projectId && pin.category !== "note"), [work.pins, projectId])
+  const available = allWork.filter(pin => (sheet === "all" || pin.blueprint_id === sheet) && (status === "all" || (status === "open" ? pin.status !== "verified" : pin.status === status)))
+  const assigned = available.filter(pin => Boolean(pin.assigned_to)).length
+  const counts = { all: available.length, assigned, unassigned: available.length - assigned }
+  const shown = available.filter(pin => assignment === "all" || (assignment === "assigned" ? Boolean(pin.assigned_to) : !pin.assigned_to))
 
   const assign = async (pinId: string, target: string) => {
     const pin = work.pins.find(item => item.id === pinId)
-    if (pending.current || !pin || pin.locked || pin.status === "for_review" || (pin.assigned_to ?? UNASSIGNED) === target) return
+    if (pending.current || work.loading || work.error || !projectId || !pin || pin.project_id !== projectId || pin.locked || pin.status === "verified" || pin.status === "for_review" || (pin.assigned_to ?? UNASSIGNED) === target) return
     const assignedTo = target === UNASSIGNED ? null : target
     if (assignedTo && !foremen.some(member => member.user_id === assignedTo)) return
-    const before = pin.assigned_to
+    const requestProject = projectId
     pending.current = true
     setSaving(pinId)
-    work.setPins(current => current.map(item => item.id === pinId ? { ...item, assigned_to: assignedTo } : item))
     try {
-      const { data, error } = await supabase.from("pins").update({ assigned_to: assignedTo }).eq("id", pinId).select("id")
-      if (error || !data?.length) throw new Error(error ? dbMessage(error) : "This pin may be locked or you may not be allowed to edit it.")
+      const { data, error } = await supabase.from("pins").update({ assigned_to: assignedTo }).eq("id", pinId).eq("project_id", requestProject).eq("updated_at", pin.updated_at).select("*")
+      if (currentProject.current !== requestProject) return
+      if (error || !data?.length) throw new Error(error ? dbMessage(error) : "This work changed or is no longer assignable. The board will reload; review the current record before trying again.")
+      const saved = data[0] as Pin
+      work.setPins(current => current.map(item => item.id === pinId && item.project_id === requestProject ? { ...saved, x: Number(saved.x), y: Number(saved.y) } : item))
+      await work.reload().catch(() => undefined)
+      if (currentProject.current !== requestProject) return
       toast.success(assignedTo ? `Assigned to ${work.nameOf(assignedTo)}` : "Unassigned", pin.title)
     } catch (error) {
-      work.setPins(current => current.map(item => item.id === pinId ? { ...item, assigned_to: before } : item))
+      if (currentProject.current !== requestProject) return
+      await work.reload().catch(() => undefined)
+      if (currentProject.current !== requestProject) return
       toast.error("Not assigned", (error as Error).message)
     } finally { pending.current = false; setSaving(null) }
   }
@@ -56,16 +66,19 @@ export default function EngineerAssignments(_: EngineerPageProps) {
     <div className="engineer-page" style={{ width: "min(100%, 1280px)" }}>
       <ProjectContextBar listPath="/engineer/projects" listLabel="My projects" />
       <PageHead eyebrow="Planning" title="Assignment board"
-        description="Review open work and assign a Foreman. Assignments are saved to the project and the Foreman is notified."
-        actions={<label className="text-xs font-semibold">Sheet
+        description="All project work pins, including completed work. Saved assignments are shared with the Foreman's My work and QA pages; unassigned work does not appear in a Foreman's task list."
+        actions={<div className="flex flex-wrap items-end gap-3"><label className="text-xs font-semibold">Sheet
           <select value={sheet} onChange={event => setSheet(event.target.value)} aria-label="Filter by sheet" className={inputClass + " mt-1"}>
             <option value="all">All sheets</option>
             {work.blueprints.map(bp => <option key={bp.id} value={bp.id}>{bp.title}</option>)}
           </select>
-        </label>} />
+        </label><label className="text-xs font-semibold">Work status<select aria-label="Filter by work status" className={inputClass + " mt-1"} value={status} onChange={event => setStatus(event.target.value as typeof status)}>
+          <option value="all">All statuses</option><option value="open">Open work only</option>{(Object.keys(statusLabels) as PinStatus[]).map(key => <option key={key} value={key}>{statusLabels[key]}</option>)}
+        </select></label></div>} />
       {!projectId ? null : work.loading ? <SkeletonList rows={4} label="Loading assignments" />
         : work.error ? <p role="alert" className="rounded-lg bg-danger-soft p-4 text-sm text-danger-fg">{work.error} <button type="button" className="underline" onClick={() => void work.reload()}>Retry</button></p>
         : <div className="space-y-4">
+          <p className="text-sm text-fg-muted">Project total: {allWork.length} work pins · {allWork.filter(pin => pin.status !== "verified").length} open · {allWork.filter(pin => pin.status === "verified").length} completed. Counts below follow the selected sheet and status.</p>
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line bg-surface p-3">
             <div role="group" aria-label="Filter by assignment" className="flex flex-wrap gap-2">
               {(Object.keys(filterLabels) as AssignmentFilter[]).map(key => <button key={key} type="button" aria-pressed={assignment === key} onClick={() => setAssignment(key)}
@@ -73,11 +86,11 @@ export default function EngineerAssignments(_: EngineerPageProps) {
                 {filterLabels[key]} <span className="ml-1 tabular-nums">({counts[key]})</span>
               </button>)}
             </div>
-            <p role="status" className="text-xs text-fg-muted">{shown.length} of {open.length} open work pin{open.length === 1 ? "" : "s"} shown</p>
+            <p role="status" className="text-xs text-fg-muted">{shown.length} of {available.length} work pin{available.length === 1 ? "" : "s"} shown</p>
           </div>
           {!foremen.length ? <p role="status" className="rounded-lg bg-amber-100 px-3 py-2 text-sm text-amber-950 dark:bg-amber-900/40 dark:text-amber-100">No Foreman is on this project yet. Ask an administrator to add one to the team before assigning work.</p> : null}
-          {!shown.length ? <EmptyState title={open.length ? `No ${assignment === "assigned" ? "assigned" : "unassigned"} work in this selection` : "No open work in this selection"}>
-            {open.length ? "Choose another assignment filter or sheet to see more work." : "Completed work and notes are not shown here."}
+          {!shown.length ? <EmptyState title={available.length ? `No ${assignment === "assigned" ? "assigned" : "unassigned"} work in this selection` : "No work in this selection"}>
+            Choose another assignment filter, sheet or status to see more work. Notes are not assignable work.
           </EmptyState> : <section aria-label="Assignment details" className="overflow-hidden rounded-xl border border-line bg-surface">
             <div aria-hidden="true" className="hidden gap-4 border-b border-line bg-surface-muted px-4 py-3 text-xs font-extrabold uppercase tracking-wide text-fg-muted lg:grid lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_6rem_7rem_minmax(12rem,1.4fr)]">
               <span>Work / sheet</span><span>Status</span><span>Priority</span><span>Due date</span><span>Assigned Foreman</span>
@@ -97,7 +110,7 @@ export default function EngineerAssignments(_: EngineerPageProps) {
 function AssignmentRow({ pin, sheet, assignee, foremen, late, saving, busy, onAssign, onOpen }: {
   pin: Pin; sheet: string; assignee: string; foremen: Array<{ id: string; name: string }>; late: boolean; saving: boolean; busy: boolean; onAssign: (target: string) => void; onOpen: () => void
 }) {
-  const blocked = pin.locked || pin.status === "for_review"
+  const blocked = pin.locked || pin.status === "for_review" || pin.status === "verified"
   const missingAssignee = Boolean(pin.assigned_to && !foremen.some(member => member.id === pin.assigned_to))
   return <li className="grid gap-4 px-4 py-4 sm:grid-cols-2 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_6rem_7rem_minmax(12rem,1.4fr)] lg:items-start">
     <div className="min-w-0 sm:col-span-2 lg:col-span-1">
@@ -121,7 +134,7 @@ function AssignmentRow({ pin, sheet, assignee, foremen, late, saving, busy, onAs
         </select>
       </label>
       {saving ? <p role="status" className="mt-1 text-xs text-fg-muted">Saving assignment…</p>
-        : blocked ? <p className="mt-1 text-xs text-fg-muted">{pin.status === "for_review" ? "Awaiting Engineer review; assignment cannot change." : "Unlock the pin on the plan to change its assignment."}</p> : null}
+        : blocked ? <p className="mt-1 text-xs text-fg-muted">{pin.status === "verified" ? "Completed work preserves its Foreman. Reopen it before reassigning." : pin.status === "for_review" ? "Awaiting Engineer review; assignment cannot change." : "Unlock the pin on the plan to change its assignment."}</p> : null}
     </div>
   </li>
 }

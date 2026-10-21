@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { prepareImage } from "./sheetImages"
 import { supabase } from "./supabase"
 import { stampFields, type PhotoStamp, type StampFlag } from "./photoStamp"
+import { markupProblem, type IssueMarkup } from "./issueMarkup"
 import { fetchAll } from "./paging"
 import { byColumn, byProject, useLiveReload, type LiveSource } from "./realtime"
 import type { DefectCategory, DefectStatus, InspectionStatus, ItemResult, QaSeverity, Trade } from "./qaModel"
@@ -117,7 +118,8 @@ export type Defect = {
 }
 
 export type DefectEvent = { id: number; defect_id: string; actor_id: string | null; kind: "raised" | "edited" | "status" | "rejected" | "closed"; from_status: string | null; to_status: string | null; note: string | null; created_at: string }
-export type QaPhoto = { id: string; project_id: string; inspection_id: string | null; item_id: string | null; defect_id: string | null; path: string; caption: string | null; uploaded_by: string | null; created_at: string; taken_at: string | null; stamp_flag: StampFlag | null; distance_m: number | null }
+// `annotations` = markup drawn over the photo (20261021111736); the stored file itself is the untouched original.
+export type QaPhoto = { id: string; project_id: string; inspection_id: string | null; item_id: string | null; defect_id: string | null; path: string; caption: string | null; uploaded_by: string | null; created_at: string; taken_at: string | null; stamp_flag: StampFlag | null; distance_m: number | null; annotations?: IssueMarkup[] }
 
 export type QaSummary = {
   staff: boolean
@@ -282,13 +284,25 @@ export function useQaSummary(projectId: string | null) {
 // ---------- Photos ----------
 export type PhotoTarget = { inspectionId?: string; itemId?: string; defectId?: string }
 
-// Shrinks the picture, stores it in the private `qa-evidence` bucket inside the project folder and records it. The database
-// refuses it if the inspection is not in progress or the defect is closed; the stored file is then removed again.
-export async function uploadQaPhoto(projectId: string, target: PhotoTarget, file: File, caption?: string, stamp?: PhotoStamp | null): Promise<void> {
+export const QA_CAPTION_LIMIT = 200 // qa_photos.caption check
+
+// Shrinks a chosen picture once, BEFORE it is shown for markup, so the drawing sits on exactly the pixels that are stored.
+export async function prepareQaPhoto(file: File): Promise<File> {
   const image = await prepareImage(file)
+  return new File([image.blob], `${file.name.replace(/\.[^.]*$/, "") || "photo"}.${image.ext}`, { type: image.blob.type, lastModified: file.lastModified })
+}
+
+// Stores a picture made by prepareQaPhoto in the private `qa-evidence` bucket inside the project folder and records it with its
+// caption and markup (an overlay: the file is never drawn on). The database refuses it if the inspection is not in progress or
+// the defect is closed; the stored file is then removed again.
+export async function uploadQaPhoto(projectId: string, target: PhotoTarget, photo: { file: File; caption?: string; annotations?: IssueMarkup[] }, stamp?: PhotoStamp | null): Promise<void> {
+  const annotations = photo.annotations ?? []
+  const problem = markupProblem(annotations)
+  if (problem) throw new Error(problem)
+  const ext = photo.file.type === "image/webp" ? "webp" : photo.file.type === "image/jpeg" ? "jpg" : "png"
   const folder = target.itemId ? `item-${target.itemId}` : target.inspectionId ? `ir-${target.inspectionId}` : `ncr-${target.defectId}`
-  const path = `${projectId}/${folder}/${Date.now()}-${crypto.randomUUID().slice(0, 8)}.${image.ext}`
-  const stored = await supabase.storage.from("qa-evidence").upload(path, image.blob, { contentType: image.blob.type, upsert: false })
+  const path = `${projectId}/${folder}/${Date.now()}-${crypto.randomUUID().slice(0, 8)}.${ext}`
+  const stored = await supabase.storage.from("qa-evidence").upload(path, photo.file, { contentType: photo.file.type, upsert: false })
   if (stored.error) throw new Error(/row-level security|not allowed|403/i.test(stored.error.message) ? "You are not allowed to add photos to this project." : stored.error.message)
   const { error } = await supabase.from("qa_photos").insert({
     project_id: projectId,
@@ -296,7 +310,8 @@ export async function uploadQaPhoto(projectId: string, target: PhotoTarget, file
     item_id: target.itemId ?? null,
     defect_id: target.defectId ?? null,
     path,
-    caption: caption?.trim() || null,
+    caption: photo.caption?.trim().slice(0, QA_CAPTION_LIMIT) || null,
+    ...(annotations.length ? { annotations } : {}),
     ...stampFields(stamp),
   })
   if (error) {
@@ -337,13 +352,14 @@ export const qaActions = {
   updateDefect: (input: { id: string; status: "open" | "in_progress" | "for_verification"; corrective?: string; rootCause?: string; preventive?: string; note?: string }) =>
     call("update_defect", { p_id: input.id, p_status: input.status, p_corrective_action: input.corrective ?? null, p_root_cause: input.rootCause ?? null, p_preventive_action: input.preventive ?? null, p_note: input.note ?? null }),
   verifyDefect: (id: string, close: boolean, note: string) => call("verify_defect", { p_id: id, p_close: close, p_note: note }),
-  // Work items (checklist items of a work pin): first request, correction package, Engineer acceptance.
+  // Manual completion uses the existing checked RPC; verified is the stored Completed state.
   submitItems: (pinId: string, itemIds: string[], note?: string) => call<string>("submit_checklist_qa", { p_pin: pinId, p_items: itemIds, p_note: note?.trim() || null }),
   beginCorrection: (itemId: string) => call<string>("begin_checklist_resubmission", { p_item: itemId }),
   saveCorrection: (attemptId: string, remarks: string) => call("save_checklist_attempt", { p_attempt: attemptId, p_remarks: remarks }),
   submitCorrection: (input: { itemIds: string[]; defectIds: string[]; rootCause?: string; preventive?: string }) =>
     call<string>("submit_correction_package", { p_items: input.itemIds, p_defects: input.defectIds, p_root_cause: input.rootCause?.trim() || null, p_preventive: input.preventive?.trim() || null }),
   reviewItem: (itemId: string, accept: boolean, reason?: string) => call("review_checklist_item", { p_item: itemId, p_accept: accept, p_reason: reason?.trim() || null }),
+  completeItem: (itemId: string) => call("review_checklist_item", { p_item: itemId, p_accept: true, p_reason: null }),
   saveTemplate: (input: { id: string | null; projectId: string | null; name: string; trade: Trade; description: string; standards: string[]; items: unknown[] }) =>
     call<string>("save_qa_template", { p_id: input.id, p_project: input.projectId, p_name: input.name, p_trade: input.trade, p_description: input.description, p_standards: input.standards, p_items: input.items }),
   duplicateTemplate: (templateId: string, projectId: string | null, name?: string) => call<string>("duplicate_qa_template", { p_template: templateId, p_project: projectId, p_name: name ?? null }),

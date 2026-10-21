@@ -223,7 +223,8 @@ export default class App extends Component<Record<string, never>, AppState> {
   }
 
   navigateClient = (nextPage: ClientPageKey) => {
-    const path = `/client/${nextPage}`
+    const project = getSelectedProjectId()
+    const path = `/client/${nextPage}${project ? `?project=${encodeURIComponent(project)}` : ""}`
     window.history.pushState({}, "", path)
     window.scrollTo({ top: 0, behavior: "smooth" })
     this.setState({ page: `client/${nextPage}` })

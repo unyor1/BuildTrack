@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react"
+import { clientPinStatus } from "../../lib/clientPortalModel"
+import { CANVAS_ZOOM_STEP, MIN_CANVAS_SCALE as MIN_SCALE, MAX_CANVAS_SCALE as MAX_SCALE, canvasWheelFactor, fitCanvasView, zoomCanvasView } from "../../lib/canvasView"
 import {
   annotationColors,
   formatMeters,
@@ -100,8 +102,6 @@ type Props = {
   zoomApi?: (api: { fit: () => void; zoomIn: () => void; zoomOut: () => void }) => void
 }
 
-const MIN_SCALE = 0.05
-const MAX_SCALE = 10
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
 const round = (value: number) => Math.round(value * 10000) / 10000
 const PIN_Z = 100000
@@ -147,9 +147,8 @@ export default function StageCanvas(props: Props) {
     const element = box.current
     if (!element || !width || !height) return
     if (element.clientWidth < 40 || element.clientHeight < 40) return // layout not ready yet
-    const scale = clamp(Math.min((element.clientWidth - 24) / width, (element.clientHeight - 24) / height), MIN_SCALE, MAX_SCALE)
     adjusted.current = false
-    setView({ scale, tx: (element.clientWidth - width * scale) / 2, ty: (element.clientHeight - height * scale) / 2 })
+    setView(fitCanvasView({width,height},{width:element.clientWidth,height:element.clientHeight}))
   }, [width, height])
 
   useLayoutEffect(() => {
@@ -172,10 +171,8 @@ export default function StageCanvas(props: Props) {
     if (!element) return
     const current = viewRef.current
     const center = point ?? { x: element.clientWidth / 2, y: element.clientHeight / 2 }
-    const scale = clamp(current.scale * factor, MIN_SCALE, MAX_SCALE)
-    const ratio = scale / current.scale
     adjusted.current = true
-    setView({ scale, tx: center.x - (center.x - current.tx) * ratio, ty: center.y - (center.y - current.ty) * ratio })
+    setView(zoomCanvasView(current,factor,center))
   }, [])
 
   useEffect(() => {
@@ -184,7 +181,7 @@ export default function StageCanvas(props: Props) {
   }, [view.scale])
 
   useEffect(() => {
-    props.zoomApi?.({ fit, zoomIn: () => zoomAt(1.3), zoomOut: () => zoomAt(1 / 1.3) })
+    props.zoomApi?.({ fit, zoomIn: () => zoomAt(CANVAS_ZOOM_STEP), zoomOut: () => zoomAt(1 / CANVAS_ZOOM_STEP) })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fit, zoomAt])
 
@@ -194,7 +191,7 @@ export default function StageCanvas(props: Props) {
     const onWheel = (event: WheelEvent) => {
       event.preventDefault()
       const rect = element.getBoundingClientRect()
-      zoomAt(Math.exp(-event.deltaY * 0.0015), { x: event.clientX - rect.left, y: event.clientY - rect.top })
+      zoomAt(canvasWheelFactor(event.deltaY), { x: event.clientX - rect.left, y: event.clientY - rect.top })
     }
     element.addEventListener("wheel", onWheel, { passive: false })
     return () => element.removeEventListener("wheel", onWheel)
@@ -929,13 +926,13 @@ export default function StageCanvas(props: Props) {
                     type="button"
                     tabIndex={-1}
                     data-pin-id={pin.id}
-                    title={`${pin.title} (${statusLabels[pin.status]})${pin.locked ? " - locked" : ""}`}
-                    aria-label={`Pin ${numberOf(pin)}: ${pin.title}, ${statusLabels[pin.status]}${pin.locked ? ", locked" : ""}`}
+                    title={`${pin.title} (${statusLabels[clientPinStatus(pin.status)]})${pin.locked ? " - locked" : ""}`}
+                    aria-label={`Pin ${numberOf(pin)}: ${pin.title}, ${statusLabels[clientPinStatus(pin.status)]}${pin.locked ? ", locked" : ""}`}
                     className="absolute h-11 w-8 border-0 bg-transparent p-0 transition-none"
                     style={{ zIndex: PIN_Z + (isSelected ? 1 : 0), left: `${p.x}%`, top: `${p.y}%`, transformOrigin: "50% 100%", transform: `translate(-50%, -100%) scale(${(isSelected ? 1.2 : 1) * inverse})`, filter: isSelected ? "drop-shadow(0 0 3px #111)" : "drop-shadow(0 2px 2px #0005)", cursor: pin.locked && tool === "select" ? "default" : tool === "stamp" ? "pointer" : isSelected && canEdit && tool === "select" && !readOnly ? "move" : "pointer" }}
                   >
                     <svg viewBox="0 0 32 44" className="pointer-events-none h-full w-full" aria-hidden="true">
-                      <path d="M16 44 3.8 24A15 15 0 1 1 28.2 24Z" fill={statusDot[pin.status]} stroke="white" strokeWidth="1" />
+                      <path d="M16 44 3.8 24A15 15 0 1 1 28.2 24Z" fill={statusDot[clientPinStatus(pin.status)]} stroke="white" strokeWidth="1" />
                       <circle cx="16" cy="16" r="8.5" fill="white" />
                       <text x="16" y="16" dy=".35em" textAnchor="middle" fill="#211f20" fontWeight="800" fontSize={numberOf(pin) > 99 ? 8 : 11}>{numberOf(pin)}</text>
                     </svg>
@@ -994,9 +991,9 @@ export default function StageCanvas(props: Props) {
 
       {readOnly ? null : (
         <div className="absolute bottom-3 right-3 z-40 flex items-center gap-1 rounded-lg border border-line bg-surface p-1 text-sm text-fg shadow-lg" onPointerDown={(event) => event.stopPropagation()} onPointerUp={(event) => event.stopPropagation()}>
-          <button type="button" className="h-8 w-8 rounded hover:bg-surface-muted" aria-label="Zoom out" onClick={() => zoomAt(1 / 1.3)}>-</button>
+          <button type="button" className="h-8 w-8 rounded hover:bg-surface-muted" aria-label="Zoom out" onClick={() => zoomAt(1 / CANVAS_ZOOM_STEP)}>-</button>
           <span className="w-12 text-center text-xs text-fg-muted" aria-live="off">{Math.round(view.scale * 100)}%</span>
-          <button type="button" className="h-8 w-8 rounded hover:bg-surface-muted" aria-label="Zoom in" onClick={() => zoomAt(1.3)}>+</button>
+          <button type="button" className="h-8 w-8 rounded hover:bg-surface-muted" aria-label="Zoom in" onClick={() => zoomAt(CANVAS_ZOOM_STEP)}>+</button>
           <button type="button" className="h-8 rounded px-2 text-xs font-semibold hover:bg-surface-muted" onClick={fit}>Fit</button>
         </div>
       )}

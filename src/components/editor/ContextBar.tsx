@@ -8,6 +8,7 @@ import { annotationColors, statusDot, statusLabels, type Annotation, type Annota
 import type { AlignMode } from "../../lib/arrange"
 import { canFormat, fontFamilies, labelToSize, resolveFormat, sizeToLabel, type FontName, type ListStyle, type TextAlign, type TextFormat, type TextTransform } from "../../lib/textFormat"
 import { canMoveLayer, sortByLayer } from "../../lib/layers"
+import { clientPinStatus } from "../../lib/clientPortalModel"
 
 export type StylePatch = { color?: AnnotationColor; opacity?: number; stroke?: number; font_size?: number; rotation?: number }
 
@@ -323,20 +324,20 @@ export default function ContextBar(props: ContextBarProps) {
 
   // ---- A pin is selected ----
   if (pin) {
-    const statusItems: MenuItem[] = props.pinStatuses.map((status) => ({ label: statusLabels[status], checked: pin.status === status, onClick: () => props.onSetPinStatus(pin, status) }))
+    const statusItems: MenuItem[] = props.pinStatuses.filter(status => status !== "for_review").map((status) => ({ label: statusLabels[status], checked: clientPinStatus(pin.status) === status, onClick: () => props.onSetPinStatus(pin, status) }))
     return (
       <div className="flex min-h-12 flex-wrap items-center gap-x-1 gap-y-1 border-t border-line px-3 py-1.5" role="toolbar" aria-label="Pin controls">
         {toolsMenu}
         <Divider />
         <span className="flex max-w-[16rem] items-center gap-2 px-1 text-sm font-extrabold">
-          <span className="flex h-6 w-6 flex-none items-center justify-center rounded-full text-[11px] text-white" style={{ background: statusDot[pin.status] }}>{props.pinNumber ?? ""}</span>
+          <span className="flex h-6 w-6 flex-none items-center justify-center rounded-full text-[11px] text-white" style={{ background: statusDot[clientPinStatus(pin.status)] }}>{props.pinNumber ?? ""}</span>
           <span className="truncate">{pin.title}</span>
         </span>
         <Divider />
         {props.pinStatuses.length ? (
           <Menu label="Change the status" items={statusItems} className={`${control} border border-line text-fg hover:bg-surface-muted`}>
-            <span className="h-2.5 w-2.5 rounded-full" style={{ background: statusDot[pin.status] }} />
-            {statusLabels[pin.status]}
+            <span className="h-2.5 w-2.5 rounded-full" style={{ background: statusDot[clientPinStatus(pin.status)] }} />
+            {statusLabels[clientPinStatus(pin.status)]}
             <Icon name="chevron" size={14} />
           </Menu>
         ) : null}

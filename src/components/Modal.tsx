@@ -26,6 +26,8 @@ export default function Modal({
   size = "md",
   closeOnBackdrop = true,
   hideClose = false,
+  fullscreen = false,
+  onEscape,
 }: {
   title: string
   description?: string
@@ -35,12 +37,16 @@ export default function Modal({
   size?: ModalSize
   closeOnBackdrop?: boolean
   hideClose?: boolean
+  fullscreen?: boolean
+  onEscape?: () => void
 }) {
   const titleId = useId()
   const descriptionId = useId()
   const panel = useRef<HTMLDivElement>(null)
   const onCloseRef = useRef(onClose)
   onCloseRef.current = onClose
+  const onEscapeRef = useRef(onEscape)
+  onEscapeRef.current = onEscape
 
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null
@@ -58,8 +64,9 @@ export default function Modal({
       const dialogs = document.querySelectorAll("[data-bt-dialog]")
       if (dialogs[dialogs.length - 1] !== panel.current) return
       if (event.key === "Escape") {
+        event.preventDefault()
         event.stopPropagation()
-        onCloseRef.current()
+        ;(onEscapeRef.current ?? onCloseRef.current)()
         return
       }
       if (event.key !== "Tab") return
@@ -86,7 +93,7 @@ export default function Modal({
 
   return createPortal(
     <div
-      className="bt-dialog-backdrop fixed inset-0 z-[900] flex items-end justify-center bg-black/55 p-0 backdrop-blur-[2px] sm:items-center sm:p-4"
+      className={`bt-dialog-backdrop fixed inset-0 z-[900] flex items-end justify-center bg-black/55 p-0 backdrop-blur-[2px] sm:items-center ${fullscreen ? "" : "sm:p-4"}`}
       onMouseDown={(event) => {
         if (closeOnBackdrop && event.target === event.currentTarget) onClose()
       }}
@@ -99,9 +106,9 @@ export default function Modal({
         aria-labelledby={titleId}
         aria-describedby={description ? descriptionId : undefined}
         tabIndex={-1}
-        className={`bt-dialog flex max-h-[92vh] w-full flex-col overflow-hidden rounded-t-2xl bg-surface text-fg shadow-2xl outline-none sm:rounded-2xl ${widths[size]}`}
+        className={`bt-dialog flex w-full flex-col overflow-hidden bg-surface text-fg shadow-2xl outline-none ${fullscreen ? "h-[100dvh] max-h-[100dvh] max-w-none rounded-none" : `max-h-[92vh] rounded-t-2xl sm:rounded-2xl ${widths[size]}`}`}
       >
-        <header className="flex items-start justify-between gap-4 border-b border-line px-6 py-4">
+        <header className="flex shrink-0 items-start justify-between gap-4 border-b border-line px-6 py-4">
           <div className="min-w-0">
             <h2 id={titleId} className="truncate text-lg font-extrabold text-brand-strong">{title}</h2>
             {description ? <p id={descriptionId} className="mt-0.5 text-sm text-fg-muted">{description}</p> : null}
@@ -117,8 +124,8 @@ export default function Modal({
             </button>
           )}
         </header>
-        <div className="flex-1 overflow-y-auto px-6 py-5">{children}</div>
-        {footer ? <footer className="flex flex-wrap items-center justify-end gap-2 border-t border-line bg-surface-muted/50 px-6 py-3">{footer}</footer> : null}
+        <div className={`min-h-0 flex-1 overflow-y-auto ${fullscreen ? "p-3 sm:p-4" : "px-6 py-5"}`}>{children}</div>
+        {footer ? <footer className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-line bg-surface-muted/50 px-6 py-3">{footer}</footer> : null}
       </div>
     </div>,
     document.body,

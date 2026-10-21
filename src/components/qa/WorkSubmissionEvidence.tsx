@@ -48,6 +48,6 @@ export default function WorkSubmissionEvidence({ record }: { record: ReturnType<
     }))} />
     </section>})}
     {!filter && submission.photos_snapshot.some(photo=>!submittedChecklistItems(submission).some(item=>item.id===photo.checklist_item_id)) ? <section className="space-y-2 rounded-xl border border-line p-3"><h4 className="font-bold">Other historical work evidence</h4><PhotoGrid bucket="pin-photos" emptyHint="No other evidence." photos={submission.photos_snapshot.filter(photo=>!submittedChecklistItems(submission).some(item=>item.id===photo.checklist_item_id)).map(photo=>({...photo,label:"Other submitted work evidence",recordState:"snapshot",checklist:submission.checklist_snapshot.find(item=>item.id===photo.checklist_item_id) ?? null}))} /></section> : null}
-    <p className="text-sm font-semibold">After QA passes, the Engineer verifies each submitted work item. Step 4 becomes Completed after every work item is accepted and all QA requirements are clear.</p>
+    <p className="text-sm font-semibold">After QA passes and linked NCRs are closed, the Engineer clicks Complete checklist for each item. The work pin completes after all checklists are completed and all QA requirements are clear.</p>
   </section>
 }

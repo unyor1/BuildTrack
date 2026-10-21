@@ -46,7 +46,7 @@ export default function EngineerShell({
       workspace="Engineering office"
       groups={inProject ? [
         { label: "Project", items: [item("dashboard")] },
-        { label: "Plans", items: [item("project-blueprint"), item("annotation")] },
+        { label: "Plans", items: [item("project-blueprint")] },
         { label: "Field & quality", items: [item("verification"), item("qa"), item("checklists"), item("report-issue"), item("progress")] },
         { label: "Team & reports", items: [item("assignments"), item("reports")] },
       ] : [{ label: "Workspace", items: [item("projects")] }]}
@@ -54,7 +54,7 @@ export default function EngineerShell({
       onNavigate={(key) => onNavigate(key as EngineerPageKey)}
       project={inProject ? (project ? { code: project.code, name: project.name, sub: phaseLabels[project.phase] } : null) : undefined}
       onAllProjects={inProject ? () => onNavigate("projects") : undefined}
-      mobileTabs={inProject ? ["dashboard", "verification", "qa", "annotation"] : []}
+      mobileTabs={inProject ? ["dashboard", "verification", "qa", "project-blueprint"] : []}
     >
       {inProject || activePage === "projects" ? children : <FieldProjects role="engineer" notice={notFound ? "That project is not available: it was removed or is no longer assigned to you." : "Choose a project to open that page."} />}
     </AppShell>

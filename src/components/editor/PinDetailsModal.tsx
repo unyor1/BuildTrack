@@ -4,6 +4,8 @@ import { PinDetailsTab, canWorkOn, checklistNotice, type InspectorProps } from "
 import { PinChecklist, PinFields, PinTimeline } from "./PinParts"
 import ChecklistPhotos from "../ChecklistPhotos"
 import { statusChip, statusDot, statusLabels, type Pin } from "../../lib/blueprints"
+import { clientPinStatus } from "../../lib/clientPortalModel"
+import PinDailyReports from "../client/PinDailyReports"
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -36,11 +38,12 @@ export default function PinDetailsModal({ pin, inspector, onClose, onDelete }: {
       }
     >
       <div className="mb-4 flex items-center gap-2">
-        <span className="flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold text-white" style={{ background: statusDot[pin.status] }}>{inspector.numberOf(pin)}</span>
-        <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${statusChip[pin.status]}`}>{statusLabels[pin.status]}</span>
+        <span className="flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold text-white" style={{ background: statusDot[clientPinStatus(pin.status)] }}>{inspector.numberOf(pin)}</span>
+        <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${statusChip[clientPinStatus(pin.status)]}`}>{statusLabels[clientPinStatus(pin.status)]}</span>
       </div>
       <div className="grid gap-8 lg:grid-cols-2">
         <div className="space-y-6">
+          {inspector.role === "client" ? <Section title="Daily progress reports"><PinDailyReports key={pin.id} pin={pin} /></Section> : null}
           <Section title="Progress">
             <PinDetailsTab {...inspector} pin={pin} inDialog />
           </Section>

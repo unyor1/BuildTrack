@@ -52,7 +52,7 @@ export function dbMessage(error: { code?: string; message: string }): string {
 }
 
 // ---------- Progress tracker: Not started > In progress > For review > Verified (an Issue interrupts it) ----------
-const steps: PinStatus[] = ["not_started", "in_progress", "for_review", "verified"]
+const steps: PinStatus[] = ["not_started", "in_progress", "verified"]
 
 // White or dark text, whichever reads better on the status colour (WCAG contrast).
 const readableOn = (hex: string) => {
@@ -65,7 +65,7 @@ const readableOn = (hex: string) => {
 }
 
 export function ProgressTracker({ status }: { status: PinStatus }) {
-  const index = status === "issue" ? 1 : steps.indexOf(status)
+  const index = status === "issue" || status === "for_review" ? 1 : steps.indexOf(status)
   return (
     <div>
       <ol className="flex items-center" aria-label="Progress">
@@ -123,7 +123,7 @@ export function PinChecklist({ pin, canEdit, canTick, notice = "", onChange, onP
     : !qa.state ? "Checking QA status before adding checklist items…"
     : qa.state.status === "verified" ? "This work is Completed. Reopen it from Details before adding checklist items."
     : ""
-  // QA records are staff-only: clients see the items and whether each is accepted, never the QA workspace.
+  // QA records are staff-only: clients see the items and whether each is completed, never the QA workspace.
   const staff = profile?.role !== "client" && profile?.role !== "user"
   const { items, loading, error: checklistError, reload } = useChecklist(pinId)
   const { photos, reload: reloadPhotos } = usePinPhotos(pinId)
@@ -168,8 +168,8 @@ export function PinChecklist({ pin, canEdit, canTick, notice = "", onChange, onP
       {notice && !canTick ? <p role="status" className="rounded-lg bg-amber-100 px-3 py-2 text-xs font-semibold text-amber-950 dark:bg-amber-900/40 dark:text-amber-100">{notice}</p> : null}
       {loading ? <SkeletonList rows={3} label="Loading the work items" /> : (
         <>
-          {items.length ? <ChecklistProgress done={items.filter((item) => item.review_status === "verified").length} total={items.length} /> : <p className="text-sm text-fg-muted">{canEdit ? "No work items yet. Add the parts of this work the Foreman prepares and the Engineer accepts one by one (e.g. FLOOR, WALL, CEILING)." : "No work items for this pin."}</p>}
-          {items.length ? <p className="text-xs text-fg-muted">Accepted by the Engineer: {items.filter((item) => item.review_status === "verified").length}/{items.length}</p> : null}
+          {items.length ? <ChecklistProgress done={items.filter((item) => item.review_status === "verified").length} total={items.length} /> : <p className="text-sm text-fg-muted">{canEdit ? "No work items yet. Add the parts of this work the Foreman prepares and the Engineer completes one by one (e.g. FLOOR, WALL, CEILING)." : "No work items for this pin."}</p>}
+          {items.length ? <p className="text-xs text-fg-muted">Completed by the Engineer: {items.filter((item) => item.review_status === "verified").length}/{items.length}</p> : null}
           <ul className="space-y-1">
             {items.map((item) => {
               const stage = stages.get(item.id)
@@ -180,7 +180,7 @@ export function PinChecklist({ pin, canEdit, canTick, notice = "", onChange, onP
                   <div className="min-w-0 flex-1 text-sm">
                     <span className="flex flex-wrap items-center gap-2">
                       <span className="font-semibold">{item.text}</span>
-                      {stage && staff ? <StageChip stage={stage.view.stage} /> : !staff && item.review_status === "verified" ? <StageChip stage="accepted" /> : null}
+                      {stage && staff ? <StageChip stage={stage.view.stage} /> : !staff && item.review_status === "verified" ? <StageChip stage="completed" /> : !staff && item.review_status === "for_review" ? <span className="rounded-full bg-brand-soft px-2 py-0.5 text-xs font-bold text-brand-text">For review</span> : null}
                     </span>
                     {stage && staff ? <span className="mt-0.5 block text-xs text-fg-muted">{stage.view.blocker ? `Blocked: ${stage.view.blocker}` : `Next: ${stage.view.next}`}</span> : null}
                     <span className="mt-0.5 flex flex-wrap items-center gap-x-3">

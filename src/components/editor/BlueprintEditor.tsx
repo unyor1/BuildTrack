@@ -56,8 +56,9 @@ import { useToast } from "../../lib/toast"
 import { useUndoStack } from "../../lib/undoStack"
 import { fitImageBox, itemBox, withGroupMembers, type AlignMode } from "../../lib/arrange"
 import { IMAGE_ACCEPT, imageFilesFrom, prepareImage, uploadSheetImage } from "../../lib/sheetImages"
+import { clientPinStatus } from "../../lib/clientPortalModel"
 
-const allStatuses = Object.keys(statusLabels) as PinStatus[]
+const allStatuses = (Object.keys(statusLabels) as PinStatus[]).filter(status => status !== "for_review")
 const secondary = "inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-line bg-surface px-4 py-2 text-sm font-semibold text-fg shadow-sm hover:border-brand/50 hover:text-brand-text disabled:opacity-60"
 const primary = "inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-gradient-to-br from-[#9e1f93] to-[#b4329f] px-4 py-2 text-sm font-bold text-white shadow-[0_8px_18px_-10px_rgba(158,31,147,0.85)] hover:from-[#8a1a80] hover:to-[#a52a92] disabled:opacity-60"
 const HIGHLIGHT_OPACITY = 0.4
@@ -154,12 +155,12 @@ export default function BlueprintEditor({ projectId, role, canEdit, canUpload = 
   const canReport = role === "engineer" || role === "foreman"
   const canStamp = (editable || (role === "foreman" && !present)) && !present
   const canSeeHistory = role !== "client"
-  const stampStatuses: PinStatus[] = editable ? allStatuses : ["in_progress", "for_review"]
+  const stampStatuses: PinStatus[] = editable ? allStatuses : ["in_progress"]
   const baseLocked = Boolean(blueprint?.base_locked)
   const sheet = useMemo(() => ({ width: revision?.preview_width ?? 1000, height: revision?.preview_height ?? 1000 }), [revision?.preview_width, revision?.preview_height])
 
   const sheetPins = useMemo(() => pins.filter((pin) => pin.blueprint_id === blueprint?.id), [pins, blueprint?.id])
-  const visiblePins = useMemo(() => sheetPins.filter((pin) => !hidden.has(pin.status)), [sheetPins, hidden])
+  const visiblePins = useMemo(() => sheetPins.filter((pin) => !hidden.has(clientPinStatus(pin.status))), [sheetPins, hidden])
   const numberOf = useCallback((pin: Pin) => sheetPins.indexOf(pin) + 1, [sheetPins])
   const counts = useMemo(() => {
     const map = new Map<string, SheetCount>()
@@ -1344,7 +1345,7 @@ export default function BlueprintEditor({ projectId, role, canEdit, canUpload = 
         </div>
 
         {showDocked ? (
-          <div className={`flex-none ${desktop ? "static w-80 xl:w-[22rem]" : "absolute inset-y-0 right-0 z-30 w-[88vw] max-w-sm shadow-2xl"}`}>
+          <div className={`min-h-0 min-w-0 flex-none ${desktop ? "static w-[22rem] xl:w-[25rem]" : "absolute inset-y-0 right-0 z-30 w-[92vw] max-w-md shadow-2xl"}`}>
             {inspector ? (
               <div className="flex h-full flex-col border-l border-line bg-surface">
                 {desktop ? (

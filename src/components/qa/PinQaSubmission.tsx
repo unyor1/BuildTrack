@@ -96,7 +96,7 @@ export default function PinQaSubmission({ pin, qa, items, firstTimeReady, onChan
     <CriteriaApproval pin={pin} qa={qa} />
     {assigned ? <>
       <button type="button" className={buttonPrimary} disabled={busy || Boolean(reason)} onClick={() => void submit()}>{busy ? "Please wait…" : `Submit all ready items for QA${firstTimeReady.length ? ` (${firstTimeReady.length})` : ""}`}</button>
-      <p role="status" className="text-xs text-fg-muted">{reason || "Each item is then inspected, corrected if needed and accepted on its own. Open an item to follow it."}</p>
+      <p role="status" className="text-xs text-fg-muted">{reason || "Each item is inspected, corrected if needed and completed by the Engineer after its NCRs are closed. Open an item to follow it."}</p>
     </> : qa.error ? <p role="alert" className="text-sm text-danger-fg">{qa.error}</p> : null}
   </section>
 }

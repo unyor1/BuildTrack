@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
+import { usePeriodicReload } from "./realtime"
 import { supabase } from "./supabase"
 import { fieldShellMode, projectPath, readProjectRoute } from "./projectRoutes"
 
@@ -178,26 +179,20 @@ export type TeamMember = { user_id: string; full_name: string; role: "engineer" 
 
 // Who is on a project (names and roles only). The database decides if the caller may see it.
 export function useProjectTeam(projectId: string | null) {
-  const [team, setTeam] = useState<TeamMember[]>([])
-  const [loading, setLoading] = useState(Boolean(projectId))
-
-  useEffect(() => {
-    if (!projectId) {
-      setTeam([])
-      setLoading(false)
-      return
-    }
-    let active = true
-    setLoading(true)
-    supabase.rpc("get_project_team", { pid: projectId }).then(({ data }) => {
-      if (!active) return
-      setTeam((data as TeamMember[] | null) ?? [])
-      setLoading(false)
-    })
-    return () => {
-      active = false
+  const generation = useRef(0)
+  const [state, setState] = useState<{ projectId: string | null; team: TeamMember[]; error: string }>({ projectId: null, team: [], error: "" })
+  const reload = useCallback(async () => {
+    const run = ++generation.current
+    if (!projectId) { setState({ projectId, team: [], error: "" }); return }
+    try {
+      const { data, error } = await supabase.rpc("get_project_team", { pid: projectId })
+      if (run === generation.current) setState({ projectId, team: error ? [] : (data ?? []) as TeamMember[], error: error ? "Could not load the project team. Retry before assigning work." : "" })
+    } catch {
+      if (run === generation.current) setState({ projectId, team: [], error: "Could not load the project team. Retry before assigning work." })
     }
   }, [projectId])
-
-  return { team, loading }
+  useEffect(() => { void reload(); return () => { generation.current++ } }, [reload])
+  usePeriodicReload(projectId ? `team:${projectId}` : null, () => void reload())
+  const current = state.projectId === projectId
+  return { team: current ? state.team : [], loading: Boolean(projectId) && !current, error: current ? state.error : "", reload }
 }

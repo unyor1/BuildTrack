@@ -1,4 +1,5 @@
 import type { StampFlag } from "./photoStamp"
+import type { IssueMarkup } from "./issueMarkup"
 import { addDays } from "./progress.ts"
 
 export type GalleryPhoto = {
@@ -6,6 +7,7 @@ export type GalleryPhoto = {
   uploaded_by?: string | null; uploaderName?: string
   recordState?: "snapshot"; requestLabel?: string
   taken_at?: string | null; stamp_flag?: StampFlag | null; distance_m?: number | null
+  annotations?: IssueMarkup[] // markup saved over the photo (QA evidence); the file itself is the original
   checklist?: { id: string; text: string; done: boolean; remark: string | null; done_at: string | null } | null
   work?: { title: string; description: string | null; status: string } | null
   report?: { report_date: string; status: string; work_done: string } | null

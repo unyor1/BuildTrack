@@ -10,8 +10,8 @@ export type LiveTable =
   | "blueprints" | "blueprint_revisions" | "site_issue_reports" | "site_issue_photos" | "site_issue_photo_revisions"
   | "pins" | "pin_events" | "pin_photos" | "pin_checklist_items" | "daily_report_photos"
   | "qa_inspections" | "qa_inspection_items" | "qa_defects" | "qa_defect_events" | "qa_photos"
-  | "client_snags" | "daily_reports" | "project_questions" | "notifications"
-  | "daily_report_revisions" | "biometric_daily_totals"
+  | "client_snags" | "snag_photos" | "daily_reports" | "project_questions" | "notifications"
+  | "daily_report_revisions" | "biometric_daily_totals" | "biometric_attendance_events"
   | "qa_work_attempts" | "qa_inspection_events" | "pin_qa_submissions"
 
 // `filter` uses the Realtime syntax, for example "project_id=eq.<uuid>".
@@ -21,6 +21,24 @@ export const byProject = (table: LiveTable, projectId: string | null): LiveSourc
 export const byColumn = (table: LiveTable, column: string, value: string | null): LiveSource[] => (value ? [{ table, filter: `${column}=eq.${value}` }] : [])
 
 let channelSeq = 0
+
+// Recover when a Realtime connection was missed/interrupted. Reads only; never replays writes.
+export function usePeriodicReload(key: string | null, onReload: () => void, intervalMs = 15000) {
+  const latest = useRef(onReload)
+  useEffect(() => { latest.current = onReload })
+  useEffect(() => {
+    if (!key) return
+    const refresh = () => { if (!document.hidden) latest.current() }
+    const timer = window.setInterval(refresh, intervalMs)
+    window.addEventListener("online", refresh)
+    document.addEventListener("visibilitychange", refresh)
+    return () => {
+      window.clearInterval(timer)
+      window.removeEventListener("online", refresh)
+      document.removeEventListener("visibilitychange", refresh)
+    }
+  }, [key, intervalMs])
+}
 
 // Calls `onChange` (debounced, so a burst of changes means one reload) whenever a listed table changes. No sources = no listener.
 export function useLiveReload(sources: LiveSource[], onChange: () => void, delayMs = 400) {

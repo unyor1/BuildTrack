@@ -1,17 +1,17 @@
 // The work item (a checklist item of a work pin, e.g. LAUNDRY -> FLOOR) is the QA record. Pure rules, tested in `pnpm test:lib`.
-// Keep linkedDefects identical to SQL item_defect_ids and the acceptance gate identical to review_checklist_item.
+// Keep linkedDefects identical to SQL item_defect_ids and the completion gate identical to review_checklist_item.
 //   Submitted = the Foreman declares the item finished and sends its photos for QA (no Ready tick).
 //   Passed    = its inspection criteria passed.
-//   Accepted  = the Engineer verified the item.
-//   Completed = every item accepted and every NCR / inspection on the work is clear (the pin's "verified" status).
+//   Completed = the Engineer manually completes the item after passed QA and closed linked NCRs.
+//   The work pin completes when every item is completed and every NCR / inspection on the pin is clear.
 import { submittedChecklistItems, type ChecklistRef } from "./qaChecklistModel.ts"
 
-export type ItemStage = "preparing" | "ready" | "requested" | "inspecting" | "passed" | "correction" | "accepted"
+export type ItemStage = "preparing" | "ready" | "requested" | "inspecting" | "passed" | "correction" | "completed"
 export type Owner = "Foreman" | "Engineer"
-export type StageAction = "add_evidence" | "submit" | "approve_criteria" | "start_correction" | "submit_correction" | "inspect" | "review_ncrs" | "open_ncr" | "accept"
+export type StageAction = "add_evidence" | "submit" | "approve_criteria" | "start_correction" | "submit_correction" | "inspect" | "review_ncrs" | "open_ncr" | "complete"
 
 export const stageLabels: Record<ItemStage, string> = {
-  preparing: "Preparing", ready: "Ready", requested: "QA requested", inspecting: "Being inspected", passed: "Passed", correction: "Needs correction", accepted: "Accepted",
+  preparing: "Preparing", ready: "Ready", requested: "QA requested", inspecting: "Being inspected", passed: "Passed", correction: "Needs correction", completed: "Completed",
 }
 export const stageTone: Record<ItemStage, string> = {
   preparing: "bg-surface-muted text-fg-muted",
@@ -20,7 +20,7 @@ export const stageTone: Record<ItemStage, string> = {
   inspecting: "bg-fuchsia-100 text-fuchsia-900 dark:bg-fuchsia-900/40 dark:text-fuchsia-100",
   passed: "bg-amber-100 text-amber-950 dark:bg-amber-900/40 dark:text-amber-100",
   correction: "bg-red-100 text-red-900 dark:bg-red-900/40 dark:text-red-100",
-  accepted: "bg-green-100 text-green-900 dark:bg-green-900/40 dark:text-green-100",
+  completed: "bg-green-100 text-green-900 dark:bg-green-900/40 dark:text-green-100",
 }
 
 export type ItemRef = { id: string; text: string; done: boolean; review_status?: string | null; review_inspection_id?: string | null }
@@ -80,14 +80,14 @@ export function workItemStage(input: StageInput): StageView {
   const toFix = open.filter((row) => row.status === "open" || row.status === "in_progress")
 
   if (item.review_status === "verified") {
-    return view("accepted", null, `${name} accepted by the Engineer.${input.pinCompleted ? " Work completed." : ""}`,
-      input.pinCompleted ? "No action needed." : "No action on this item. The work completes when every item is accepted and all NCRs and inspections are clear.", null)
+    return view("completed", null, `${name} completed by the Engineer.${input.pinCompleted ? " Work completed." : ""}`,
+      input.pinCompleted ? "No action needed." : "No action on this item. The work pin completes when every item is completed and all NCRs and inspections are clear.", null)
   }
   if (current && current.status === "requested") return view("requested", "Engineer", `QA requested (${irRef(current.number)}).${toVerify.length ? ` ${refs(toVerify)} correction waits to be reviewed with it.` : ""}`, "Engineer starts the inspection.", "inspect")
   if (current && current.status === "in_progress") return view("inspecting", "Engineer", `Being inspected (${irRef(current.number)}).`, "Engineer records the inspection results and signs off.", "inspect")
 
   if (item.review_status === "for_review" && current?.status === "passed") {
-    if (!open.length) return view("passed", "Engineer", ncrs.length ? "Inspection passed. NCRs closed." : "Inspection passed.", `Engineer accepts ${name}.`, "accept")
+    if (!open.length) return view("passed", "Engineer", ncrs.length ? "Inspection passed. NCRs closed." : "Inspection passed.", `Engineer completes ${name}.`, "complete")
     const status = `Inspection passed. ${plural(open.length, "NCR")} still ${open.length === 1 ? "needs" : "need"} closure.`
     if (toVerify.length) return view("passed", "Engineer", status, `Engineer reviews the correction and closes ${refs(toVerify)}.`, "review_ncrs", toFix.length ? `${refs(toFix)} has no corrective action yet.` : "")
     return view("passed", "Foreman", status, `Foreman submits corrective action for ${refs(toFix)}.`, "open_ncr")
@@ -113,12 +113,12 @@ export function workItemStage(input: StageInput): StageView {
 
 export const headline = (stage: StageView) => `${stage.status} Next action: ${stage.next}`
 
-// Acceptance gate shown to the Engineer (same order as SQL review_checklist_item).
-export function acceptProblem(input: { loading: boolean; error: string; open: boolean; inspectionStatus?: string; openItemNcrs: number }): string {
-  if (input.error) return "QA information is unavailable. Refresh before accepting."
+// Manual completion gate shown to the Engineer (same order as SQL review_checklist_item).
+export function completionProblem(input: { loading: boolean; error: string; open: boolean; inspectionStatus?: string; openItemNcrs: number }): string {
+  if (input.error) return "QA information is unavailable. Refresh before completing the checklist."
   if (input.loading) return "Checking inspection results…"
   if (input.open) return "Finish the pending QA inspection first."
-  if (input.inspectionStatus !== "passed") return "This item's QA inspection must pass before acceptance."
+  if (input.inspectionStatus !== "passed") return "This item's QA inspection must pass before completion."
   if (input.openItemNcrs) return `Close the ${plural(input.openItemNcrs, "open NCR")} linked to this work item first.`
   return ""
 }

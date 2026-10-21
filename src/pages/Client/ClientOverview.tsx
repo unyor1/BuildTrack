@@ -1,5 +1,4 @@
 import { useMemo, useState } from "react"
-import AssignedProjects from "../../components/AssignedProjects"
 import SCurveChart from "../../components/SCurveChart"
 import WeeklyReportModal from "../../components/WeeklyReportModal"
 import { EmptyState, Meter, PageHead, StatCard, buttonPrimary, buttonSecondary } from "../../components/ui/PageParts"
@@ -32,7 +31,7 @@ export default function ClientOverview({ onNavigate }: ClientPageProps) {
 
   return (
     <div className="client-page">
-      {!projectId ? <AssignedProjects /> : (
+      {projectId ? (
         <>
           <PageHead
             eyebrow="Client portal"
@@ -130,8 +129,7 @@ export default function ClientOverview({ onNavigate }: ClientPageProps) {
             </>
           )}
         </>
-      )}
-      {projectId ? <div className="mt-8"><AssignedProjects title="All your projects" /></div> : null}
+      ) : null}
       {weekly && work.project ? (
         <WeeklyReportModal audience="client" project={work.project} pins={work.pins} start={work.project.start_date} end={work.project.end_date} logs={reports} questions={questions} nameOf={work.nameOf} sheetOf={work.sheetOf} onClose={() => setWeekly(false)} />
       ) : null}

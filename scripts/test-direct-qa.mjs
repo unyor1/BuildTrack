@@ -2,6 +2,7 @@ import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import ts from "typescript"
 import { checklistProblem } from "../src/lib/qaModel.ts"
+import { completionProblem } from "../src/lib/workItemModel.ts"
 
 // Real React component controls, isolated hooks and fake RPCs. No production fixtures or credentials.
 let slots = [], cursor = 0, effects = [], tree, role = "foreman", calls = [], confirmation = true, saved = 0, preflightItem = null
@@ -34,8 +35,11 @@ globalThis.__directQaDeps = {
   useTemplates: () => ({ templates: [template], loading: false, error: "" }),
   useProject: () => ({ project: null }), useProjectTeam: () => ({ team: [] }), useSettings: () => ({ settings: {} }),
   useConfirm: () => async () => confirmation, useToast: () => ({ success() {}, error() {}, info() {} }),
-  checklistProblem, pinLevelDefects: () => [], acceptProblem: () => "", supabase: fakeDb,
-  qaActions: { async submitItems(pinId, items) { calls.push({ name: "submitItems", pinId, items }); return { ok: true } } },
+  checklistProblem, pinLevelDefects: () => [], completionProblem, supabase: fakeDb,
+  qaActions: {
+    async submitItems(pinId, items) { calls.push({ name: "submitItems", pinId, items }); return { ok: true } },
+    async completeItem(itemId) { calls.push({ name: "completeItem", itemId }); return { ok: true } },
+  },
 }
 
 async function compile(path) {
@@ -131,6 +135,55 @@ assert.equal(calls[0].payload.remark, "Finished and checked on site")
 assert.deepEqual(calls[1].items, [item.id])
 assert.equal(preflightItem, item.id, "Submission must use item-scoped, not pin-wide preflight")
 pin.status = "in_progress"; qa.state.open = false
+
+// Final checklist completion is explicit, Engineer-only and blocked until every linked NCR is closed.
+reset(); calls = []; role = "engineer"; confirmation = true
+item.done = true; item.review_status = "for_review"
+stage.current = { id: "inspection", status: "passed" }
+stage.view = { stage: "passed", action: "complete", owner: "Engineer" }
+render(Workspace, { itemId: item.id, onClose() {} })
+assert.equal(calls.length, 0, "Passing QA/rendering does not complete the checklist automatically")
+assert.equal(button("Complete checklist").props.disabled, false)
+assert.doesNotMatch(text(tree), /Accept FLOOR|Accepted/)
+for (const status of ["open", "in_progress", "for_verification"]) {
+  stage.ncrs = [{ id: "ncr", number: 1, status }]
+  render(Workspace, { itemId: item.id, onClose() {} })
+  assert.equal(button("Complete checklist").props.disabled, true, `${status} NCR blocks completion`)
+  assert.match(text(tree), /Cannot complete checklist: Close the 1 open NCR/)
+  await button("Complete checklist").props.onClick()
+  assert.equal(calls.length, 0, "Even an invoked disabled handler must not bypass the guard")
+}
+stage.ncrs = [{ id: "ncr", number: 1, status: "closed" }]
+data.error = "NCR data unavailable"
+render(Workspace, { itemId: item.id, onClose() {} })
+assert.equal(button("Complete checklist").props.disabled, true)
+data.error = ""; emptyHistory.loading = true
+render(Workspace, { itemId: item.id, onClose() {} })
+assert.equal(button("Complete checklist").props.disabled, true)
+emptyHistory.loading = false
+render(Workspace, { itemId: item.id, onClose() {} })
+confirmation = false; await button("Complete checklist").props.onClick()
+assert.equal(calls.length, 0, "Cancelling confirmation does not complete the checklist")
+confirmation = true; await button("Complete checklist").props.onClick()
+await new Promise(resolve => setTimeout(resolve, 0))
+assert.deepEqual(calls, [{ name: "completeItem", itemId: item.id }])
+for (const status of ["requested", "in_progress", "failed", "conditional"]) {
+  stage.current.status = status
+  render(Workspace, { itemId: item.id, onClose() {} })
+  assert.ok(!nodes(tree).some(node => node.type === "button" && text(node) === "Complete checklist"), `${status} QA cannot be completed`)
+}
+stage.current.status = "passed"; role = "foreman"
+render(Workspace, { itemId: item.id, onClose() {} })
+assert.ok(!nodes(tree).some(node => node.type === "button" && text(node) === "Complete checklist"))
+role = "engineer"; item.review_status = "verified"
+render(Workspace, { itemId: item.id, onClose() {} })
+assert.ok(!nodes(tree).some(node => node.type === "button" && text(node) === "Complete checklist"), "Completed records cannot be completed twice")
+const { StageRail } = await compile("../src/components/qa/WorkItemParts.tsx")
+render(StageRail, { stage: "passed", completed: false })
+assert.deepEqual(nodes(tree).filter(node => node.type === "li").map(node => text(node).replace("✓ ", "")), ["Submitted", "Passed", "Completed"])
+assert.equal(nodes(tree).filter(node => node.type === "li").at(-1).props["aria-current"], undefined)
+render(StageRail, { stage: "completed", completed: false })
+assert.equal(nodes(tree).filter(node => node.type === "li").at(-1).props["aria-current"], "step")
 
 reset(); calls = []
 const { default: ChecklistEditor } = await compile("../src/components/qa/WorkChecklistEditor.tsx")

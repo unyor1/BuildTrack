@@ -10,6 +10,7 @@ export default function PhotoDetails({ photo, bucket }: { photo: GalleryPhoto; b
     ["Uploaded by", photo.uploaderName || (photo.uploaded_by ? "Team member (name unavailable)" : "Not recorded")],
     ["Phone-recorded time", photo.taken_at ? `${photoTime(photo.taken_at)} (Manila)` : "Not recorded"],
     ["Caption", photo.caption || "No caption"],
+    ...(photo.annotations?.length ? [["Markup", `${photo.annotations.length} mark${photo.annotations.length === 1 ? "" : "s"} drawn over the photo. The original file is unchanged.`]] : []),
     ["File", photo.path.split("/").pop() ?? photo.path],
     ...(photo.requestLabel ? [["QA request",photo.requestLabel]] : []),
   ]

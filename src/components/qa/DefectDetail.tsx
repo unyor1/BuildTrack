@@ -17,6 +17,7 @@ import { followLink } from "../../lib/notifications"
 import { submittedChecklistItems, type ChecklistRecord } from "../../lib/qaChecklistModel"
 import { workItemPath } from "../../lib/workItemModel"
 import { PhotoGrid } from "../PhotoGallery"
+import { LinkedClientReportEvidence } from "./SnagParts"
 import type { PinPhoto } from "../../lib/blueprints"
 
 const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString("en-PH", { timeZone: "Asia/Manila", day: "numeric", month: "short", year: "numeric", hour: "numeric", minute: "2-digit" }) : "-")
@@ -193,6 +194,7 @@ export default function DefectDetail({
           </>
         )}
 
+        <LinkedClientReportEvidence projectId={defect.project_id} defectId={defect.id} />
         {viaPackage && canWork && assigned && (defect.status === "open" || defect.status === "in_progress") ? (
           <div role="status" className="rounded-xl border-2 border-brand/60 bg-brand-soft/40 p-3 text-sm">
             <p className="font-bold">Correct this NCR from its work item</p>

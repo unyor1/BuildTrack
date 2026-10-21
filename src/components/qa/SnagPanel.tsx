@@ -7,6 +7,7 @@ import { SnagPhotoStrip } from "./SnagParts"
 import { categories, categoryLabels, defaultDueDate, qaSeverityHelp, qaSeverityLabels, refNumber, severities, snagStatusLabels, snagTone, trades, tradeLabels, urgencyLabels, type DefectCategory, type QaSeverity, type Trade } from "../../lib/qaModel"
 import { snagActions, useSnagPhotos, type Snag } from "../../lib/snags"
 import { useToast } from "../../lib/toast"
+import { useProjectWork } from "../../lib/projectWork"
 
 const when = (iso: string) => new Date(iso).toLocaleString("en-PH", { timeZone: "Asia/Manila", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })
 const label = "mb-1 block text-xs font-extrabold uppercase tracking-wider text-fg-muted"
@@ -44,7 +45,9 @@ export function SnagsPanel({ snags, loading, error, nameOf, onOpen }: { snags: S
 
 export function SnagDetail({ snag, today, foremen, nameOf, onClose, onDecided }: { snag: Snag; today: string; foremen: Array<{ user_id: string; full_name: string }>; nameOf: (id: string | null) => string; onClose: () => void; onDecided: (defectId: string | null) => void | Promise<void> }) {
   const toast = useToast()
-  const { photos } = useSnagPhotos(snag.id)
+  const { photos, error: photoError, reload: reloadPhotos } = useSnagPhotos(snag.id)
+  const work = useProjectWork(snag.project_id)
+  const pin = work.pins.find(pin => pin.id === snag.pin_id)
   const waiting = snag.status === "submitted"
   const [severity, setSeverity] = useState<QaSeverity>(snag.urgency === "urgent" ? "major" : "minor")
   const [category, setCategory] = useState<DefectCategory>("workmanship")
@@ -89,6 +92,8 @@ export function SnagDetail({ snag, today, foremen, nameOf, onClose, onDecided }:
       <div className="space-y-4">
         <div className="flex flex-wrap items-center gap-2"><Chip tone={snagTone[snag.status]}>{snagStatusLabels[snag.status]}</Chip>{snag.decided_by ? <span className="text-xs text-fg-muted">Decided by {nameOf(snag.decided_by)}{snag.decided_at ? ` • ${when(snag.decided_at)}` : ""}</span> : null}</div>
         {snag.description ? <p className="whitespace-pre-wrap text-sm">{snag.description}</p> : <p className="text-sm text-fg-muted">The client gave no details.</p>}
+        {pin ? <a className={buttonSecondary} href={`/engineer/annotation?project=${encodeURIComponent(snag.project_id)}&sheet=${encodeURIComponent(pin.blueprint_id)}&pin=${encodeURIComponent(pin.id)}`}>Open linked pin: {pin.title}</a> : snag.pin_id ? <p className="text-xs text-fg-muted">Linked work pin unavailable.</p> : null}
+        {photoError ? <p role="alert" className="text-sm text-danger-fg">{photoError} <button type="button" className="underline" onClick={() => void reloadPhotos()}>Retry photos</button></p> : null}
         {photos.length ? <SnagPhotoStrip photos={photos} /> : null}
         {snag.response ? <p className="rounded-lg bg-surface-muted px-3 py-2 text-sm"><strong>Reply to the client:</strong> {snag.response}</p> : null}
         {waiting ? (

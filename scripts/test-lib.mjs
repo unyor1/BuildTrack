@@ -5,7 +5,7 @@ import { qaSubmissionMessage, submitAfterConfirmation } from "../src/lib/pinQaMo
 import { checklistAttemptNumber, checklistGroups, checklistNames, checklistNameKey, submittedChecklistItems } from "../src/lib/qaChecklistModel.ts"
 import { selectedVerification, timelineWindow } from "../src/lib/verificationViewModel.ts"
 import { currentAttemptPhotos, itemSubmissions, qaRecordPath } from "../src/lib/qaAttemptsModel.ts"
-import { acceptProblem, connectedHistory, headline as itemHeadline, itemAttempts, linkedDefects, pinLevelDefects, workItemPath, workItemStage } from "../src/lib/workItemModel.ts"
+import { completionProblem, connectedHistory, headline as itemHeadline, itemAttempts, linkedDefects, pinLevelDefects, workItemPath, workItemStage } from "../src/lib/workItemModel.ts"
 import { adjustPhotoZoom, changePhotoScope, defaultPhotoDates, emptyPhotoScope, photoDateBounds, photoRangeDates, photoRangeOf, readPhotoDates, readPhotoScope, validPhotoDate, photoTime } from "../src/lib/photoGalleryModel.ts"
 import { foremanTasks, manilaDayRange, reportStatusLabel, taskCounts, taskFilters } from "../src/lib/foremanDashboardModel.ts"
 import { fieldPagePath, fieldShellMode, projectPath, projectSections, readProjectRoute } from "../src/lib/projectRoutes.ts"
@@ -1116,8 +1116,8 @@ test("search: every hit opens a screen that role really has; no screen means no 
   assert.equal(hitPath("client", "defect", "d", p), null)
   assert.equal(hitPath("engineer", "inspection", "i", p), "/engineer/qa?project=proj1&tab=inspections&inspection=i")
   assert.equal(hitPath("foreman", "inspection", "i", p), null)
-  assert.equal(hitPath("client", "log", "l", p), "/client/site-logs?project=proj1")
-  assert.equal(hitPath("foreman", "log", "l", p), "/foreman/daily-report?project=proj1")
+  assert.equal(hitPath("client", "log", "l", p), "/client/site-logs?project=proj1&report=l")
+  assert.equal(hitPath("foreman", "log", "l", p), "/foreman/daily-report?project=proj1&report=l")
 })
 
 // ---- Defect trends ----
@@ -1190,14 +1190,14 @@ test("Timeline preview limits recent events, keeps the original history and expa
   assert.equal(timelineWindow([],false).length,0)
   assert.equal(timelineWindow(entries,false,3).length,3)
 })
-test("Item acceptance waits for a passed inspection and the item's own NCRs only (same order as SQL)", () => {
+test("Manual checklist completion waits for passed QA and closed linked NCRs (same order as SQL)", () => {
   const ready={ loading:false,error:"",open:false,inspectionStatus:"passed",openItemNcrs:0 }
-  assert.equal(acceptProblem(ready),"")
-  assert.match(acceptProblem({...ready,open:true}),/pending QA/)
-  assert.match(acceptProblem({...ready,inspectionStatus:"failed"}),/must pass/)
-  assert.match(acceptProblem({...ready,openItemNcrs:2}),/Close the 2 open NCRs linked to this work item/)
-  assert.match(acceptProblem({...ready,error:"Unavailable"}),/unavailable/)
-  assert.match(acceptProblem({...ready,loading:true}),/Checking/)
+  assert.equal(completionProblem(ready),"")
+  assert.match(completionProblem({...ready,open:true}),/pending QA/)
+  assert.match(completionProblem({...ready,inspectionStatus:"failed"}),/must pass/)
+  assert.match(completionProblem({...ready,openItemNcrs:2}),/Close the 2 open NCRs linked to this work item/)
+  assert.match(completionProblem({...ready,error:"Unavailable"}),/unavailable/)
+  assert.match(completionProblem({...ready,loading:true}),/Checking/)
 })
 test("Work item records link NCRs and attempts by the item's permanent id, even after a rename", () => {
   const subs=[
@@ -1220,9 +1220,9 @@ test("Work item records link NCRs and attempts by the item's permanent id, even 
 test("Every work item stage names the responsible person, the blocker and one next action", () => {
   const item={ id:"floor",text:"FLOOR",done:true,review_status:"for_review",review_inspection_id:"i2" }
   const base={ item,attempts:2,current:{number:2,status:"passed"},ncrs:[],draft:null,eligiblePhotos:1,criteriaApproved:true,pinCompleted:false }
-  assert.equal(itemHeadline(workItemStage(base)),"Inspection passed. Next action: Engineer accepts FLOOR.")
+  assert.equal(itemHeadline(workItemStage(base)),"Inspection passed. Next action: Engineer completes FLOOR.")
   const closed=workItemStage({...base,ncrs:[{number:1,status:"closed"},{number:2,status:"closed"}]})
-  assert.equal(itemHeadline(closed),"Inspection passed. NCRs closed. Next action: Engineer accepts FLOOR.")
+  assert.equal(itemHeadline(closed),"Inspection passed. NCRs closed. Next action: Engineer completes FLOOR.")
   const waiting=workItemStage({...base,ncrs:[{number:1,status:"open"},{number:2,status:"in_progress"}]})
   assert.equal(waiting.owner,"Foreman")
   assert.equal(itemHeadline(waiting),"Inspection passed. 2 NCRs still need closure. Next action: Foreman submits corrective action for NCR-0001, NCR-0002.")
@@ -1241,7 +1241,9 @@ test("Every work item stage names the responsible person, the blocker and one ne
   assert.equal(workItemStage(fresh).action,"submit")
   assert.equal(workItemStage({...fresh,item:{...fresh.item,done:true}}).action,"submit")
   assert.equal(workItemStage({...fresh,item:{...fresh.item,done:true},criteriaApproved:false}).owner,"Engineer")
-  assert.equal(workItemStage({...base,item:{...item,review_status:"verified"},pinCompleted:true}).status,"FLOOR accepted by the Engineer. Work completed.")
+  assert.equal(workItemStage(base).action,"complete", "Passed QA still needs a manual checklist completion")
+  assert.equal(workItemStage({...base,item:{...item,review_status:"verified"},pinCompleted:true}).status,"FLOOR completed by the Engineer. Work completed.")
+  assert.equal(workItemStage({...base,item:{...item,review_status:"verified"}}).stage,"completed")
 })
 test("Independent items: another item's open inspection or pending acceptance does not block submission", () => {
   const input={item:{id:"wall",text:"WALL",done:false,review_status:"not_submitted"},attempts:0,current:null,ncrs:[],draft:null,eligiblePhotos:1,criteriaApproved:true,pinCompleted:false}

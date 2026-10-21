@@ -34,6 +34,7 @@ Everything the screens show is read from these tables, so numbers always agree: 
 - Admins and Super Admins need TOTP (aal2) for every admin action.
 - Row Level Security decides who sees which project. Read policies use `viewable_project_ids()` (fast); copy that pattern for new tables.
 - Evidence lock (0033): submitted or verified work and its photos cannot be deleted.
+- Photo markup (client reports, site issues, inspection / NCR evidence) is a separate JSON overlay checked by `valid_issue_markup`; the stored photo is always the untouched original.
 - Identity verification gates role requests; privacy consent is recorded; "delete my data" anonymises a person without breaking project records.
 - Every migration has tests (`supabase/tests`). A migration is applied to the live project only after `pnpm test:sql` passes (see CONTRIBUTING).
 

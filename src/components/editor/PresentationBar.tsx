@@ -48,7 +48,7 @@ export default function PresentationBar({
       {legend ? (
         <div className="pointer-events-none absolute left-4 top-20 z-50 rounded-2xl bg-black/55 px-4 py-3 text-white shadow-xl backdrop-blur-md" aria-label="Status legend">
           <ul className="space-y-1.5 text-sm">
-            {(Object.keys(statusLabels) as PinStatus[]).map((status) => <li key={status} className="flex items-center gap-2"><span className="h-3 w-3 rounded-full" style={{ background: statusDot[status] }} />{statusLabels[status]}</li>)}
+            {(Object.keys(statusLabels) as PinStatus[]).filter(status => status !== "for_review").map((status) => <li key={status} className="flex items-center gap-2"><span className="h-3 w-3 rounded-full" style={{ background: statusDot[status] }} />{statusLabels[status]}</li>)}
           </ul>
         </div>
       ) : null}

@@ -3,6 +3,8 @@ import { Icon } from "./EditorToolbar"
 import LayerStack, { EyeButton, describe } from "./LayerStack"
 import { ChecklistProgress, PinChecklist, PinTimeline, ProgressTracker, field } from "./PinParts"
 import ChecklistPhotos from "../ChecklistPhotos"
+import PinDailyReports from "../client/PinDailyReports"
+import { clientActionPath, clientPinStatus, openClientPath } from "../../lib/clientPortalModel"
 import { useToast } from "../../lib/toast"
 import { usePinQa } from "../../lib/pinQa"
 import { SkeletonList } from "../ui/Skeleton"
@@ -55,7 +57,8 @@ export type SelectionActions = {
   hasClipboard: boolean
 }
 
-const allStatuses = Object.keys(statusLabels) as PinStatus[]
+const allStatuses = (Object.keys(statusLabels) as PinStatus[]).filter(status => status !== "for_review")
+const workStatus = (status: PinStatus) => clientPinStatus(status) as PinStatus
 const today = () => new Date().toISOString().slice(0, 10)
 const prettyDate = (iso: string) => new Date(`${iso}T00:00:00`).toLocaleDateString("en-PH", { day: "numeric", month: "short", year: "numeric" })
 const timeFmt = (iso: string) => new Date(iso).toLocaleString("en-PH", { timeZone: "Asia/Manila", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
@@ -79,7 +82,7 @@ export const checklistNotice = (props: Pick<InspectorProps, "role" | "canReport"
       ? `This work is assigned to ${assigneeName ?? "another foreman"}. Only that foreman can add evidence and submit for QA. Ask the engineer to reassign it if it is yours.`
       : "This work is not assigned to anyone yet. The engineer must assign this pin to you (Details > Assigned foreman) before you can add evidence and submit for QA."
   }
-  if (props.role === "engineer") return "Add each checklist item with its inspection criteria. The assigned Foreman opens the item, adds photos and submits directly for QA. You inspect and accept each item."
+  if (props.role === "engineer") return "Add each checklist item with its inspection criteria. The assigned Foreman opens the item, adds photos and submits directly for QA. You inspect and complete each item once QA passes and linked NCRs are closed."
   return ""
 }
 
@@ -139,9 +142,9 @@ export type InspectorProps = {
 
 function Tabs<T extends string>({ tabs, value, onChange, label }: { tabs: Array<{ key: T; label: string }>; value: T; onChange: (key: T) => void; label: string }) {
   return (
-    <div role="tablist" aria-label={label} className="flex border-b border-line">
+    <div role="tablist" aria-label={label} className="flex shrink-0 overflow-x-auto border-b border-line bg-surface-muted/40 px-2">
       {tabs.map((tab) => (
-        <button key={tab.key} type="button" role="tab" aria-selected={value === tab.key} onClick={() => onChange(tab.key)} className={`flex-1 border-b-2 px-2 py-2.5 text-xs font-bold transition ${value === tab.key ? "border-brand text-brand-text" : "border-transparent text-fg-muted hover:text-fg"}`}>
+        <button key={tab.key} type="button" role="tab" aria-selected={value === tab.key} onClick={() => onChange(tab.key)} className={`min-h-11 flex-1 whitespace-nowrap border-b-2 px-3 py-3 text-xs font-bold transition ${value === tab.key ? "border-brand text-brand-text" : "border-transparent text-fg-muted hover:text-fg"}`}>
           {tab.label}
         </button>
       ))}
@@ -153,7 +156,7 @@ function Tabs<T extends string>({ tabs, value, onChange, label }: { tabs: Array<
 // a small editor for a drawing, note, text box or shape. Deep editing (all fields, large photos) happens in the pin details dialog.
 export default function Inspector(props: InspectorProps) {
   const { selectedPin: pin, selectedAnnotation: annotation } = props
-  const [pinTab, setPinTab] = useState<"details" | "timeline" | "checklist" | "photos">("details")
+  const [pinTab, setPinTab] = useState<"details" | "timeline" | "checklist" | "photos" | "reports">("details")
 
   useEffect(() => {
     setPinTab(new URLSearchParams(window.location.search).get("worktab") === "checklist" ? "checklist" : "details")
@@ -164,22 +167,23 @@ export default function Inspector(props: InspectorProps) {
 
   if (pin) {
     // Photos are checklist evidence (staff only); clients see the checklist with each item's acceptance.
-    const tabs = props.role === "client" ? [{ key: "details" as const, label: "Details" }, { key: "checklist" as const, label: "Checklist" }] : [{ key: "details" as const, label: "Details" }, { key: "timeline" as const, label: "Timeline" }, { key: "checklist" as const, label: "Checklist" }, { key: "photos" as const, label: "Photos" }]
+    const tabs = props.role === "client" ? [{ key: "details" as const, label: "Details" }, { key: "checklist" as const, label: "Checklist" }, { key: "reports" as const, label: "Daily reports" }] : [{ key: "details" as const, label: "Details" }, { key: "timeline" as const, label: "Timeline" }, { key: "checklist" as const, label: "Checklist" }, { key: "photos" as const, label: "Photos" }]
     return (
-      <aside className="flex h-full w-full flex-col border-l border-line bg-surface">
+      <aside className="flex h-full min-h-0 w-full min-w-0 flex-col bg-surface">
         <div className="flex items-start gap-2 px-4 pb-3 pt-4">
-          <span className="mt-0.5 flex h-7 w-7 flex-none items-center justify-center rounded-full text-xs font-bold text-white" style={{ background: statusDot[pin.status] }}>{props.numberOf(pin)}</span>
-          <div className="min-w-0">
-            <h2 className="flex items-center gap-1.5 truncate text-base font-extrabold">{pin.title}{pin.locked ? <span title="Locked" className="text-fg-muted"><Icon name="lock" size={14} /></span> : null}</h2>
-            <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${statusChip[pin.status]}`}>{statusLabels[pin.status]}</span>
+          <span className="mt-0.5 flex h-7 w-7 flex-none items-center justify-center rounded-full text-xs font-bold text-white" style={{ background: statusDot[workStatus(pin.status)] }}>{props.numberOf(pin)}</span>
+          <div className="min-w-0 flex-1 space-y-1.5">
+            <h2 className="break-words text-base font-extrabold">{pin.title}{pin.locked ? <span title="Locked" className="ml-1 inline-block align-middle text-fg-muted"><Icon name="lock" size={14} /></span> : null}</h2>
+            <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ${statusChip[workStatus(pin.status)]}`}>{statusLabels[workStatus(pin.status)]}</span>
           </div>
         </div>
         <Tabs tabs={tabs} value={pinTab} onChange={setPinTab} label="Pin sections" />
-        <div className="flex-1 overflow-y-auto p-4">
+        <div className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain p-4 [overflow-wrap:anywhere]">
           {pinTab === "details" ? <PinDetailsTab {...props} pin={pin} /> : null}
           {pinTab === "timeline" ? <PinTimeline pinId={pin.id} canComment={props.canReport} /> : null}
           {pinTab === "checklist" ? <PinChecklist pin={pin} canEdit={props.canEdit} canTick={canWorkOn(props, pin)} notice={checklistNotice(props, pin, pin.assigned_to ? props.team.find((member) => member.user_id === pin.assigned_to)?.full_name : undefined)} onPinChanged={props.onPinChanged} /> : null}
           {pinTab === "photos" && props.role !== "client" ? <ChecklistPhotos pin={pin} /> : null}
+          {pinTab === "reports" && props.role === "client" ? <PinDailyReports key={pin.id} pin={pin} /> : null}
         </div>
       </aside>
     )
@@ -188,9 +192,9 @@ export default function Inspector(props: InspectorProps) {
   const tabs: Array<{ key: SheetTab; label: string }> = [{ key: "pins", label: "Pins" }, { key: "layers", label: "Layers" }, ...(props.canSeeHistory ? [{ key: "history" as const, label: "History" }] : []), { key: "sheet", label: "Sheet" }]
   const active = props.sheetTab === "history" && !props.canSeeHistory ? "pins" : props.sheetTab
   return (
-    <aside className="flex h-full w-full flex-col border-l border-line bg-surface">
+    <aside className="flex h-full min-h-0 w-full min-w-0 flex-col bg-surface">
       <Tabs tabs={tabs} value={active} onChange={props.onSheetTab} label="Sheet sections" />
-      <div className="flex-1 overflow-y-auto p-4">
+      <div className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain p-4">
         {active === "pins" ? <PinListTab {...props} /> : null}
         {active === "layers" ? <LayersTab {...props} /> : null}
         {active === "history" ? <HistoryTab {...props} /> : null}
@@ -222,14 +226,15 @@ export function PinDetailsTab(props: InspectorProps & { pin: Pin; inDialog?: boo
 
   return (
     <div className="space-y-4">
-      <ProgressTracker status={pin.status} />
+      <ProgressTracker status={workStatus(pin.status)} />
+      {props.role === "client" ? <div className="grid gap-2 border-y border-line py-3 sm:grid-cols-2"><button type="button" onClick={() => openClientPath(clientActionPath("ticket", pin.project_id, pin.id))} className="rounded-lg border border-line px-3 py-2 text-xs font-bold hover:bg-surface-muted">Report a problem here</button><button type="button" onClick={() => openClientPath(clientActionPath("communication", pin.project_id, pin.id))} className="rounded-lg border border-line px-3 py-2 text-xs font-bold hover:bg-surface-muted">Ask about this pin</button></div> : null}
 
       {props.canEdit ? (
         <div>
           <p className="mb-1 text-xs font-bold uppercase tracking-wider text-fg-muted">Set status</p>
           <div className="flex flex-wrap gap-1">
             {allStatuses.map((status) => (
-              <button key={status} type="button" onClick={() => props.onSetStatus(pin, status)} disabled={pin.status === status || (status === "verified" && (!qa.state || Boolean(qa.state.problem) || Boolean(qa.error)))} title={status === "verified" ? qa.error || qa.state?.problem || undefined : undefined} className={`flex items-center gap-1 rounded-full border px-2 py-1 text-[11px] font-semibold transition disabled:cursor-default disabled:opacity-50 ${pin.status === status ? "border-transparent text-white" : "border-line hover:bg-surface-muted"}`} style={pin.status === status ? { background: statusDot[status] } : undefined}>
+              <button key={status} type="button" onClick={() => props.onSetStatus(pin, status)} disabled={workStatus(pin.status) === status || (status === "verified" && (!qa.state || Boolean(qa.state.problem) || Boolean(qa.error)))} title={status === "verified" ? qa.error || qa.state?.problem || undefined : undefined} className={`flex items-center gap-1 rounded-full border px-2 py-1 text-[11px] font-semibold transition disabled:cursor-default disabled:opacity-50 ${workStatus(pin.status) === status ? "border-transparent text-white" : "border-line hover:bg-surface-muted"}`} style={workStatus(pin.status) === status ? { background: statusDot[status] } : undefined}>
                 <span className="h-2 w-2 rounded-full" style={{ background: statusDot[status] }} />
                 {statusLabels[status]}
               </button>
@@ -261,7 +266,7 @@ export function PinDetailsTab(props: InspectorProps & { pin: Pin; inDialog?: boo
         <div><dt className="text-[11px] font-bold uppercase tracking-wider text-fg-muted">Category</dt><dd className="font-semibold">{categoryLabels[pin.category]}</dd></div>
         <div><dt className="text-[11px] font-bold uppercase tracking-wider text-fg-muted">Discipline</dt><dd className="font-semibold">{pin.discipline ? disciplineLabels[pin.discipline] : "Not set"}</dd></div>
       </dl>
-      {pin.verified_at ? <p className="text-xs font-semibold text-ok-fg">Completed · accepted by {nameOf(pin.verified_by)} on {prettyDate(pin.verified_at.slice(0, 10))}</p> : null}
+      {pin.verified_at ? <p className="text-xs font-semibold text-ok-fg">Completed by {nameOf(pin.verified_by)} on {prettyDate(pin.verified_at.slice(0, 10))}</p> : null}
       {pin.description ? <p className="whitespace-pre-wrap rounded-lg bg-surface-muted/60 p-3 text-sm">{pin.description}</p> : null}
       {props.canEdit ? (
         <button type="button" onClick={() => props.onToggleLocked({ type: "pin", id: pin.id })} className="flex w-full items-center justify-between rounded-lg border border-line px-3 py-2 text-sm font-semibold hover:bg-surface-muted" title="A locked pin cannot be moved, renamed or deleted. Its status can still change.">
@@ -289,8 +294,8 @@ export function PinDetailsTab(props: InspectorProps & { pin: Pin; inDialog?: boo
 
 function PinListTab(props: InspectorProps) {
   const counts = Object.fromEntries(allStatuses.map((status) => [status, 0])) as Record<PinStatus, number>
-  for (const pin of props.sheetPins) counts[pin.status]++
-  const visible = props.sheetPins.filter((pin) => !props.hidden.has(pin.status))
+  for (const pin of props.sheetPins) counts[workStatus(pin.status)]++
+  const visible = props.sheetPins.filter((pin) => !props.hidden.has(workStatus(pin.status)))
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap gap-1" role="group" aria-label="Show pins by status">
@@ -308,7 +313,7 @@ function PinListTab(props: InspectorProps) {
           {visible.map((pin) => (
             <li key={pin.id}>
               <button type="button" onClick={() => props.onSelectPin(pin.id)} className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm hover:bg-surface-muted">
-                <span className="flex h-6 w-6 flex-none items-center justify-center rounded-full text-[11px] font-bold text-white" style={{ background: statusDot[pin.status] }}>{props.numberOf(pin)}</span>
+                <span className="flex h-6 w-6 flex-none items-center justify-center rounded-full text-[11px] font-bold text-white" style={{ background: statusDot[workStatus(pin.status)] }}>{props.numberOf(pin)}</span>
                 <span className="min-w-0 flex-1 truncate">{pin.title}</span>
                 {pin.locked ? <span className="text-fg-muted" title="Locked"><Icon name="lock" size={13} /></span> : null}
                 {pin.due_date && pin.due_date < today() && pin.status !== "verified" ? <span className="text-[11px] font-bold text-danger-fg">OVERDUE</span> : null}
@@ -365,7 +370,7 @@ function LayersTab(props: InspectorProps) {
             {props.sheetPins.map((pin) => (
               <li key={pin.id} className={`flex items-center gap-1.5 rounded-lg px-1.5 py-1 transition hover:bg-surface-muted ${props.hiddenPinIds.has(pin.id) ? "opacity-55" : ""}`}>
                 <button type="button" onClick={() => props.onSelectPin(pin.id)} className="flex min-w-0 flex-1 items-center gap-2 text-left text-sm">
-                  <span className="flex h-5 w-5 flex-none items-center justify-center rounded-full text-[11px] font-bold text-white" style={{ background: statusDot[pin.status] }}>{props.numberOf(pin)}</span>
+                  <span className="flex h-5 w-5 flex-none items-center justify-center rounded-full text-[11px] font-bold text-white" style={{ background: statusDot[workStatus(pin.status)] }}>{props.numberOf(pin)}</span>
                   <span className="truncate">{pin.title}</span>
                 </button>
                 <EyeButton hidden={props.hiddenPinIds.has(pin.id)} onClick={() => props.onTogglePinHidden(pin.id)} label={pin.title} />

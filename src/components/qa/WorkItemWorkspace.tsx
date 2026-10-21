@@ -11,6 +11,7 @@ import CorrectionForm from "./CorrectionForm"
 import DefectDetail from "./DefectDetail"
 import InspectionDetail from "./InspectionDetail"
 import QaAttemptHistory from "./QaAttemptHistory"
+import SubmittedEvidence from "./SubmittedEvidence"
 import { Chip, SeverityChip } from "./QaBits"
 import { NextActionCard, StageRail } from "./WorkItemParts"
 import { useAuth } from "../../lib/auth"
@@ -25,7 +26,7 @@ import { defectStatusLabels, defectTone, dueText, inspectionStatusLabels, inspec
 import { useSettings } from "../../lib/settings"
 import { supabase } from "../../lib/supabase"
 import { useDefectHistory, useWorkItem } from "../../lib/workItem"
-import { acceptProblem, connectedHistory, irRef, ncrRef, pinLevelDefects, type SubmissionRef } from "../../lib/workItemModel"
+import { completionProblem, connectedHistory, irRef, ncrRef, pinLevelDefects, type SubmissionRef } from "../../lib/workItemModel"
 
 type Tab = "inspection" | "corrections" | "evidence" | "history"
 const tabNames: Record<Tab, string> = { inspection: "Inspection", corrections: "Corrections & NCRs", evidence: "Evidence", history: "Attempts & history" }
@@ -35,7 +36,7 @@ const resultWord: Record<string, string> = { pass: "Pass", fail: "Fail", na: "N/
 
 // One work item (e.g. LAUNDRY -> FLOOR) as one record: next action, current inspection, corrections and linked NCRs, evidence,
 // and every attempt with one connected history. The Foreman prepares and corrects here; the Engineer inspects, decides NCRs and
-// accepts here. Every write is a checked database function.
+// manually completes the checklist here. Every write is a checked database function.
 export default function WorkItemWorkspace({ itemId, onClose, onChanged, fromPlan = false }: { itemId: string; onClose: () => void; onChanged?: () => void | Promise<void>; fromPlan?: boolean }) {
   const { profile } = useAuth()
   const toast = useToast()
@@ -71,7 +72,7 @@ export default function WorkItemWorkspace({ itemId, onClose, onChanged, fromPlan
   useEffect(() => {
     if (tab || !view) return
     setTab(view.stage === "correction" || view.action === "review_ncrs" || view.action === "open_ncr" ? "corrections"
-      : view.stage === "preparing" || view.stage === "ready" ? "evidence" : view.stage === "accepted" ? "history" : "inspection")
+      : view.stage === "preparing" || view.stage === "ready" ? "evidence" : view.stage === "completed" ? "history" : "inspection")
   }, [view, tab])
 
   const reload = async () => { await data.reload(); await onChanged?.() }
@@ -106,7 +107,7 @@ export default function WorkItemWorkspace({ itemId, onClose, onChanged, fromPlan
   const responsible = view.owner === "Foreman" ? nameOf(pin.assigned_to) : current?.inspector_id ? nameOf(current.inspector_id) : current?.escalation_owner ? nameOf(current.escalation_owner) : "Project Engineer"
   const template = templates.find(row => row.id === (item.qa_template_id ?? pin.qa_template_id))
   const openNcrs = ncrs.filter((row) => row.status !== "closed").length
-  const acceptBlock = acceptProblem({ loading: history.loading, error: data.error, open: Boolean(stage.open), inspectionStatus: current?.status, openItemNcrs: openNcrs })
+  const completionBlock = completionProblem({ loading: history.loading || data.loading, error: data.error, open: Boolean(stage.open), inspectionStatus: current?.status, openItemNcrs: openNcrs })
   const firstToFix = ncrs.find((row) => row.status === "open" || row.status === "in_progress")
 
   const submitFirst = async () => {
@@ -124,10 +125,10 @@ export default function WorkItemWorkspace({ itemId, onClose, onChanged, fromPlan
   const startCorrection = async () => {
     if (await run(() => qaActions.beginCorrection(item.id), "Could not start the correction", "Correction started", "Describe the fix, add new photos and choose the NCRs it answers.")) setTab("corrections")
   }
-  const accept = async () => {
-    if (acceptBlock) return toast.error("Not ready to accept", acceptBlock)
-    if (!(await confirm({ title: `Accept ${name}?`, message: `The inspection passed and every NCR linked to ${name} is closed. The work is Completed automatically when every item is accepted and the work has no open NCR or inspection.`, confirmLabel: `Accept ${name}` }))) return
-    await run(() => qaActions.reviewItem(item.id, true), "Not accepted", `${name} accepted`)
+  const complete = async () => {
+    if (completionBlock) return toast.error("Checklist cannot be completed", completionBlock)
+    if (!(await confirm({ title: `Complete ${name}?`, message: `The inspection passed and every NCR linked to ${name} is closed. This completes the checklist item. The work pin completes when every item is completed and no NCR or inspection remains open.`, confirmLabel: "Complete checklist" }))) return
+    await run(() => qaActions.completeItem(item.id), "Checklist not completed", `${name} completed`)
   }
 
   const primary = (() => {
@@ -143,7 +144,6 @@ export default function WorkItemWorkspace({ itemId, onClose, onChanged, fromPlan
     if (engineer) {
       if (view.action === "inspect" && current) return <button type="button" className={buttonPrimary} onClick={() => setInspectionOpen(current.id)}>{current.status === "requested" ? "Start inspection" : "Record results"}</button>
       if (view.action === "review_ncrs") return <button type="button" className={buttonPrimary} onClick={() => setTab("corrections")}>Review NCR corrections</button>
-      if (view.action === "accept") return <button type="button" className={buttonPrimary} disabled={busy || Boolean(acceptBlock)} title={acceptBlock || undefined} onClick={() => void accept()}>Accept {name}</button>
     }
     return null
   })()
@@ -153,6 +153,7 @@ export default function WorkItemWorkspace({ itemId, onClose, onChanged, fromPlan
     {!fromPlan ? <button type="button" className={buttonSecondary} onClick={() => followLink(`/${engineer ? "engineer/annotation" : "foreman/daily-work"}?project=${pin.project_id}&pin=${pin.id}`, pin.project_id)}>Open on the plan</button> : null}
     {engineer && (item.review_status === "for_review" || item.review_status === "verified") && !stage.open ? <button type="button" className={buttonSecondary} disabled={busy} onClick={() => setReturning(true)}>{item.review_status === "verified" ? `Reopen ${name}` : `Return ${name}`}</button> : null}
     {primary}
+    {engineer && item.review_status === "for_review" && current?.status === "passed" ? <button type="button" className={buttonPrimary} disabled={busy || Boolean(completionBlock)} title={completionBlock || undefined} onClick={() => void complete()}>Complete checklist</button> : null}
   </>
 
   return (
@@ -162,6 +163,7 @@ export default function WorkItemWorkspace({ itemId, onClose, onChanged, fromPlan
           {engineer && !stage.attempts.length && !stage.open && pin.status !== "verified" ? <button type="button" className={buttonSecondary} onClick={() => setEditingCriteria(true)}>{item.qa_template_id ? "Edit item & criteria" : "Add criteria to this item"}</button> : null}
         </NextActionCard>
         <StageRail stage={view.stage} completed={pin.status === "verified"} />
+        {engineer && item.review_status === "for_review" && current?.status === "passed" && completionBlock ? <p role="status" className="rounded-lg bg-amber-100 px-3 py-2 text-xs font-semibold text-amber-950 dark:bg-amber-900/40 dark:text-amber-100">Cannot complete checklist: {completionBlock}</p> : null}
         {data.error ? <p role="alert" className="rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger-fg">{data.error}</p> : null}
 
         <div className="flex flex-wrap gap-1 border-b border-line pb-2" role="tablist" aria-label="Work item sections">
@@ -180,9 +182,13 @@ export default function WorkItemWorkspace({ itemId, onClose, onChanged, fromPlan
         <section hidden={tab !== "corrections"} role="tabpanel" id={`${formId}-panel-corrections`} aria-labelledby={`${formId}-tab-corrections`} className="space-y-4">
           <div>
             <h3 className={heading}>NCRs linked to {name}</h3>
-            {!ncrs.length ? <p className="text-sm text-fg-muted">No NCR has been raised against {name}.</p> : (
+            {history.loading ? <p role="status" className="text-sm text-fg-muted">Loading corrections and NCRs…</p> : data.error ? <p role="alert" className="text-sm text-danger-fg">NCR information is unavailable. Reload the work item before reviewing corrections.</p> : !ncrs.length ? <div role="status" className="space-y-1 rounded-xl border border-line bg-surface-muted p-4 text-sm">
+              <p className="font-bold">No NCR recorded for {name}.</p>
+              <p className="text-fg-muted">{current?.status === "passed" && view.stage !== "correction" ? "The current inspection passed without a linked NCR. No NCR correction is required." : "NCRs appear here when a failed inspection criterion or a recorded defect is linked to this item."}</p>
+            </div> : <>
+              <p className="mb-2 text-xs text-fg-muted">{openNcrs} open · {ncrs.length - openNcrs} closed. Closed NCRs remain in this record.</p>
               <ul className="space-y-2">{ncrs.map((row) => <NcrRow key={row.id} defect={row} today={manilaToday()} canDecide={engineer && row.status === "for_verification"} onOpen={() => setDefectOpen(row.id)} onDecided={reload} />)}</ul>
-            )}
+            </>}
           </div>
           {foreman && view.stage === "correction" ? (
             <CorrectionForm formId={formId} item={item} pin={pin} draft={draft} previousIr={previousIr} pinItems={data.pinItems} attempts={history.attempts} photos={photos} defects={defects} submissions={submissions} onChanged={data.reload} onBusy={setBusy} />
@@ -194,11 +200,12 @@ export default function WorkItemWorkspace({ itemId, onClose, onChanged, fromPlan
         </section>
 
         <section hidden={tab !== "evidence"} role="tabpanel" id={`${formId}-panel-evidence`} aria-labelledby={`${formId}-tab-evidence`} className="space-y-4">
+          {stage.attempts.length > 0 || history.loading || history.error ? <SubmittedEvidence key={`${pin.id}:${item.id}`} itemId={item.id} pinId={pin.id} submissions={history.submissions} inspections={history.inspections} loading={history.loading} error={history.error} nameOf={nameOf} /> : null}
           {!stage.attempts.length ? <div><h3 className={heading}>Inspection criteria for {name}</h3>{template ? <ul className="space-y-2">{template.qa_template_items.map(row => <li key={row.id} className="rounded-lg border border-line p-3 text-sm"><strong>{row.text}</strong>{row.reference ? <p className="mt-1 text-xs text-fg-muted">Reference: {row.reference}</p> : null}<QaRequirements item={row} /></li>)}</ul> : <p className="text-sm text-fg-muted">The Engineer must add the criteria to this item.</p>}</div> : null}
           <EvidenceCompare itemId={item.id} label={`${pin.title} → ${name}`} attempts={stage.attempts.map((row) => row.submission as unknown as { photos_snapshot: PinPhoto[] })} draftPhotos={draft ? photos.filter((photo) => photo.qa_attempt_id === draft.id) : []} role={profile?.role} />
           {!stage.attempts.length ? <InitialEvidence item={item} pin={pin} canWork={foreman && !stage.open && item.review_status !== "for_review" && item.review_status !== "verified" && pin.status !== "verified"} meId={profile?.id ?? ""} onRemarkChange={value => { draftRemark.current = value }} onChanged={data.reload} />
             : draft ? <div><h3 className={heading}>Correction photos (next request)</h3><PinPhotos pin={pin} checklistItemId={item.id} attemptId={draft.id} canAdd={false} canRemoveAny={false} meId={profile?.id ?? ""} columns={3} /><p className="mt-1 text-xs text-fg-muted">Add or remove them in the correction form under Corrections &amp; NCRs.</p></div>
-            : <p className="text-sm text-fg-muted">Submitted photos and remarks are kept with each request under Attempts &amp; history, unchanged.</p>}
+            : null}
         </section>
 
         <section hidden={tab !== "history"} role="tabpanel" id={`${formId}-panel-history`} aria-labelledby={`${formId}-tab-history`} className="space-y-4">
@@ -296,12 +303,14 @@ function NcrRow({ defect, today, canDecide, onOpen, onDecided }: { defect: Defec
 
 // First request photo against the latest correction photo of the same item.
 function EvidenceCompare({ itemId, label, attempts, draftPhotos, role }: { itemId: string; label: string; attempts: Array<{ photos_snapshot: PinPhoto[] }>; draftPhotos: PinPhoto[]; role?: string | null }) {
+  const corrections = draftPhotos.filter(photo => photo.checklist_item_id === itemId)
+  if (attempts.length < 2 && !corrections.length) return null
   const first = attempts[0]?.photos_snapshot.find((photo) => photo.checklist_item_id === itemId) ?? null
-  const latest = draftPhotos[draftPhotos.length - 1] ?? [...attempts].reverse().map((row) => row.photos_snapshot.filter((photo) => photo.checklist_item_id === itemId).pop()).find(Boolean) ?? null
+  const latest = corrections[corrections.length - 1] ?? [...attempts].reverse().map((row) => row.photos_snapshot.filter((photo) => photo.checklist_item_id === itemId).pop()).find(Boolean) ?? null
   if (!first || !latest || first.id === latest.id || photoPreviewBlocked(role, first) || photoPreviewBlocked(role, latest)) return null
   return <div className="max-w-xl">
     <h3 className={heading}>Before and after</h3>
-    <BeforeAfter bucket="pin-photos" labels={["Original request", draftPhotos.length ? "Correction" : "Latest request"]} before={{ path: first.path, at: first.created_at, caption: first.caption, photo: { ...first, label: `${label} · Original request` } }} after={{ path: latest.path, at: latest.created_at, caption: latest.caption, photo: { ...latest, label: `${label} · Latest` } }} />
+    <BeforeAfter bucket="pin-photos" labels={["Original request", corrections.length ? "Correction" : "Latest request"]} before={{ path: first.path, at: first.created_at, caption: first.caption, photo: { ...first, label: `${label} · Original request` } }} after={{ path: latest.path, at: latest.created_at, caption: latest.caption, photo: { ...latest, label: `${label} · Latest` } }} />
   </div>
 }
 

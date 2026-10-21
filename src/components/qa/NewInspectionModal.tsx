@@ -73,7 +73,7 @@ export default function NewInspectionModal({
   return (
     <Modal
       title="Request a stage / hold-point inspection"
-      description="Use this for a stage or hold point. Submit work items from the work checklist for final acceptance. An open QA request blocks further requests for that work."
+      description="Use this for a stage or hold point. Submit checklist items from their work checklist for QA and Engineer completion. The same checklist item cannot have duplicate pending requests."
       size="lg"
       onClose={onClose}
       footer={

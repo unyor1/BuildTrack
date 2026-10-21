@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { photoDateBounds, type PhotoDates, type GalleryPhoto, type PhotoScope } from "./photoGalleryModel"
 import { fetchAll } from "./paging"
 import { reportDateLong } from "./reportFormat"
-import { byProject, useLiveReload } from "./realtime"
+import { byProject, useLiveReload, usePeriodicReload } from "./realtime"
 import { supabase } from "./supabase"
 
 export type PhotoTab = "daily" | "checklist"
@@ -59,6 +59,7 @@ export function useEvidencePhotos(projectId: string | null, tab: PhotoTab, repor
     ...byProject(tab === "daily" ? "daily_report_photos" : "pin_photos", projectId),
     ...byProject("daily_reports", projectId), ...byProject("pins", projectId), ...byProject("pin_checklist_items", projectId),
   ], () => void reload())
+  usePeriodicReload(projectId && reportId !== null ? `photos:${projectId}:${tab}:${reportId ?? "all"}` : null, () => void reload())
   return { photos, loading, error, reload }
 }
 
@@ -66,12 +67,20 @@ export function useEvidencePhotos(projectId: string | null, tab: PhotoTab, repor
 export type WorkItemOption = { id: string; pin_id: string; text: string; position: number; done: boolean; review_status: string | null }
 export function useProjectWorkItems(projectId: string | null, enabled: boolean) {
   const [items, setItems] = useState<WorkItemOption[]>([])
-  useEffect(() => {
-    let active = true
-    if (!projectId || !enabled) { setItems([]); return }
-    void fetchAll<WorkItemOption>((from, to) => supabase.from("pin_checklist_items").select("id,pin_id,text,position,done,review_status").eq("project_id", projectId).order("pin_id").order("position").order("id").range(from, to))
-      .then((result) => { if (active && !result.error) setItems(result.data) })
-    return () => { active = false }
+  const [loadedFor, setLoadedFor] = useState<string | null>(null)
+  const sequence = useRef(0)
+  const reload = useCallback(async () => {
+    const run = ++sequence.current
+    if (!projectId || !enabled) { setItems([]); setLoadedFor(null); return }
+    const result = await fetchAll<WorkItemOption>((from, to) => supabase.from("pin_checklist_items").select("id,pin_id,text,position,done,review_status").eq("project_id", projectId).order("pin_id").order("position").order("id").range(from, to)).catch(() => ({ data: [] as WorkItemOption[], error: true }))
+    if (run !== sequence.current) return
+    setItems(result.error ? [] : result.data); setLoadedFor(projectId)
   }, [projectId, enabled])
-  return items
+  useEffect(() => {
+    setItems([]); void reload()
+    return () => { sequence.current++ }
+  }, [reload])
+  useLiveReload(enabled ? byProject("pin_checklist_items", projectId) : [], () => void reload())
+  usePeriodicReload(projectId && enabled ? `report-items:${projectId}` : null, () => void reload())
+  return enabled && loadedFor === projectId ? items : []
 }

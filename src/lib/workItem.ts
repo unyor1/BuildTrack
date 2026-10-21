@@ -96,6 +96,7 @@ export function useWorkItem(itemId: string) {
   const [missing, setMissing] = useState(false)
   const [defects, setDefects] = useState<Defect[]>([])
   const [templateName, setTemplateName] = useState<string | null>(null)
+  const [workError, setWorkError] = useState("")
   const sequence = useRef(0)
   useEffect(() => {
     let active = true
@@ -120,6 +121,7 @@ export function useWorkItem(itemId: string) {
       fetchAll<Defect>((from, to) => supabase.from("qa_defects").select("*").eq("pin_id", pinId).order("number").range(from, to)),
     ])
     if (run !== sequence.current) return
+    setWorkError(pinRow.error ? "Could not load the work record. Reload before reviewing." : defectRows.error ? "Could not load NCRs. Reload before reviewing corrections." : "")
     if (pinRow.data) setPin(pinRow.data as Pin)
     else if (!pinRow.error) setMissing(true)
     if (!defectRows.error) setDefects(defectRows.data)
@@ -130,7 +132,7 @@ export function useWorkItem(itemId: string) {
       if (run === sequence.current) setTemplateName((data?.name as string | undefined) ?? null)
     } else setTemplateName(null)
   }, [pinId, itemId])
-  useEffect(() => { void reloadWork(); return () => { sequence.current++ } }, [reloadWork])
+  useEffect(() => { setWorkError(""); void reloadWork(); return () => { sequence.current++ } }, [reloadWork])
   useLiveReload([...byColumn("pins", "id", pinId), ...byColumn("qa_defects", "pin_id", pinId)], () => void reloadWork())
 
   const item = checklist.items.find((row) => row.id === itemId) ?? null
@@ -147,7 +149,7 @@ export function useWorkItem(itemId: string) {
     item, pin, missing, stage, draft, photos, defects, templateName, history, qa,
     pinItems: checklist.items,
     loading: !missing && (!item || !pin || history.loading),
-    error: checklist.error || history.error || qa.error,
+    error: checklist.error || history.error || qa.error || workError,
     reload,
   }
 }

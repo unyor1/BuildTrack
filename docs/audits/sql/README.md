@@ -4,6 +4,7 @@ One document per SQL file in `supabase/`. Same sections every time so changes ar
 
 | Doc | SQL file | Status |
 |---|---|---|
+| [20261021111736_qa_photo_markup](20261021111736_qa_photo_markup.md) | `supabase/migrations/20261021111736_qa_photo_markup.sql` | Applied; markup overlay on inspection / NCR evidence photos, validated and insert-only |
 | [Independent checklist-item QA](../2026-10-20-concurrent-checklist-qa.md) | `supabase/migrations/20261020072554_concurrent_checklist_qa.sql` | Applied; item-scoped requests allow adding and submitting other items during review; evidence, authorization and completion guards verified |
 | [Direct checklist-item QA](../2026-10-20-direct-item-qa.md) | `supabase/migrations/20261020064247_direct_item_qa.sql` | Applied; atomic Engineer item+criteria save, direct Foreman submission, pending/evidence guards and legacy history verified |
 | [Biometric attendance](../2026-10-19-biometric-attendance.md) | `supabase/migrations/20261019104906_biometric_attendance_board.sql`, `20261019105837_biometric_device_receiver.sql` | Applied; worker profiles, private photos, live display and authenticated ESP32 receiver verified; physical AS608/ESP32 setup and acceptance test required |
@@ -51,6 +52,7 @@ One document per SQL file in `supabase/`. Same sections every time so changes ar
 
 ## Latest workflow migrations
 
+- [`20261021111736_qa_photo_markup.sql`](20261021111736_qa_photo_markup.md): applied via connector; see [QA photo markup audit](../2026-10-21-qa-photo-markup.md). `qa_photos.annotations` checked by `valid_issue_markup`, no UPDATE grant.
 - `20261019101438_site_issue_checklist_filter.sql`: applied and live-verified; see [issue checklist filtering audit](../2026-10-19-issue-checklist-filter.md). Pin-scoped checklist selection, durable name snapshot, checklist filters and backward-compatible RPC signatures.
 - `20261019095439_site_issue_photos.sql`: applied and live-verified; see [site issue and zone progress audit](../2026-10-19-site-issues-and-zone-progress.md). Private original photos, versioned markup, atomic issue/return actions, shared pin-state progress and exact-sheet links.
 - `20261019093602_philippine_qa_standards.sql`: applied and live-verified; see [Philippine QA standards audit](../2026-10-19-philippine-qa-standards.md); additive references and snapshot-safe acceptance/evidence instructions.

@@ -112,7 +112,7 @@ export default function ForemanDashboard({ onNavigate }: ForemanPageProps) {
         <StatCard label="Sent back" value={unavailable ? "-" : counts.sent_back} tone={counts.sent_back ? "amber" : "green"} note="Needs more work" onClick={() => show("sent_back")} />
         <StatCard label="Overdue" value={unavailable ? "-" : counts.overdue} tone={counts.overdue ? "red" : "green"} note="Past the deadline" onClick={() => show("overdue")} />
         <StatCard label="Waiting" value={unavailable ? "-" : counts.waiting} tone="brand" note="For the engineer" onClick={() => show("waiting")} />
-        <StatCard label="Completed" value={unavailable ? "-" : doneCount} tone="green" note="Accepted work" />
+        <StatCard label="Completed" value={unavailable ? "-" : doneCount} tone="green" note="Completed work pins" />
         <StatCard label="Today's daily report" value={unavailable ? "-" : reportStatusLabel(reports, Boolean(projectId))} tone="sky" note="Open today's report · Manila date" onClick={openReport} />
         <StatCard label="Checklist items left" value={unavailable ? "-" : checklistLeft} tone="amber" note="Not ready yet on your work" />
         <StatCard label="Photos today" value={unavailable ? "-" : photosToday} tone="green" note="Your uploads · Manila date" />

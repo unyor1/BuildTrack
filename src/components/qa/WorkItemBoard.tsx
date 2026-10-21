@@ -12,7 +12,7 @@ export type BoardGroup = { key: string; title: string; short: string; hint?: str
 
 const edge: Record<ItemStage, string> = {
   preparing: "border-l-slate-400", ready: "border-l-sky-500", requested: "border-l-fuchsia-600", inspecting: "border-l-fuchsia-600",
-  passed: "border-l-amber-500", correction: "border-l-red-600", accepted: "border-l-green-600",
+  passed: "border-l-amber-500", correction: "border-l-red-600", completed: "border-l-green-600",
 }
 const chip = (active: boolean) => `rounded-full border px-3 py-1 text-xs font-bold transition ${active ? "border-brand bg-brand text-white" : "border-line bg-surface text-fg hover:bg-surface-muted"}`
 
@@ -41,7 +41,7 @@ export default function WorkItemBoard({ groups, loading, error, nameOf, sheetOf,
   const shownCount = shown.reduce((sum, group) => sum + group.rows.length, 0)
   const responsible = (row: WorkItemRow) => row.view.owner === "Foreman" ? `Foreman: ${nameOf(row.pin.assigned_to)}`
     : row.view.owner === "Engineer" ? `Engineer: ${row.current?.inspector_id ? nameOf(row.current.inspector_id) : "Project Engineer"}`
-    : row.view.stage === "accepted" ? "Done: accepted" : "Blocked"
+    : row.view.stage === "completed" ? "Checklist completed" : "Blocked"
 
   if (loading) return <SkeletonList rows={4} label="Loading work items" />
   if (!rows.length) return <>{error ? <p role="alert" className="mb-3 rounded-lg bg-danger-soft px-4 py-2 text-sm text-danger-fg">{error}</p> : null}<EmptyState title={emptyTitle}>{emptyText}</EmptyState></>
@@ -61,7 +61,7 @@ export default function WorkItemBoard({ groups, loading, error, nameOf, sheetOf,
               <p className="mt-1 text-xs">{row.view.status}</p>
             </div>
             <div className="min-w-0 text-xs">
-              <p className={`font-bold ${row.view.owner || row.view.stage === "accepted" ? "text-fg-muted" : "text-amber-800 dark:text-amber-300"}`}>{responsible(row)}</p>
+              <p className={`font-bold ${row.view.owner || row.view.stage === "completed" ? "text-fg-muted" : "text-amber-800 dark:text-amber-300"}`}>{responsible(row)}</p>
               <p className="mt-0.5"><span className="font-bold">Next:</span> {row.view.next}</p>
               {row.view.blocker ? <p className="mt-0.5 font-semibold text-amber-800 dark:text-amber-300">Blocker: {row.view.blocker}</p> : null}
             </div>
@@ -78,8 +78,8 @@ export default function WorkItemBoard({ groups, loading, error, nameOf, sheetOf,
       <div className="space-y-3 rounded-2xl border border-line bg-surface p-3 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex flex-wrap gap-1.5" role="group" aria-label="Show work items">
-            <button type="button" aria-pressed={filter === "all"} onClick={() => setFilter("all")} className={chip(filter === "all")}>All <span className={filter === "all" ? "text-white/85" : "text-fg-muted"}>{filtered.reduce((sum, group) => sum + group.rows.length, 0)}</span></button>
             {present.map((group) => <button key={group.key} type="button" aria-pressed={filter === group.key} title={group.title} onClick={() => setFilter(group.key)} className={chip(filter === group.key)}>{group.short} <span className={filter === group.key ? "text-white/85" : "text-fg-muted"}>{group.rows.length}</span></button>)}
+            <button type="button" aria-pressed={filter === "all"} onClick={() => setFilter("all")} className={chip(filter === "all")}>All <span className={filter === "all" ? "text-white/85" : "text-fg-muted"}>{filtered.reduce((sum, group) => sum + group.rows.length, 0)}</span></button>
           </div>
           <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search work items" aria-label="Search work items" className={`${inputClass} !w-full !py-1.5 sm:!w-60`} />
         </div>

@@ -27,7 +27,7 @@ import type { EngineerPageProps } from "./types"
 const listButton = "flex w-full flex-wrap items-center gap-2 rounded-lg border border-line bg-surface px-3 py-2 text-left text-sm hover:bg-surface-muted"
 
 // The Engineer's review inbox: everything waiting for an Engineer decision, grouped by the decision. One guided review per work item
-// (inspect -> decide its NCR corrections -> accept), stage / hold-point requests and NCRs outside work items listed separately.
+// (inspect -> decide its NCR corrections -> complete checklist), with NCRs outside work items listed separately.
 // The QA register is for searching, exports and history; this page is for acting.
 export default function EngineerProgressVerification({ onNavigate }: EngineerPageProps) {
   const projectId = getSelectedProjectId()
@@ -46,13 +46,12 @@ export default function EngineerProgressVerification({ onNavigate }: EngineerPag
   const groups = [
     { key: "inspect", short: "Inspect", title: "Inspect", hint: "Requested or in progress: record the results against the inspection criteria.", rows: rows.filter((row) => row.view.action === "inspect") },
     { key: "ncrs", short: "NCRs", title: "Decide NCR corrections", hint: "The Foreman's correction package is in: close each NCR or send it back (sending back returns the work item).", rows: rows.filter((row) => row.view.action !== "inspect" && row.ncrs.some((ncr) => ncr.status === "for_verification")) },
-    { key: "accept", short: "Accept", title: "Accept", hint: "Inspection passed and every linked NCR is closed.", rows: rows.filter((row) => row.view.action === "accept") },
+    { key: "complete", short: "Complete checklist", title: "Ready to complete", hint: "Inspection passed and every linked NCR is closed. Open the item and click Complete checklist.", rows: rows.filter((row) => row.view.action === "complete") },
     { key: "criteria", short: "Criteria missing", title: "Add criteria to existing items", hint: "These older items need criteria. New items include criteria when created.", rows: rows.filter((row) => row.view.action === "approve_criteria") },
   ]
   const yours = new Set(groups.flatMap((group) => group.rows.map((row) => row.item.id))).size
-  const stageOpen = ws.inspections.filter((row) => (row.status === "requested" || row.status === "in_progress") && !items.workInspectionIds.has(row.id))
   const otherNcrs = ws.defects.filter((row) => row.status === "for_verification" && !linked.has(row.id))
-  // Every item accepted but the work is not Completed: something outside the items still blocks it (NCR, stage inspection).
+  // Every checklist completed but the work pin is not: something outside the items still blocks it (NCR, stage inspection).
   const blockedPins = work.pins.filter((pin) => pin.status !== "verified" && rows.some((row) => row.pin.id === pin.id) && rows.filter((row) => row.pin.id === pin.id).every((row) => row.item.review_status === "verified"))
   // Older whole-work submissions without item review keep the earlier review dialog.
   const legacy = work.pins.filter((pin) => pin.status === "for_review" && !rows.some((row) => row.pin.id === pin.id && row.attempts > 0))
@@ -75,14 +74,14 @@ export default function EngineerProgressVerification({ onNavigate }: EngineerPag
       <PageHead
         eyebrow="Inspection"
         title="Review inbox"
-        description="What waits for your decision, one work item at a time: inspect it, decide the NCR corrections that came with it, then accept it. The work is Completed automatically when every item is accepted and every NCR and inspection is clear."
+        description="Inspect each checklist, close its NCRs, then click Complete checklist. The work pin completes when every checklist is completed and every NCR and inspection is clear."
         actions={<><button type="button" className={buttonSecondary} onClick={() => onNavigate("qa")}>QA register</button><button type="button" className={buttonSecondary} onClick={() => onNavigate("annotation")}>Open the plan</button></>}
       />
 
       {!projectId ? null : (
         <>
           <div className="mb-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <StatCard label="Waiting for you" value={yours + stageOpen.length + otherNcrs.length + legacy.length} tone="amber" note={`${yours} work item${yours === 1 ? "" : "s"} · ${stageOpen.length} stage request${stageOpen.length === 1 ? "" : "s"}`} />
+            <StatCard label="Waiting for you" value={yours + otherNcrs.length + legacy.length} tone="amber" note={`${yours} checklist item${yours === 1 ? "" : "s"} · ${otherNcrs.length} other NCR${otherNcrs.length === 1 ? "" : "s"}`} />
             <StatCard label="Waiting for the Foreman" value={rows.filter((row) => row.view.owner === "Foreman" && row.view.stage !== "preparing").length} tone="sky" note="Ready to submit or correcting" />
             <StatCard label="Open NCRs" value={ws.defects.filter((row) => row.status !== "closed").length} tone="red" onClick={() => onNavigate("qa")} note="See the QA register" />
             <StatCard label="Completed work" value={work.pins.filter((pin) => pin.status === "verified").length} tone="green" note={`of ${work.pins.filter((pin) => pin.category !== "note").length} work pins`} />
@@ -91,10 +90,6 @@ export default function EngineerProgressVerification({ onNavigate }: EngineerPag
           <WorkItemBoard groups={groups} loading={items.loading || ws.loading} error={items.error || ws.error} nameOf={ws.nameOf} sheetOf={work.sheetOf} onOpen={setItemId}
             emptyTitle="All caught up" emptyText="When a Foreman submits a work item or a correction package, it appears here and you get a notification." />
 
-          {stageOpen.length ? <section className="mt-8" aria-labelledby="stage-open">
-            <h2 id="stage-open" className="mb-2 border-l-4 border-accent pl-3 text-base font-extrabold text-brand-strong">Stage and hold-point requests ({stageOpen.length})</h2>
-            <ul className="space-y-1.5">{stageOpen.map((row) => <li key={row.id}><button type="button" className={listButton} onClick={() => setInspectionId(row.id)}><strong>{refNumber("ir", row.number)}</strong><span className="min-w-0 flex-1 truncate">{row.title}</span><Chip tone="bg-surface-muted text-fg">Stage / hold point</Chip><Chip tone={inspectionTone[row.status]}>{inspectionStatusLabels[row.status]}</Chip></button></li>)}</ul>
-          </section> : null}
 
           {otherNcrs.length ? <section className="mt-8" aria-labelledby="other-ncrs">
             <h2 id="other-ncrs" className="mb-2 border-l-4 border-accent pl-3 text-base font-extrabold text-brand-strong">NCRs to verify outside work items ({otherNcrs.length})</h2>
@@ -102,13 +97,13 @@ export default function EngineerProgressVerification({ onNavigate }: EngineerPag
           </section> : null}
 
           {blockedPins.length ? <section className="mt-8" aria-labelledby="blocked-work">
-            <h2 id="blocked-work" className="mb-1 border-l-4 border-accent pl-3 text-base font-extrabold text-brand-strong">Every item accepted, completion blocked ({blockedPins.length})</h2>
+            <h2 id="blocked-work" className="mb-1 border-l-4 border-accent pl-3 text-base font-extrabold text-brand-strong">Checklists completed, work pin blocked ({blockedPins.length})</h2>
             <p className="mb-2 pl-4 text-xs text-fg-muted">An NCR or inspection outside the work items is still open. Clearing it completes the work automatically.</p>
             <ul className="space-y-1.5">{blockedPins.map((pin) => {
               const blockers = ws.defects.filter((row) => row.pin_id === pin.id && row.status !== "closed")
               return <li key={pin.id} className="flex flex-wrap items-center gap-2 rounded-lg border border-line bg-surface px-3 py-2 text-sm">
                 <strong>{pin.title}</strong><span className="text-xs text-fg-muted">{work.sheetOf(pin.blueprint_id)}</span>
-                <span className="ml-auto flex flex-wrap gap-1.5">{blockers.map((row) => <button key={row.id} type="button" className={buttonSecondary + " !py-1 !text-xs"} onClick={() => setDefectId(row.id)}>{refNumber("ncr", row.number)} · {defectStatusLabels[row.status]}</button>)}{!blockers.length ? <button type="button" className={buttonSecondary + " !py-1 !text-xs"} onClick={() => setSelectedId(pin.id)}>Review work</button> : null}</span>
+                <span className="ml-auto flex flex-wrap gap-1.5">{blockers.map((row) => <button key={row.id} type="button" className={buttonSecondary + " !py-1 !text-xs"} onClick={() => setDefectId(row.id)}>{refNumber("ncr", row.number)} · {defectStatusLabels[row.status]}</button>)}{!blockers.length ? <button type="button" className={buttonSecondary + " !py-1 !text-xs"} onClick={() => onNavigate("qa")}>QA register</button> : null}</span>
               </li>
             })}</ul>
           </section> : null}

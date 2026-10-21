@@ -21,6 +21,6 @@ export function hitPath(role: SearchRole, kind: HitKind, id: string, projectId: 
   if (kind === "pin") return role === "engineer" ? `/engineer/annotation?${q}&pin=${id}` : role === "foreman" ? `/foreman/dashboard?${q}&pin=${id}` : `/client/blueprint?${q}&pin=${id}`
   if (kind === "defect") return role === "engineer" ? `/engineer/qa?${q}&tab=defects&defect=${id}` : role === "foreman" ? `/foreman/issues?${q}&defect=${id}` : null
   if (kind === "inspection") return role === "engineer" ? `/engineer/qa?${q}&tab=inspections&inspection=${id}` : null
-  return role === "engineer" ? `/engineer/reports?${q}` : role === "foreman" ? `/foreman/daily-report?${q}` : `/client/site-logs?${q}`
+  return role === "engineer" ? `/engineer/reports?${q}&report=${id}` : role === "foreman" ? `/foreman/daily-report?${q}&report=${id}` : `/client/site-logs?${q}&report=${id}`
 }
 

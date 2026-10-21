@@ -130,7 +130,7 @@ export default function CorrectionForm({ formId, item, pin, draft, previousIr, p
             })}
           </ul>
         )}
-        {answerable.length > selected.length ? <p role="status" className="text-xs font-semibold text-amber-800 dark:text-amber-300">{answerable.length - selected.length} linked NCR{answerable.length - selected.length === 1 ? " is" : "s are"} not selected. {item.text} cannot be accepted until every linked NCR is closed.</p> : null}
+        {answerable.length > selected.length ? <p role="status" className="text-xs font-semibold text-amber-800 dark:text-amber-300">{answerable.length - selected.length} linked NCR{answerable.length - selected.length === 1 ? " is" : "s are"} not selected. {item.text} cannot be completed until every linked NCR is closed.</p> : null}
       </fieldset>
       {selected.length ? <div className="grid gap-3 sm:grid-cols-2">
         <div><label className={label} htmlFor={`${formId}-root`}>Root cause (optional)</label><textarea id={`${formId}-root`} rows={2} maxLength={1000} className={inputClass} value={root} onChange={(event) => setRoot(event.target.value)} placeholder="Why did it happen?" /></div>
