@@ -4,11 +4,13 @@ import Brand from "./Brand"
 type HeaderProps = {
   navigate: (page: Page) => void
   brandingOnly?: boolean
+  navigation?: { label: string; href: string }[]
 }
 
 export default function Header({
   navigate,
   brandingOnly = false,
+  navigation,
 }: HeaderProps) {
   return (
     <header className="site-header">
@@ -26,10 +28,13 @@ export default function Header({
       {!brandingOnly && (
         <>
           <nav className="main-nav" aria-label="Main navigation">
-            <a href="/#about">About</a>
-            <a href="/#services">Services</a>
-            <a href="/#features">Features</a>
-            <a href="/#contact">Contact</a>
+            {(navigation ?? [
+              { label: "Valencia", href: "/valencia" },
+              { label: "About", href: "/#about" },
+              { label: "Services", href: "/#services" },
+              { label: "Features", href: "/#features" },
+              { label: "Contact", href: "/#contact" },
+            ]).map(link => <a key={link.href} href={link.href}>{link.label}</a>)}
           </nav>
           <div className="header-actions">
             <button

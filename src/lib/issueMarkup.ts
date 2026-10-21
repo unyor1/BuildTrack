@@ -1,3 +1,5 @@
+import { normalizeAngle } from "./shapes.ts"
+
 export const ISSUE_PHOTO_LIMIT = 40
 export const MARKUP_LIMIT = 150
 export const MARKUP_POINT_LIMIT = 500
@@ -7,6 +9,7 @@ export type MarkupPoint = { x: number; y: number }
 export type IssueMarkup = {
   id: string; kind: Exclude<MarkupTool, "select">; x: number; y: number; x2: number; y2: number
   color: string; stroke: number; fontSize: number; text: string; points: MarkupPoint[]
+  rotation?: number // degrees around the mark's own centre (markupBox); absent = 0. valid_issue_markup allows -360..360
 }
 
 export const clampCoordinate = (value: number) => Math.max(0, Math.min(100, value))
@@ -15,7 +18,9 @@ export function markupProblem(value: unknown): string {
   if (!Array.isArray(value) || value.length > MARKUP_LIMIT) return `Use at most ${MARKUP_LIMIT} annotations per photo.`
   const ids = new Set<string>()
   for (const item of value) {
-    if (!item || typeof item !== "object" || Object.keys(item).sort().join(",") !== "color,fontSize,id,kind,points,stroke,text,x,x2,y,y2") return "Invalid annotation fields."
+    const keys = item && typeof item === "object" ? Object.keys(item).sort().join(",") : ""
+    if (keys !== "color,fontSize,id,kind,points,stroke,text,x,x2,y,y2" && keys !== "color,fontSize,id,kind,points,rotation,stroke,text,x,x2,y,y2") return "Invalid annotation fields."
+    if ("rotation" in item && (typeof item.rotation !== "number" || !Number.isFinite(item.rotation) || Math.abs(item.rotation) > 360)) return "Invalid annotation rotation."
     if (typeof item.id !== "string" || !/^[a-zA-Z0-9-]{1,64}$/.test(item.id) || ids.has(item.id)) return "Invalid or duplicate annotation ID."
     ids.add(item.id)
     if (!markupTools.slice(1).includes(item.kind) || ![item.x, item.y, item.x2, item.y2].every(coordinate)) return "Invalid annotation coordinates or type."
@@ -33,6 +38,31 @@ export function moveMarkup(item: IssueMarkup, dx: number, dy: number): IssueMark
   const x = Math.max(-Math.min(...points.map(p => p.x)), Math.min(100 - Math.max(...points.map(p => p.x)), dx))
   const y = Math.max(-Math.min(...points.map(p => p.y)), Math.min(100 - Math.max(...points.map(p => p.y)), dy))
   return { ...item, x: item.x + x, y: item.y + y, x2: item.x2 + x, y2: item.y2 + y, points: item.points.map(p => ({ x: p.x + x, y: p.y + y })) }
+}
+
+// The unrotated box of a mark in the photo's SVG units (1000 wide; `height` = 1000 x photo height / width). Text is not
+// measured in the browser, so its box is estimated from the font size and the longest line; it is the turning centre and the
+// selection frame, so it only has to be stable, not exact.
+export function markupBox(item: IssueMarkup, height: number): { x: number; y: number; width: number; height: number } {
+  const sx = (value: number) => value * 10, sy = (value: number) => (value * height) / 100
+  if (item.kind === "text") {
+    const lines = item.text.split("\n")
+    return { x: sx(item.x), y: sy(item.y), width: Math.max(...lines.map((line) => line.length), 1) * item.fontSize * 0.56, height: lines.length * item.fontSize * 1.2 }
+  }
+  const xs = item.kind === "draw" && item.points.length ? item.points.map((p) => sx(p.x)) : [sx(item.x), sx(item.x2)]
+  const ys = item.kind === "draw" && item.points.length ? item.points.map((p) => sy(p.y)) : [sy(item.y), sy(item.y2)]
+  const left = Math.min(...xs), top = Math.min(...ys)
+  return { x: left, y: top, width: Math.max(...xs) - left, height: Math.max(...ys) - top }
+}
+export function markupCenter(item: IssueMarkup, height: number) {
+  const box = markupBox(item, height)
+  return { x: box.x + box.width / 2, y: box.y + box.height / 2 }
+}
+// Sets the turn in -180..180 degrees; a mark turned back to 0 drops the key so it matches an unturned mark exactly.
+export function withRotation(item: IssueMarkup, degrees: number): IssueMarkup {
+  const { rotation: _previous, ...rest } = item
+  const value = normalizeAngle(Number.isFinite(degrees) ? degrees : 0)
+  return value ? { ...rest, rotation: value } : rest
 }
 
 export function issuePhotoProblem(file: Pick<File, "type" | "size">): string {

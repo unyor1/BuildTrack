@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs"
 import ts from "typescript"
 import { markupProblem } from "../src/lib/issueMarkup.ts"
 import { stampFields } from "../src/lib/photoStamp.ts"
+import { applyMarkupChanges } from "../src/lib/photoEditorModel.ts"
 
 // Inspection / NCR evidence photos use the client's markup editor before upload: the real lib/qa upload, EvidenceStrip,
 // IssuePhotoPicker (prepare mode) and PhotoViewer overlay, each compiled with stubbed imports (no browser, no network).
@@ -154,6 +155,7 @@ reset(); render(thumbs[1].type, thumbs[1].props)
 assert.equal(tree.type, "img", "a photo without markup is a plain thumbnail")
 
 // ---- IssuePhotoPicker prepare mode: shrinks each file, locks while busy, empty captions, QA caption limit in the editor ----
+deps.applyMarkupChanges = applyMarkupChanges
 const Picker = (await compile("../src/components/issues/IssuePhotoPicker.tsx", { "../../lib/issueMarkup": new URL("../src/lib/issueMarkup.ts", import.meta.url).href })).default
 let drafts = [], busyStates = []
 const shrink = async file => new File(["s"], file.name + ".webp", { type: "image/webp" })
@@ -167,11 +169,25 @@ await settle()
 assert.deepEqual(busyStates, [true, false]); assert.equal(drafts.length, 1, "prepare mode has no 8 MB limit: the shrunk file is kept")
 assert.equal(drafts[0].file.name, "big.jpg.webp"); assert.equal(drafts[0].caption, "")
 render(Picker, pickerProps()); assert.match(text(tree), /No caption yet/)
-button("Edit / annotate").props.onClick(); render(Picker, pickerProps())
-const editor = find(node => node.type?.name === "IssuePhotoEditor")
+pick([photoFile("second.jpg")]); await settle(); render(Picker, pickerProps())
+assert.equal(drafts.length, 2)
+all(tree).filter(node => node.type === "button" && text(node) === "Edit / annotate")[1].props.onClick(); render(Picker, pickerProps())
+let editor = find(node => node.type?.name === "IssuePhotoEditor")
+assert.equal(editor.props.start, 1, "Edit / annotate opens the slideshow on that photo"); assert.deepEqual(editor.props.photos.map(photo => photo.src), drafts.map(draft => draft.url))
 assert.equal(editor.props.title, "Mark up evidence photo"); assert.equal(editor.props.captionLimit, 200)
-editor.props.onSave(markup, "Joint gap"); render(Picker, pickerProps())
-assert.deepEqual(drafts[0].annotations, markup); assert.match(text(tree), /Joint gap · 1 mark/)
+editor.props.onClose(); render(Picker, pickerProps())
+button("Mark up photos (2)").props.onClick(); render(Picker, pickerProps())
+editor = find(node => node.type?.name === "IssuePhotoEditor"); assert.equal(editor.props.start, 0)
+const untouched = drafts[1]
+editor.props.onSave([{ id: drafts[0].id, annotations: markup, caption: "Joint gap" }]); render(Picker, pickerProps())
+assert.deepEqual(drafts[0].annotations, markup); assert.equal(drafts[1], untouched, "photos that did not change stay as they were"); assert.match(text(tree), /Joint gap · 1 mark/)
+calls.confirms.length = 0; confirmAnswer = false
+all(tree).filter(node => node.type === "button" && text(node) === "Remove")[0].props.onClick(); await settle()
+assert.equal(calls.confirms.length, 1, "removing a marked-up photo asks first"); assert.equal(drafts.length, 2, "keeping it leaves the photo and its markup")
+confirmAnswer = true
+all(tree).filter(node => node.type === "button" && text(node) === "Remove")[1].props.onClick(); await settle()
+assert.equal(calls.confirms.length, 1, "an untouched photo is removed without asking"); assert.equal(drafts.length, 1); assert.equal(drafts[0].caption, "Joint gap")
+render(Picker, pickerProps())
 // Without prepare (client reports, site issues) nothing changes: file names as captions and the 8 MB limit.
 drafts = []; reset(); render(Picker, { photos: drafts, onChange: next => { drafts = next } })
 pick([photoFile("crack.jpg")]); await settle()

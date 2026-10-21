@@ -59,14 +59,19 @@ Relevant files: `src/pages/Client/`, `src/components/client/PinDailyReports.tsx`
 
 ## Shared photo editing
 
-- Reuse `src/components/issues/IssuePhotoEditor.tsx` and `IssuePhotoPicker.tsx` for issue/client/QA markup where applicable.
+- One editor for every editable-photo flow: site issues (Log an issue, Add issue photos, Edit markup on saved issue photos), client problem reports and QA / NCR evidence (`EvidenceStrip`). Upload flows go through `src/components/issues/IssuePhotoPicker.tsx`, which opens `IssuePhotoEditor.tsx` on all chosen photos. Read-only views (client report photos, old issue-photo versions) use the same editor with `readOnly`.
+- Editor API: `photos` (`{ id, src, annotations, caption }[]`), `start`, `readOnly`, `title`, `captionLimit`, `onSave(changes)`. Save returns only the photos whose markup or caption changed; saving with no changes just closes (no new issue-photo version).
 - Preserve the original photo and save validated text, lines, arrows, shapes and freehand annotations as a separate overlay. Do not flatten over or replace the original.
-- `src/lib/canvasView.ts` shares the blueprint sheet's fit/zoom mathematics with `src/components/editor/StageCanvas.tsx`.
-- Zoom limits are 5%-1000%, with multiplicative 1.3x buttons. Fit shows the whole image with padding; Fill covers the canvas. Manual zoom/pan remains stable across fullscreen changes.
-- The editing viewport is taller (72vh normally, 78dvh fullscreen, minimum 24rem) and non-shrinking. The modal body scrolls down to the caption and other content.
+- Layout follows the blueprint editor. `PhotoEditorToolbar.tsx` is one compact icon toolbar with tooltips: (slideshow controls) | Select, Pan | Text, Shapes dropdown (Line, Arrow, Rectangle, Ellipse, Freehand) | Undo, Redo | View original | zoom − % + Fit Fill | fullscreen. The active tool is filled in brand colour. `MarkupProperties` (colour swatches + custom colour, line width or text size S/M/L/XL, text, delete) shows only while a drawing tool is active or a mark is selected. Changes to a selected mark apply at once; a slider drag or typing run is one undo step, each colour or size pick is its own. No pins, tape or other blueprint-only actions.
+- Shortcuts: V select, H pan, T text, L line, A arrow, R rectangle, E ellipse, D freehand, Del delete, Ctrl+Z / Ctrl+Shift+Z (or Ctrl+Y), Page Up / Page Down between photos. They are ignored while typing in a field.
+- Several photos open as a manual slideshow: "Image n of N" with Previous / Next (no wrap-around, never automatic) and a collapsible numbered thumbnail strip (`PhotoSlides.tsx`, like the sheet sidebar; a row above the photo on phones) with the current photo highlighted and an "edited" note. Each photo keeps its own markup, caption and undo / redo history (`src/lib/photoEditorModel.ts`, pure and tested). Fullscreen and the chosen tool stay when moving between photos. A single photo shows none of these controls.
+- Unsaved work is protected: closing the editor with changes asks (`useConfirm`); the picker asks before removing a photo that has markup or an edited caption; Escape leaves fullscreen first.
+- `src/lib/canvasView.ts` shares the blueprint sheet's fit/zoom mathematics with `src/components/editor/StageCanvas.tsx`. Zoom limits are 5%-1000%, multiplicative 1.3x buttons. Every photo opens with **Fit** (whole image, padding, never cropped or stretched). **Fill** covers the canvas only when chosen and stays chosen for the next photo; manual zoom/pan stays stable across fullscreen changes.
+- The canvas gets most of the space: 56vh on phones and 64vh beside the thumbnails on wider screens (minimums 18-20rem); in fullscreen it takes all remaining height. The dialog body still scrolls to the caption and hints on small screens.
 - Ordinary mouse-wheel scrolling moves through the editor. Ctrl/Command + wheel zooms toward the cursor. Keep button zoom, Pan/Select/Space/middle-button drag, touch pinch and keyboard controls working.
 - Fullscreen uses an icon button. Escape leaves fullscreen first without discarding unsaved markup. The fullscreen caption disclosure leaves more room for editing.
-- Keep the photo and SVG overlay in the same transformed stage so annotations stay aligned at every scale.
+- Keep the photo and SVG overlay in the same transformed stage so annotations stay aligned at every scale. `MarkupLayer` lives in `MarkupLayer.tsx` (re-exported by the editor) for thumbnails and viewers.
+- `ui/Popover.tsx` panels share the dialogs' z-900 layer, so dropdowns opened inside a dialog appear above it and stacking follows opening order.
 
 ## Workforce and biometric attendance
 
@@ -98,6 +103,16 @@ Relevant files: `src/pages/Client/`, `src/components/client/PinDailyReports.tsx`
 - Keep task-specific implementation/security/test records in `docs/audits/`. Update this handover when workflow decisions change rather than recording contradictory instructions indefinitely.
 - Commit/push only when requested. Check the configured remote and remote branch first; never force-push to resolve an unexpected divergence.
 
+## Public Valencia introduction
+
+- `/valencia` is a standalone public company introduction, separate from the BuildTrack landing page. The landing header, About section and footer link to it. Do not replace the existing home page.
+- Sources: the Home, About Us, Services, Projects and Contact pages at `https://valenciaconstructionservices.mystrikingly.com/`, checked 2026-10-21. Keep company facts separate from private project records and do not invent project completion dates, statistics, staff, certifications or testimonials.
+- `src/pages/Public/ValenciaIntroduction.tsx`, `valenciaContent.ts` and scoped `valencia.css` reuse the public Header and its brand colors. `/valencia` is rendered as static public content; workspace routes retain their existing RouteGuard.
+- `src/assets/valencia/introduction/` holds local source photos, an enhanced interior hero and the transparent logo. Preserve source images and do not flatten the logo's alpha channel.
+- Project filters and gallery slides are manual. Keep renderings labelled as perspectives, not finished construction; source-listed ongoing statuses are dated, not live database statuses.
+- The inquiry form prepares a `mailto:` message. It does not store or send inquiries itself; keep this clear to visitors. The address-map link uses the published Taytay office address, not the original site's generic map. No verified company social profile was available.
+- Run `pnpm test:valencia` after changes; it is included in `pnpm check`. See `docs/audits/2026-10-21-valencia-introduction.md` for sources, asset prompts and verification limitations.
+
 ## Recent implementation records
 
 - `docs/audits/2026-10-21-work-item-evidence.md`
@@ -107,5 +122,6 @@ Relevant files: `src/pages/Client/`, `src/components/client/PinDailyReports.tsx`
 - `docs/audits/2026-10-21-client-portal-connections.md`
 - `docs/audits/2026-10-21-qa-photo-markup.md`
 - `docs/audits/2026-10-21-photo-editor-zoom-fullscreen.md`
+- `docs/audits/2026-10-21-photo-editor-toolbar-slideshow.md` (supersedes the Fill-first default and viewport heights above)
 
 These audits describe individual task runs. Historical statements such as "no push was made" apply to that task, not necessarily to the current repository state. Use Git history for current commit/push status.

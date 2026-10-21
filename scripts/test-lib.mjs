@@ -24,10 +24,11 @@ import { reportableDates } from "../src/lib/reportFormat.ts"
 import { buildZip, crc32, safeEntryName, textBytes } from "../src/lib/zipWriter.ts"
 import { parseSettings, defaultSettings } from "../src/lib/settingsModel.ts"
 import { inspectionReportHtml } from "../src/lib/qaPrint.ts"
-import { issuePhotoProblem, issueTab, markupProblem, moveMarkup, zonePlanPath } from "../src/lib/issueMarkup.ts"
+import { issuePhotoProblem, issueTab, markupBox, markupCenter, markupProblem, moveMarkup, withRotation, zonePlanPath } from "../src/lib/issueMarkup.ts"
 import { issueChecklistIndex, issueChecklistKey, issueChecklistLabel, issueChecklistOptions, issueChecklistSelectionProblem, WHOLE_PIN_CHECKLIST } from "../src/lib/issueChecklist.ts"
 import { MAX_ATTEMPTS, backoffSeconds, isNetworkProblem, sendOrder, summarizeQueue, verdictFor } from "../src/lib/offlineModel.ts"
 import { pinLink, qrMatrix, qrSvg } from "../src/lib/qr.ts"
+import { HISTORY_LIMIT, applyMarkupChanges, changeMark, docChanged, markupChanges, markupColors, newDoc, openDocs, photoCounter, recordEdit, redoEdit, removeMark, restyleMark, stepPhoto, textSizes, toolByKey, undoEdit } from "../src/lib/photoEditorModel.ts"
 import { canFormat, decorations, displayLines, labelToSize, mergeFormat, resolveFormat, sanitizeFormat, sizeToLabel, transformText } from "../src/lib/textFormat.ts"
 import { capsulePlacement, rotatedBounds } from "../src/lib/capsule.ts"
 import { ageOn, detailsProblem, fileProblem, idTypeLabel, idTypes, maskedId } from "../src/lib/identityModel.ts"
@@ -1291,5 +1292,66 @@ test("Explicit QA item IDs take precedence over legacy readiness flags", () => {
   const row={item_ids:["w"],checklist_snapshot:[{id:"f",text:"FLOOR",done:true},{id:"w",text:"WALL",done:true}]}
   assert.deepEqual(checklistNames(row),["WALL"])
   assert.equal(checklistGroups([]).length,0)
+})
+test("Photo editor: each photo keeps its own markup, caption and undo / redo history", () => {
+  const mark=(id,x=10)=>({id,kind:"line",x,y:10,x2:40,y2:30,color:"#d93a3a",stroke:4,fontSize:30,text:"",points:[]})
+  const photos=[{id:"a",src:"a.jpg",annotations:[],caption:"First"},{id:"b",src:"b.jpg",annotations:[mark("saved")],caption:""}]
+  const docs=openDocs(photos)
+  let a=recordEdit(docs.a,[mark("one")])
+  a=recordEdit(a,[mark("one"),mark("two")])
+  assert.equal(a.past.length,2);assert.equal(recordEdit(a,a.items).past.length,2,"an edit that changes nothing adds no undo step")
+  a=undoEdit(a);assert.deepEqual(a.items.map(i=>i.id),["one"]);assert.equal(a.future.length,1)
+  a=redoEdit(a);assert.deepEqual(a.items.map(i=>i.id),["one","two"])
+  assert.equal(recordEdit(undoEdit(a),[mark("three")]).future.length,0,"a new edit clears redo")
+  const fresh=newDoc(photos[0]);assert.equal(undoEdit(fresh),fresh,"nothing to undo leaves the photo as it is");assert.equal(redoEdit(fresh),fresh)
+  let long=docs.a;for(let i=0;i<HISTORY_LIMIT+5;i++) long=recordEdit(long,[mark("m"+i)])
+  assert.equal(long.past.length,HISTORY_LIMIT)
+  const all={...docs,a:{...a,note:"First, edited"}}
+  assert.equal(docChanged(all.a,photos[0]),true);assert.equal(docChanged(all.b,photos[1]),false,"the untouched photo keeps its own state")
+  assert.deepEqual(markupChanges(photos,all).map(change=>change.id),["a"])
+  assert.equal(markupChanges(photos,all)[0].caption,"First, edited")
+  const drafts=[{id:"a",annotations:[],caption:"First",url:"blob:a"},{id:"b",annotations:[],caption:"",url:"blob:b"}]
+  const applied=applyMarkupChanges(drafts,markupChanges(photos,all))
+  assert.equal(applied[0].caption,"First, edited");assert.equal(applied[0].url,"blob:a");assert.equal(applied[1],drafts[1])
+  assert.equal(removeMark(docs.b,"saved").items.length,0);assert.equal(removeMark(docs.b,"saved").past.length,1)
+})
+test("Photo editor: a continuous style change is one undo step; text never goes blank", () => {
+  const doc=newDoc({id:"p",src:"p.jpg",caption:"",annotations:[{id:"t",kind:"text",x:5,y:5,x2:5,y2:5,color:"#d93a3a",stroke:4,fontSize:30,text:"Gap",points:[]},{id:"l",kind:"line",x:1,y:1,x2:9,y2:9,color:"#d93a3a",stroke:4,fontSize:30,text:"",points:[]}]})
+  let run=restyleMark(doc,"l",{stroke:5},false)
+  run=restyleMark(run,"l",{stroke:7},true);run=restyleMark(run,"l",{stroke:9},true)
+  assert.equal(run.items[1].stroke,9);assert.equal(run.past.length,1);assert.equal(undoEdit(run).items[1].stroke,4)
+  assert.equal(restyleMark(doc,"l",{text:"ignored"},false).items[1].text,"","text only applies to text marks")
+  assert.equal(restyleMark(doc,"t",{text:"   "},false),doc,"blank text is refused")
+  assert.equal(restyleMark(doc,"t",{text:"Gap at joint ",fontSize:48},false).items[0].text,"Gap at joint ")
+  assert.equal(restyleMark(doc,"missing",{stroke:3},false),doc)
+  assert.equal(markupProblem(restyleMark(doc,"t",{color:markupColors[3].value,fontSize:textSizes[3].value},false).items),"","palette and sizes stay valid markup")
+  for(const swatch of markupColors) assert.match(swatch.value,/^#[0-9a-f]{6}$/)
+})
+test("Photo editor slideshow is manual and bounded; keys match the toolbar", () => {
+  assert.equal(stepPhoto(0,-1,3),0);assert.equal(stepPhoto(2,1,3),2,"no wrap-around at the ends");assert.equal(stepPhoto(1,1,3),2)
+  assert.equal(stepPhoto(5,0,3),2,"a start past the end opens the last photo");assert.equal(stepPhoto(0,1,1),0)
+  assert.equal(photoCounter(0,3),"Image 1 of 3")
+  assert.equal(toolByKey.v,"select");assert.equal(toolByKey.h,"pan");assert.equal(toolByKey.d,"draw");assert.equal(toolByKey.e,"ellipse")
+})
+test("Photo markup rotation: optional, bounded, around the mark's own centre; kept by moves and runs", () => {
+  const box={id:"b",kind:"rectangle",x:10,y:10,x2:30,y2:40,color:"#d93a3a",stroke:4,fontSize:30,text:"",points:[]}
+  assert.equal(markupProblem([box]),"");assert.equal(markupProblem([{...box,rotation:-137.5}]),"");assert.equal(markupProblem([{...box,rotation:360}]),"")
+  assert.equal(markupProblem([{...box,rotation:361}]),"Invalid annotation rotation.");assert.equal(markupProblem([{...box,rotation:"45"}]),"Invalid annotation rotation.")
+  assert.equal(markupProblem([{...box,angle:45}]),"Invalid annotation fields.","no other extra key, same as valid_issue_markup")
+  assert.deepEqual(markupBox(box,500),{x:100,y:50,width:200,height:150});assert.deepEqual(markupCenter(box,500),{x:200,y:125})
+  const draw={...box,kind:"draw",points:[{x:5,y:20},{x:25,y:10},{x:15,y:60}]}
+  assert.deepEqual(markupBox(draw,1000),{x:50,y:100,width:200,height:500},"freehand turns around the middle of its points")
+  const text={...box,kind:"text",text:"Gap\nat joint",fontSize:30}
+  assert.equal(markupBox(text,500).height,72);assert.ok(Math.abs(markupBox(text,500).width-8*30*0.56)<1e-9,"text box follows its longest line and size")
+  assert.equal(withRotation(box,450).rotation,90);assert.equal(withRotation(box,-190).rotation,170)
+  assert.ok(!("rotation" in withRotation({...box,rotation:45},360)),"turned back to 0 = an unturned mark exactly")
+  assert.equal(moveMarkup({...box,rotation:30},5,5).rotation,30,"moving keeps the turn")
+  const doc={items:[box],past:[],future:[],note:""}
+  let run=changeMark(doc,"b",item=>moveMarkup(item,0.5,0),false)
+  run=changeMark(run,"b",item=>moveMarkup(item,0.5,0),true)
+  assert.equal(run.items[0].x,11);assert.equal(run.past.length,1,"a nudge run is one undo step")
+  assert.equal(changeMark(doc,"b",item=>item,false),doc,"no change, no undo step")
+  assert.equal(restyleMark(doc,"b",{rotation:30},false).items[0].rotation,30)
+  assert.ok(!("rotation" in restyleMark({...doc,items:[{...box,rotation:30}]},"b",{rotation:0},false).items[0]))
 })
 console.log(`\n${passed} passed${process.exitCode ? ", some FAILED" : ""}`)

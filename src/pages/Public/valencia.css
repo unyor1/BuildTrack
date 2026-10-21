@@ -1,0 +1,205 @@
+/* Company introduction only. Reuses the public header, typography and brand palette. */
+.valencia-page { --vc-wine: #2a132d; --vc-paper: #faf8f5; color: #241d27; background: var(--vc-paper); }
+.valencia-page :is(section, main)[id] { scroll-margin-top: 100px; }
+.valencia-page :is(button, a, input, textarea):focus-visible { outline: 3px solid #f18b00; outline-offset: 4px; }
+.valencia-page p { line-height: 1.8; }
+.valencia-skip { position: fixed; left: 16px; top: -100px; z-index: 1000; padding: 12px 18px; background: white; color: #68135f; border-radius: 8px; }
+.valencia-skip:focus { top: 10px; }
+.valencia-mobile-nav { display: none; }
+.valencia-sr { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.valencia-eyebrow { display: block; color: #9e1f93; font-size: 11px; font-weight: 800; letter-spacing: .17em; text-transform: uppercase; margin: 0 0 20px; }
+.valencia-eyebrow--light { color: #edc7e9; }
+.valencia-hero { min-height: min(840px, calc(100svh - 76px)); position: relative; isolation: isolate; display: flex; align-items: center; overflow: hidden; background: #211426; color: white; }
+.valencia-hero__photo { position: absolute; z-index: -4; inset: 0 0 0 auto; width: 76%; height: 100%; object-fit: cover; object-position: 58% 57%; }
+.valencia-hero__wash { position: absolute; z-index: -3; inset: 0; background: linear-gradient(90deg,#25122b 0%,rgba(37,18,43,.97) 20%,rgba(37,18,43,.79) 40%,rgba(37,18,43,.06) 78%),linear-gradient(0deg,rgba(22,13,27,.85),transparent 40%); }
+.valencia-hero__angle { position: absolute; z-index: -2; inset: 0; background: linear-gradient(120deg,rgba(158,31,147,.22),rgba(241,139,0,.09)); clip-path: polygon(56% 0,65% 0,44% 55%,63% 100%,55% 100%,35% 55%); }
+.valencia-hero::after { content: ""; position: absolute; left: 0; bottom: 0; width: 36%; height: 4px; background: linear-gradient(90deg,#9e1f93,#f18b00); }
+.valencia-hero__content { position: relative; width: min(860px,68%); padding: 100px 0 110px clamp(24px,6vw,112px); }
+.valencia-hero__content .valencia-eyebrow { display: flex; align-items: center; gap: 10px; font-size: 10px; }
+.valencia-hero__content .valencia-eyebrow > span { width: 25px; height: 2px; background: #f18b00; }
+.valencia-hero h1 { color: white; font-size: clamp(44px,4.6vw,79px); font-weight: 800; line-height: 1.06; letter-spacing: -.055em; margin: 0 0 24px; }
+.valencia-hero h1 > span { color: #ffce81; }
+.valencia-hero__intro { max-width: 450px; font-size: 15px; color: #e8dee9; margin-bottom: 32px; }
+.valencia-hero__break { display: none; }
+.valencia-actions { display: flex; flex-wrap: wrap; gap: 12px; }
+.valencia-actions .button { min-height: 49px; font-size: 11px; text-transform: none; letter-spacing: .01em; }
+.valencia-actions .button--gold { color: #231326; }
+.valencia-hero__identity { position: absolute; right: 5%; top: 35px; width: clamp(170px,20vw,300px); border-radius: 4px 30px 4px 30px; background: rgba(255,251,242,.79); padding: 12px 15px; box-shadow: 0 12px 60px -25px #0008; backdrop-filter: blur(6px); }
+.valencia-hero__identity img { display: block; width: 100%; height: auto; }
+.valencia-hero__caption { position: absolute; left: clamp(24px,6vw,112px); right: 5%; bottom: 27px; display: flex; align-items: center; gap: 10px; color: #f1e5f0; font-size: 10px; letter-spacing: .04em; }
+.valencia-hero__caption > span:last-child { margin-left: auto; opacity: .65; }
+.valencia-dot { display: inline-block; width: 6px; height: 6px; flex-shrink: 0; border-radius: 50%; background: #f18b00; }
+.valencia-disciplines { display: grid; grid-template-columns: repeat(4,1fr); gap: 24px; background: #fff; padding: 26px clamp(24px,6vw,112px); border-bottom: 1px solid #e9e1e9; }
+.valencia-disciplines > span { display: flex; align-items: center; justify-content: space-between; gap: 20px; font-size: 12px; font-weight: 700; }
+.valencia-disciplines > span > span { color: #9e1f93; font-size: 17px; }
+.valencia-section { padding: 100px clamp(24px,6vw,112px); max-width: 1800px; margin: 0 auto; }
+.valencia-section h2 { font-size: clamp(32px,3.2vw,52px); letter-spacing: -.045em; line-height: 1.17; margin-bottom: 24px; color: #241d27; }
+.valencia-section h2 em { color: #9e1f93; font-style: normal; }
+.valencia-section-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 50px; margin-bottom: 38px; }
+.valencia-section-head h2 { margin-bottom: 0; }
+.valencia-section-head > p { max-width: 360px; font-size: 14px; color: #706773; margin: 0 0 4px; }
+.valencia-about { display: grid; grid-template-columns: 1fr 1fr; gap: clamp(32px,6vw,100px); align-items: center; }
+.valencia-about__visual { position: relative; padding: 0 24px 25px 0; }
+.valencia-about__visual::before { content: ""; position: absolute; inset: 26px 0 0 24px; border: 1px solid #b96eaf; border-radius: 4px 48px 4px 4px; }
+.valencia-about__visual > img { position: relative; width: 100%; height: 475px; object-fit: cover; object-position: 52% 50%; border-radius: 4px 48px 4px 4px; }
+.valencia-about__label { position: absolute; bottom: 1px; right: -8px; background: #9e1f93; padding: 25px 32px; color: #fff; min-width: 240px; box-shadow: 0 15px 40px -20px #68135f; }
+.valencia-about__label > span:first-child { display: block; font-size: 11px; margin-bottom: 5px; color: #f3d8ef; }
+.valencia-about__label strong { font-size: 18px; }
+.valencia-about__label > span:last-child { margin-left: 18px; color: #ffce81; }
+.valencia-about__copy > p:not(.valencia-eyebrow) { font-size: 13px; color: #706773; }
+.valencia-values { display: flex; flex-wrap: wrap; gap: 15px; border-block: 1px solid #e7dfe6; padding: 18px 0; margin: 25px 0; }
+.valencia-values > span { display: flex; align-items: center; gap: 7px; font-size: 10px; font-weight: 800; }
+.valencia-values svg { width: 17px; height: 17px; color: #9e1f93; }
+.valencia-proprietor { display: flex; align-items: center; gap: 13px; }
+.valencia-proprietor > span { display: grid; place-items: center; height: 43px; width: 43px; background: #eee2ec; border-radius: 50%; color: #9e1f93; font-size: 13px; font-weight: 800; }
+.valencia-proprietor strong { font-size: 13px; }
+.valencia-proprietor small { display: block; font-size: 10px; margin-top: 3px; color: #706773; }
+.valencia-services { background: #f0eaf0; max-width: none; }
+.valencia-service-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 18px; }
+.valencia-service { display: flex; flex-direction: column; min-width: 0; background: #fff; border: 1px solid #e7dce6; border-radius: 14px; padding: 28px 24px; transition: transform .2s,box-shadow .2s; }
+.valencia-service:hover { transform: translateY(-4px); box-shadow: 0 16px 40px -24px #68135f77; }
+.valencia-service__top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 30px; }
+.valencia-service__top > span { color: #b1a2af; font-size: 12px; }
+.valencia-service__top svg { width: 29px; height: 29px; color: #9e1f93; }
+.valencia-service h3 { font-size: 18px; letter-spacing: -.025em; margin: 0 0 12px; }
+.valencia-service p { font-size: 12px; color: #706773; margin-bottom: 28px; }
+.valencia-service > a { display: flex; justify-content: space-between; gap: 10px; margin-top: auto; color: #9e1f93; font-size: 10px; font-weight: 800; padding-top: 18px; border-top: 1px solid #eee8ed; }
+.valencia-safety { display: flex; align-items: center; gap: 15px; margin-top: 25px; color: #6c5d6d; }
+.valencia-safety > svg { width: 24px; height: 24px; color: #9e1f93; flex-shrink: 0; }
+.valencia-safety p { margin: 0; font-size: 11px; }
+.valencia-safety strong { color: #3f2b43; }
+.valencia-filters { display: flex; flex-wrap: wrap; gap: 9px; margin-bottom: 30px; }
+.valencia-filters button { font-size: 11px; font-weight: 700; color: #706773; padding: 11px 18px; border: 1px solid #dfd5df; border-radius: 99px; background: transparent; }
+.valencia-filters button[aria-pressed="true"] { background: #9e1f93; border-color: #9e1f93; color: white; }
+.valencia-project-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 38px 28px; }
+.valencia-project { min-width: 0; }
+.valencia-project__photo { position: relative; display: block; width: 100%; padding: 0; background: #e8e0e6; border: 0; overflow: hidden; border-radius: 12px; text-align: left; }
+.valencia-project__photo > img { display: block; width: 100%; height: clamp(220px,25vw,410px); object-fit: cover; transition: transform .5s; }
+.valencia-project__photo:hover > img { transform: scale(1.035); }
+.valencia-project__tag { position: absolute; top: 18px; left: 18px; background: #fffefaed; color: #4f3154; padding: 7px 12px; border-radius: 5px; font-size: 10px; font-weight: 700; backdrop-filter: blur(8px); }
+.valencia-project__open { position: absolute; right: 18px; bottom: 18px; display: grid; place-items: center; width: 40px; height: 40px; background: #9e1f93; border-radius: 50%; color: white; font-size: 23px; }
+.valencia-project__body { padding: 21px 2px 0; }
+.valencia-project__body h3 { font-size: 20px; letter-spacing: -.035em; margin-bottom: 10px; }
+.valencia-project__body h3 button { border: 0; padding: 0; background: none; text-align: left; }
+.valencia-project__body p { font-size: 12px; color: #706773; max-width: 510px; margin-bottom: 10px; }
+.valencia-project__body small { display: flex; align-items: center; gap: 7px; font-size: 10px; color: #6c5d6d; }
+.valencia-source-note { font-size: 10px; color: #7a6b7b; margin: 28px 0 0; }
+.valencia-source-note a { text-decoration: underline; text-underline-offset: 3px; }
+.valencia-process { background: linear-gradient(120deg,#211426,#3d1b41); max-width: none; color: white; }
+.valencia-process h2 { color: white; }
+.valencia-process h2 em { color: #ffce81; }
+.valencia-process .valencia-section-head > p { color: #d1bed2; }
+.valencia-process-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 22px; }
+.valencia-process__photo { position: relative; margin-bottom: 23px; }
+.valencia-process__photo img { display: block; width: 100%; height: 205px; object-fit: cover; object-position: center 25%; border-radius: 9px; }
+.valencia-process__photo > span { position: absolute; bottom: -12px; left: 15px; display: grid; place-items: center; width: 35px; height: 35px; font-weight: 800; color: #2a132d; background: #ffce81; border: 4px solid #2d1732; border-radius: 50%; font-size: 11px; }
+.valencia-process-grid h3 { font-size: 17px; margin-bottom: 10px; }
+.valencia-process-grid p { color: #d1bed2; font-size: 12px; }
+.valencia-team-note { display: flex; align-items: center; gap: 18px; border-top: 1px solid #ffffff26; padding-top: 25px; margin-top: 28px; }
+.valencia-team-note > svg { color: #ffce81; width: 25px; height: 25px; flex-shrink: 0; }
+.valencia-team-note p { font-size: 12px; color: #d1bed2; margin: 0; }
+.valencia-team-note strong { color: white; }
+.valencia-contact { display: grid; grid-template-columns: 1fr 1fr; gap: clamp(35px,8vw,130px); align-items: start; }
+.valencia-contact__info > p:not(.valencia-eyebrow) { font-size: 13px; color: #706773; max-width: 450px; }
+.valencia-contact dl { display: grid; grid-template-columns: 1fr 1fr; gap: 26px; margin: 30px 0 0; }
+.valencia-contact dl > div:first-child, .valencia-contact dl > div:nth-child(3) { grid-column: 1 / -1; }
+.valencia-contact dt { display: flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 800; margin-bottom: 10px; }
+.valencia-contact dt svg { height: 17px; width: 17px; color: #9e1f93; }
+.valencia-contact dd { margin: 0; font-size: 12px; color: #706773; line-height: 1.7; overflow-wrap: anywhere; }
+.valencia-contact dd a, .valencia-contact dd small { display: block; }
+.valencia-contact dd > a:hover { color: #9e1f93; text-decoration: underline; }
+.valencia-contact dd > a[target] { color: #9e1f93; font-size: 10px; font-weight: 700; margin-top: 5px; }
+.valencia-contact dd small { font-size: 10px; }
+.valencia-inquiry { display: flex; flex-direction: column; border: 1px solid #e2d5df; border-radius: 16px; padding: clamp(22px,3vw,40px); background: white; box-shadow: 0 20px 60px -40px #68135f80; }
+.valencia-inquiry > .valencia-eyebrow { display: flex; justify-content: space-between; margin-bottom: 14px; }
+.valencia-inquiry h3 { font-size: 23px; line-height: 1.25; letter-spacing: -.04em; margin-bottom: 27px; }
+.valencia-inquiry label { font-size: 11px; font-weight: 800; margin-bottom: 8px; }
+.valencia-inquiry input, .valencia-inquiry textarea { border: 1px solid #e1d8e0; border-radius: 8px; padding: 13px 14px; margin-bottom: 20px; font: inherit; font-size: 12px; color: #241d27; background: #fcfafc; width: 100%; }
+.valencia-inquiry textarea { resize: vertical; min-height: 120px; }
+.valencia-button--brand { background: #9e1f93; color: #fff; text-transform: none; letter-spacing: 0; font-size: 12px; }
+.valencia-inquiry > button { justify-content: space-between; min-height: 49px; }
+.valencia-inquiry__note { font-size: 10px; line-height: 1.65 !important; margin: 14px 0; color: #7a6b7b; }
+.valencia-inquiry__fallback { color: #9e1f93; font-size: 10px; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
+.valencia-buildtrack { background: #70216c; color: white; padding: 45px clamp(24px,6vw,112px); display: flex; align-items: center; justify-content: space-between; gap: 30px; }
+.valencia-buildtrack .valencia-eyebrow { color: #f8c9e9; margin-bottom: 10px; }
+.valencia-buildtrack h2 { color: #fff; font-size: clamp(22px,2vw,30px); letter-spacing: -.035em; margin-bottom: 10px; }
+.valencia-buildtrack p { color: #ebd3e9; font-size: 12px; margin: 0; }
+.valencia-buildtrack > button { flex-shrink: 0; text-transform: none; font-size: 11px; }
+.valencia-footer { font-size: 12px; padding-inline: clamp(24px,6vw,112px); }
+.valencia-footer__top { display: grid; grid-template-columns: 1.4fr .7fr 1fr; gap: 50px; }
+.valencia-footer__top > div:first-child > p { margin-top: 22px; }
+.valencia-footer__top nav { display: flex; flex-direction: column; align-items: flex-start; gap: 15px; }
+.valencia-footer__top > div:last-child { max-width: 290px; }
+.valencia-footer__top strong { display: block; color: #fff; margin-bottom: 15px; }
+.valencia-footer__top a:hover, .valencia-footer__top button:hover { color: #fff; }
+.valencia-footer__top > div:last-child > a { color: #eabce7; }
+.valencia-footer .brand__name { font-size: 15px; }
+.valencia-footer .site-footer__bottom button { background: none; border: 0; padding: 0; color: inherit; font-size: inherit; }
+.valencia-gallery { color: inherit; }
+.valencia-gallery__image { display: block; width: 100%; height: min(58vh,650px); object-fit: contain; background: #201b23; border-radius: 10px; }
+.valencia-gallery__controls { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 14px 0; font-size: 12px; }
+.valencia-gallery__controls button { border: 1px solid #b78caf; padding: 9px 14px; border-radius: 7px; background: transparent; color: inherit; }
+.valencia-gallery__caption { font-size: 12px; color: inherit; }
+.valencia-gallery__thumbs { display: flex; gap: 9px; overflow-x: auto; margin: 12px 0 20px; padding: 4px; }
+.valencia-gallery__thumbs button { background: none; border: 2px solid transparent; padding: 2px; border-radius: 6px; flex-shrink: 0; }
+.valencia-gallery__thumbs button[aria-pressed="true"] { border-color: #9e1f93; }
+.valencia-gallery__thumbs img { display: block; height: 57px; width: 85px; object-fit: cover; border-radius: 3px; }
+@media (min-width: 1800px) { .valencia-services, .valencia-process { padding-inline: max(112px,calc((100vw - 1580px)/2)); } }
+@media (max-width: 1100px) {
+  .valencia-mobile-nav { display: flex; justify-content: center; gap: 30px; padding: 15px 22px; background: #faf8f5; color: #68135f; border-bottom: 1px solid #e6dce5; font-size: 11px; font-weight: 800; overflow-x: auto; }
+  .valencia-mobile-nav a { white-space: nowrap; }
+  .valencia-hero { min-height: 690px; }
+  .valencia-hero__content { width: 74%; }
+  .valencia-hero h1 { font-size: 59px; }
+  .valencia-hero__identity { width: 210px; right: 4%; top: 30px; }
+  .valencia-service-grid, .valencia-process-grid { grid-template-columns: 1fr 1fr; }
+  .valencia-about__visual > img { height: 440px; }
+  .valencia-about__label { min-width: 200px; padding: 20px; right: 0; }
+  .valencia-section { padding-block: 75px; }
+  .valencia-footer__top { gap: 30px; }
+}
+@media (max-width: 720px) {
+  .valencia-page .site-header { min-height: 76px; height: auto; }
+  .valencia-mobile-nav { justify-content: flex-start; gap: 22px; }
+  .valencia-hero { min-height: 720px; align-items: flex-end; }
+  .valencia-hero__photo { width: 100%; object-position: 63% 50%; }
+  .valencia-hero__wash { background: linear-gradient(0deg,#25122bf2 0%,#25122be0 48%,#25122b30 90%); }
+  .valencia-hero__angle { clip-path: polygon(95% 0,100% 0,66% 48%,100% 100%,88% 100%,50% 48%); }
+  .valencia-hero__content { width: 100%; padding: 230px 24px 90px; }
+  .valencia-hero h1 { font-size: clamp(42px,8.3vw,60px); }
+  .valencia-hero__identity { top: 20px; width: 170px; padding: 8px 12px; }
+  .valencia-hero__intro { font-size: 13px; max-width: 390px; }
+  .valencia-hero__caption { font-size: 9px; }
+  .valencia-hero__caption > span:last-child { display: none; }
+  .valencia-actions { gap: 9px; }
+  .valencia-actions .button { font-size: 10px; padding-inline: 15px; }
+  .valencia-disciplines { grid-template-columns: 1fr 1fr; gap: 17px 25px; padding-block: 23px; }
+  .valencia-disciplines > span { font-size: 10px; gap: 10px; }
+  .valencia-about, .valencia-contact { grid-template-columns: 1fr; gap: 42px; }
+  .valencia-about__visual > img { height: 340px; }
+  .valencia-section { padding-block: 60px; }
+  .valencia-section-head { display: block; margin-bottom: 28px; }
+  .valencia-section-head > p { margin-top: 20px; font-size: 12px; }
+  .valencia-eyebrow { font-size: 9px; }
+  .valencia-service-grid { gap: 12px; }
+  .valencia-service { padding: 22px 17px; }
+  .valencia-service h3 { font-size: 16px; }
+  .valencia-service p { font-size: 11px; }
+  .valencia-service > a { font-size: 9px; }
+  .valencia-service__top { margin-bottom: 22px; }
+  .valencia-project-grid { grid-template-columns: 1fr; gap: 30px; }
+  .valencia-project__photo > img { height: 290px; }
+  .valencia-filters { gap: 6px; }
+  .valencia-filters button { font-size: 10px; padding: 9px 13px; }
+  .valencia-process-grid { gap: 25px 16px; }
+  .valencia-process__photo img { height: 165px; }
+  .valencia-process-grid h3 { font-size: 15px; }
+  .valencia-process-grid p { font-size: 11px; }
+  .valencia-buildtrack { flex-direction: column; align-items: flex-start; }
+  .valencia-footer__top { grid-template-columns: 1fr; gap: 30px; }
+  .valencia-footer__top nav { flex-direction: row; flex-wrap: wrap; gap: 18px; }
+  .valencia-gallery__controls { font-size: 10px; }
+  .valencia-gallery__controls button { padding: 9px; }
+}
+@media (max-width: 380px) { .valencia-service-grid { grid-template-columns: 1fr; } .valencia-actions { flex-direction: column; align-items: flex-start; } .valencia-hero__content .valencia-eyebrow { font-size: 8px; letter-spacing: .08em; } }
+@media (prefers-reduced-motion: reduce) { .valencia-page *, .valencia-page *::before, .valencia-page *::after { transition: none !important; scroll-behavior: auto !important; } }

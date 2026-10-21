@@ -7,6 +7,7 @@ import ProjectWorkspace from "./pages/Admin/ProjectWorkspace"
 import { fieldPagePath, projectPath, projectSections, readProjectRoute, type ProjectSection } from "./lib/projectRoutes"
 import { getSelectedProjectId } from "./lib/projects"
 const LandingPage = lazy(() => import("./pages/Public/LandingPage"))
+const ValenciaIntroduction = lazy(() => import("./pages/Public/ValenciaIntroduction"))
 const BiometricAttendancePage = lazy(() => import("./pages/Attendance/BiometricAttendancePage"))
 const PinLink = lazy(() => import("./pages/Public/PinLink"))
 const LoginPage = lazy(() => import("./pages/Auth/LoginPage"))
@@ -68,7 +69,7 @@ const withLoading = (node: ReactNode) => (
   <Suspense fallback={<div className="p-6"><SkeletonCardGrid count={3} label="Loading the page" /></div>}>{node}</Suspense>
 )
 
-export type Page = "home" | "login" | "register" | "pin-link" | "attendance" | `admin/${AdminPageKey}` | `engineer/${EngineerPageKey}` | `foreman/${ForemanPageKey}` | `client/${ClientPageKey}` | `user/${UserPageKey}`
+export type Page = "home" | "valencia" | "login" | "register" | "pin-link" | "attendance" | `admin/${AdminPageKey}` | `engineer/${EngineerPageKey}` | `foreman/${ForemanPageKey}` | `client/${ClientPageKey}` | `user/${UserPageKey}`
 
 function pageFromPath(): Page {
   const projectRoute = readProjectRoute(window.location.pathname)
@@ -159,6 +160,7 @@ function pageFromPath(): Page {
   if (window.location.pathname === "/attendance") return "attendance"
   if (window.location.pathname === "/login") return "login"
   if (window.location.pathname === "/register") return "register"
+  if (window.location.pathname.replace(/\/$/, "") === "/valencia") return "valencia"
   return "home"
 }
 
@@ -231,6 +233,11 @@ export default class App extends Component<Record<string, never>, AppState> {
   }
 
   render() {
+    // Standalone public company content has no account or workspace data dependencies.
+    // Keep all existing protected routes inside their unchanged RouteGuard.
+    if (this.state.page === "valencia") {
+      return <ErrorBoundary resetKey="valencia">{withLoading(<ValenciaIntroduction navigate={this.navigate} />)}</ErrorBoundary>
+    }
     return (
       <RouteGuard page={this.state.page} navigate={this.navigate}>
         <ErrorBoundary resetKey={this.state.page}>

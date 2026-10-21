@@ -3,6 +3,8 @@ import { createPortal } from "react-dom"
 
 // A button that opens a small panel under it (sliders, swatches, tabs, anything). The panel lives in a portal so toolbars that
 // scroll never clip it. It closes on Esc, on a press outside, and when the window is resized. Use Menu for plain lists of commands.
+// The panel shares the dialogs' layer (z-900) so stacking follows opening order: a popover opened inside a dialog (the photo
+// editor) shows above it, and a dialog opened later still covers an older popover.
 export default function Popover({
   label,
   trigger,
@@ -71,7 +73,7 @@ export default function Popover({
               ref={panel}
               role="dialog"
               aria-label={label}
-              className="bt-pop fixed z-[700] max-h-[min(34rem,calc(100vh-6rem))] overflow-y-auto rounded-xl border border-line bg-surface/95 text-fg shadow-2xl backdrop-blur-xl"
+              className="bt-pop fixed z-[900] max-h-[min(34rem,calc(100vh-6rem))] overflow-y-auto rounded-xl border border-line bg-surface/95 text-fg shadow-2xl backdrop-blur-xl"
               style={{ left: at.left, top: at.top, width }}
             >
               {children(close)}

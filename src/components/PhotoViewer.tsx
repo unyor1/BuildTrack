@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react"
 import Modal from "./Modal"
 import PhotoDetails from "./PhotoDetails"
-import { MarkupLayer } from "./issues/IssuePhotoEditor"
+import { MarkupLayer } from "./issues/MarkupLayer"
 import { useSignedUrl } from "../lib/blueprints"
 import { useAuth } from "../lib/auth"
 import { photoPreviewBlocked } from "../lib/photoStamp"

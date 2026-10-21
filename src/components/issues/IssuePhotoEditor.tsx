@@ -1,41 +1,52 @@
-import { useEffect, useId, useRef, useState, type PointerEvent } from "react"
+import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent } from "react"
 import Modal from "../Modal"
 import { buttonPrimary, buttonSecondary, inputClass } from "../ui/PageParts"
-import { clampCoordinate, MARKUP_LIMIT, MARKUP_POINT_LIMIT, markupProblem, markupTools, moveMarkup, type IssueMarkup, type MarkupPoint, type MarkupTool } from "../../lib/issueMarkup"
+import { MarkupLayer, SelectionFrame } from "./MarkupLayer"
+import PhotoEditorToolbar, { MarkupProperties } from "./PhotoEditorToolbar"
+import PhotoSlides from "./PhotoSlides"
+import { useConfirm } from "../../lib/confirm"
+import { clampCoordinate, MARKUP_LIMIT, MARKUP_POINT_LIMIT, markupCenter, markupProblem, moveMarkup, withRotation, type IssueMarkup, type MarkupPoint, type MarkupTool } from "../../lib/issueMarkup"
+import { angleFromCenter, snapAngle } from "../../lib/shapes"
 import { CANVAS_ZOOM_STEP, MIN_CANVAS_SCALE, MAX_CANVAS_SCALE, canvasWheelFactor, fitCanvasView, zoomCanvasView, pinchCanvasView, type CanvasPoint, type CanvasView } from "../../lib/canvasView"
+import { NUDGE_STEP, ROTATE_STEP, changeMark, docChanged, markupChanges, newDoc, openDocs, recordEdit, redoEdit, removeMark, restyleMark, stepPhoto, toolByKey, undoEdit, type MarkupChange, type MarkupPhoto, type MarkupStyle, type PhotoDoc, type PhotoTool } from "../../lib/photoEditorModel"
 
-export function MarkupLayer({ items, height, selected, onSelect }: { items: IssueMarkup[]; height: number; selected?: string; onSelect?: (id: string, event: PointerEvent<SVGGElement>) => void }) {
-  const arrowId = useId().replace(/:/g, "")
-  return <>
-    <defs>{items.filter(item => item.kind === "arrow").map(item => <marker key={item.id} id={`${arrowId}-${item.id}`} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill={item.color} /></marker>)}</defs>
-    {items.map(item => {
-      const x = item.x * 10, y = item.y * height / 100, x2 = item.x2 * 10, y2 = item.y2 * height / 100
-      const shape = item.kind === "text" ? <text x={x} y={y} fill={item.color} stroke="none" fontSize={item.fontSize} fontFamily="Arial, sans-serif" dominantBaseline="hanging">{item.text.split("\n").map((line, i) => <tspan key={i} x={x} dy={i ? "1.2em" : 0}>{line}</tspan>)}</text>
-        : item.kind === "rectangle" ? <rect x={Math.min(x,x2)} y={Math.min(y,y2)} width={Math.abs(x2-x)} height={Math.abs(y2-y)} />
-        : item.kind === "ellipse" ? <ellipse cx={(x+x2)/2} cy={(y+y2)/2} rx={Math.abs(x2-x)/2} ry={Math.abs(y2-y)/2} />
-        : item.kind === "draw" ? <polyline points={item.points.map(p => `${p.x*10},${p.y*height/100}`).join(" ")} />
-        : <line x1={x} y1={y} x2={x2} y2={y2} markerEnd={item.kind === "arrow" ? `url(#${arrowId}-${item.id})` : undefined} />
-      return <g key={item.id} data-markup-id={item.id} fill="none" stroke={item.color} strokeWidth={item.stroke} strokeLinecap="round" strokeLinejoin="round" style={{ cursor: onSelect ? "move" : undefined, filter: selected === item.id ? "drop-shadow(0 0 4px white)" : undefined }} onPointerDown={event => onSelect?.(item.id,event)}>{shape}</g>
-    })}
-  </>
-}
+export { MarkupLayer } from "./MarkupLayer"
+export type { MarkupChange, MarkupPhoto } from "../../lib/photoEditorModel"
 
-// Markup is a separate editable overlay; the underlying photo bytes are never changed. `title` / `captionLimit` let other
-// evidence (QA inspections and NCRs, caption max 200) reuse the same editor.
-export default function IssuePhotoEditor({ src, initial, caption, readOnly = false, title, captionLimit = 500, onClose, onSave }: {
-  src: string; initial: IssueMarkup[]; caption: string; readOnly?: boolean; title?: string; captionLimit?: number; onClose: () => void
-  onSave?: (items: IssueMarkup[], caption: string) => Promise<void> | void
+type Sizing = "fill" | "fit" | "manual"
+// draw = a new mark being drawn, move = dragging a selected mark, rotate = dragging its rotate handle (centre in SVG units).
+type Gesture = { photoId: string; id: string; start: MarkupPoint; last: MarkupPoint; before: IssueMarkup[]; mode: "draw" | "move" | "rotate"; pointerId: number; centre?: { x: number; y: number } }
+
+// The one photo markup editor (site issues, client problem reports, QA / NCR evidence). Markup is a separate overlay; the
+// photo bytes are never changed. Several photos open as a manual slideshow: each keeps its own markup, caption and undo
+// history while you move between them, and Save hands back only the photos that changed. Navigation, zoom and the toolbar
+// follow the blueprint editor (shared canvas maths in lib/canvasView). `title` / `captionLimit` adapt it per evidence type.
+export default function IssuePhotoEditor({ photos, start: startAt = 0, readOnly = false, title, captionLimit = 500, onClose, onSave }: {
+  photos: MarkupPhoto[]; start?: number; readOnly?: boolean; title?: string; captionLimit?: number; onClose: () => void
+  onSave?: (changes: MarkupChange[]) => Promise<void> | void
 }) {
-  const [items,setItems] = useState(initial)
-  const [past,setPast] = useState<IssueMarkup[][]>([])
-  const [future,setFuture] = useState<IssueMarkup[][]>([])
+  const confirm = useConfirm()
+  const [index,setIndex] = useState(() => stepPhoto(startAt,0,photos.length))
+  const at = stepPhoto(index,0,photos.length)
+  const photo = photos[at]
+  const photoId = photo?.id ?? ""
+  const [docs,setDocs] = useState<Record<string,PhotoDoc>>(() => openDocs(photos))
+  const doc = docs[photoId] ?? (photo ? newDoc(photo) : { items:[], past:[], future:[], note:"" })
+  const items = doc.items
+  const updateDoc = (id: string, change: (doc: PhotoDoc) => PhotoDoc) => setDocs(all => {
+    const source = photos.find(row => row.id === id)
+    const current = all[id] ?? (source ? newDoc(source) : null)
+    return current ? { ...all, [id]: change(current) } : all
+  })
+  const edit = (change: (doc: PhotoDoc) => PhotoDoc) => updateDoc(photoId,change)
   const [tool,setTool] = useState<MarkupTool>("select")
+  const [panMode,setPanMode] = useState(false)
   const [selected,setSelected] = useState("")
   const [color,setColor] = useState("#d93a3a")
   const [stroke,setStroke] = useState(4)
   const [fontSize,setFontSize] = useState(30)
   const [text,setText] = useState("")
-  const [note,setNote] = useState(caption)
+  const [slidesOpen,setSlidesOpen] = useState(true)
   const [imageSize,setImageSize] = useState({width:1000,height:750})
   const height = 1000*imageSize.height/imageSize.width
   const [original,setOriginal] = useState(false)
@@ -44,8 +55,7 @@ export default function IssuePhotoEditor({ src, initial, caption, readOnly = fal
   const [loaded,setLoaded] = useState(false)
   const [fullscreen,setFullscreen] = useState(false)
   const [view,setView] = useState<CanvasView>({scale:1,tx:0,ty:0})
-  const [sizing,setSizing] = useState<"fill" | "fit" | "manual">("fill")
-  const [panMode,setPanMode] = useState(false)
+  const [sizing,setSizing] = useState<Sizing>("fit")
   const [space,setSpace] = useState(false)
   const [panning,setPanning] = useState(false)
   const viewRef = useRef(view)
@@ -57,7 +67,9 @@ export default function IssuePhotoEditor({ src, initial, caption, readOnly = fal
   const pinch = useRef<{distance:number;mid:CanvasPoint;view:CanvasView} | null>(null)
   const viewportRef = useRef<HTMLDivElement>(null)
   const svg = useRef<SVGSVGElement>(null)
-  const gesture = useRef<{ id: string; start: MarkupPoint; before: IssueMarkup[]; moving: boolean; pointerId: number } | null>(null)
+  const textInput = useRef<HTMLInputElement>(null)
+  const gesture = useRef<Gesture | null>(null)
+  const styleRun = useRef("") // the property being changed continuously (one undo step), see restyleMark
   const commitView = (next: CanvasView) => { viewRef.current=next; setView(next) }
   const sizePhoto = (mode: "fill" | "fit", size = sizeRef.current) => {
     const frame=viewportRef.current
@@ -70,8 +82,20 @@ export default function IssuePhotoEditor({ src, initial, caption, readOnly = fal
     sizingRef.current="manual";setSizing("manual")
     commitView(zoomCanvasView(viewRef.current,factor,anchor ?? {x:frame.clientWidth/2,y:frame.clientHeight/2}))
   }
-  const controls = useRef({zoomAt,sizePhoto})
-  controls.current={zoomAt,sizePhoto}
+  const cancelEdit = () => {
+    const active=gesture.current
+    if(!active) return
+    gesture.current=null
+    updateDoc(active.photoId,current=>({...current,items:active.before}))
+    if(svg.current?.hasPointerCapture(active.pointerId)) svg.current.releasePointerCapture(active.pointerId)
+  }
+  const releasePointers = () => {
+    const frame=viewportRef.current
+    for(const id of pointers.current.keys()) if(frame?.hasPointerCapture(id)) frame.releasePointerCapture(id)
+    pointers.current.clear();pan.current=null;pinch.current=null;setPanning(false)
+  }
+  const controls = useRef({zoomAt,sizePhoto,cancelEdit,releasePointers})
+  controls.current={zoomAt,sizePhoto,cancelEdit,releasePointers}
   useEffect(() => {
     const frame = viewportRef.current
     if (!frame) return
@@ -96,22 +120,13 @@ export default function IssuePhotoEditor({ src, initial, caption, readOnly = fal
       controls.current.zoomAt(canvasWheelFactor(event.deltaY),{x:event.clientX-rect.left,y:event.clientY-rect.top})
     }
     const releaseSpace=(event:KeyboardEvent)=>{if(event.key===" ")setSpace(false)}
-    const blur=()=>{
-      setSpace(false);cancelEdit()
-      for(const id of pointers.current.keys()) if(frame.hasPointerCapture(id)) frame.releasePointerCapture(id)
-      pointers.current.clear();pan.current=null;pinch.current=null;setPanning(false)
-    }
+    const blur=()=>{setSpace(false);controls.current.cancelEdit();controls.current.releasePointers()}
     frame.addEventListener("wheel",wheel,{passive:false})
     window.addEventListener("keyup",releaseSpace)
     window.addEventListener("blur",blur)
     return()=>{frame.removeEventListener("wheel",wheel);window.removeEventListener("keyup",releaseSpace);window.removeEventListener("blur",blur)}
   }, [])
-  const cancelEdit = () => {
-    const active=gesture.current
-    if(!active) return
-    gesture.current=null;setItems(active.before)
-    if(svg.current?.hasPointerCapture(active.pointerId)) svg.current.releasePointerCapture(active.pointerId)
-  }
+  useEffect(() => { if(tool==="text" && !panMode) textInput.current?.focus() }, [tool,panMode])
   const viewportPoint = (point: CanvasPoint) => {
     const rect=viewportRef.current!.getBoundingClientRect()
     return {x:point.x-rect.left,y:point.y-rect.top}
@@ -129,10 +144,10 @@ export default function IssuePhotoEditor({ src, initial, caption, readOnly = fal
     }
     if(pointers.current.size!==1) {event.stopPropagation();return}
     const target=event.target as Element
-    const annotation=target.closest?.("[data-markup-id]")
+    const annotation=target.closest?.("[data-markup-id],[data-rotate-handle]")
     const onPhoto=target.closest?.('[aria-label="Photo annotation canvas"]')
     if(event.button===1 || space || panMode || readOnly || original || (tool==="select" && !annotation) || !onPhoto) {
-      if(tool==="select" && !annotation) setSelected("")
+      if(tool==="select" && !annotation && !panMode && !space) setSelected("")
       pan.current={id:event.pointerId,start:{x:event.clientX,y:event.clientY},view:viewRef.current}
       event.currentTarget.setPointerCapture(event.pointerId)
       setPanning(true);event.preventDefault();event.stopPropagation()
@@ -164,102 +179,200 @@ export default function IssuePhotoEditor({ src, initial, caption, readOnly = fal
     }
     setPanning(pointers.current.size>0);event.preventDefault();event.stopPropagation()
   }
+  // Leaving fullscreen keeps every photo's unsaved markup, caption and history.
   const exitFullscreen = () => {
-    cancelEdit()
-    const frame=viewportRef.current
-    for(const id of pointers.current.keys()) if(frame?.hasPointerCapture(id)) frame.releasePointerCapture(id)
-    pointers.current.clear();pan.current=null;pinch.current=null;setPanning(false);setSpace(false)
+    cancelEdit();releasePointers();setSpace(false)
     setFullscreen(false)
   }
-  const remember = (before: IssueMarkup[]) => { setPast(rows => [...rows.slice(-29),before]); setFuture([]) }
-  const point = (event: PointerEvent): MarkupPoint => {
+  // Manual slideshow: the next photo opens fitted; fullscreen, tool and every photo's unsaved work stay as they are.
+  const goTo = (next: number) => {
+    const target=stepPhoto(next,0,photos.length)
+    if(target===at) return
+    cancelEdit();releasePointers()
+    styleRun.current="";setSelected("");setError("");setLoaded(false)
+    if(sizingRef.current==="manual") {sizingRef.current="fit";setSizing("fit")}
+    setIndex(target)
+  }
+  const point = (event: PointerEvent, clamp = true): MarkupPoint => {
     const rect = svg.current!.getBoundingClientRect()
-    return { x: clampCoordinate((event.clientX-rect.left)/rect.width*100), y: clampCoordinate((event.clientY-rect.top)/rect.height*100) }
+    const x=(event.clientX-rect.left)/rect.width*100, y=(event.clientY-rect.top)/rect.height*100
+    return clamp ? { x: clampCoordinate(x), y: clampCoordinate(y) } : { x, y }
+  }
+  // Selecting a mark shows its own colour, width, size and text in the properties bar.
+  const choose = (id: string) => {
+    styleRun.current=""
+    setSelected(id)
+    const row=items.find(item=>item.id===id)
+    if(row) {setColor(row.color);setStroke(row.stroke);setFontSize(row.fontSize);if(row.kind==="text") setText(row.text)}
   }
   const start = (event: PointerEvent<SVGSVGElement>) => {
     if (readOnly || original || !loaded || saving || event.button !== 0 || gesture.current) return
-    if (tool === "select") { setSelected(""); return }
+    if (tool === "select") { choose(""); return }
     if (items.length >= MARKUP_LIMIT) return setError(`Limit: ${MARKUP_LIMIT} annotations per photo.`)
-    if (tool === "text" && !text.trim()) return setError("Enter text in the toolbar, then click the photo.")
+    if (tool === "text" && !text.trim()) { textInput.current?.focus(); return setError("Type the text in the bar above, then click the photo.") }
     const p=point(event), id=crypto.randomUUID()
     const item: IssueMarkup = { id,kind:tool,x:p.x,y:p.y,x2:p.x,y2:p.y,color,stroke,fontSize,text:tool === "text" ? text.trim() : "",points:tool === "draw" ? [p] : [] }
-    setError(""); setSelected(id)
-    if (tool === "text") { remember(items); setItems([...items,item]); return }
-    gesture.current = { id,start:p,before:items,moving:false,pointerId:event.pointerId }
+    setError(""); styleRun.current=""; setSelected(id)
+    if (tool === "text") { edit(current=>recordEdit(current,[...current.items,item])); setTool("select"); return }
+    gesture.current = { photoId,id,start:p,last:p,before:items,mode:"draw",pointerId:event.pointerId }
     svg.current?.setPointerCapture(event.pointerId)
-    setItems([...items,item])
+    edit(current=>({...current,items:[...current.items,item]}))
   }
   const select = (id: string,event: PointerEvent<SVGGElement>) => {
     if (readOnly || original || saving || tool !== "select" || event.button !== 0) return
     event.stopPropagation()
-    setSelected(id)
-    gesture.current={id,start:point(event),before:items,moving:true,pointerId:event.pointerId}
+    choose(id)
+    const p=point(event)
+    gesture.current={photoId,id,start:p,last:p,before:items,mode:"move",pointerId:event.pointerId}
     svg.current?.setPointerCapture(event.pointerId)
-    const row=items.find(item=>item.id===id)!
-    setColor(row.color);setStroke(row.stroke);setFontSize(row.fontSize);setText(row.text)
+  }
+  // The handle sits straight above the centre, so the angle from the centre to the pointer is the mark's rotation.
+  const rotateStart = (event: PointerEvent<SVGCircleElement>) => {
+    if (readOnly || original || saving || !selectedMark || event.button !== 0 || gesture.current) return
+    event.stopPropagation()
+    const p=point(event,false)
+    gesture.current={photoId,id:selectedMark.id,start:p,last:p,before:items,mode:"rotate",pointerId:event.pointerId,centre:markupCenter(selectedMark,height)}
+    svg.current?.setPointerCapture(event.pointerId)
   }
   const move = (event: PointerEvent<SVGSVGElement>) => {
     const g=gesture.current; if(!g || g.pointerId!==event.pointerId) return
+    if(g.mode==="rotate" && g.centre) {
+      const p=point(event,false),raw=angleFromCenter(g.centre.x,g.centre.y,p.x*10,p.y*height/100)
+      const degrees=event.shiftKey ? snapAngle(raw,ROTATE_STEP) : Math.round(raw*10)/10
+      g.last=p
+      updateDoc(g.photoId,current=>({...current,items:g.before.map(item=>item.id===g.id ? withRotation(item,degrees) : item)}))
+      return
+    }
     const p=point(event)
-    if(g.moving) setItems(g.before.map(item=>item.id===g.id ? moveMarkup(item,p.x-g.start.x,p.y-g.start.y) : item))
-    else setItems(rows=>rows.map(item=>item.id!==g.id ? item : { ...item,x2:p.x,y2:p.y,points:item.kind === "draw" ? [...item.points.slice(0,MARKUP_POINT_LIMIT-1),p] : [] }))
+    g.last=p
+    if(g.mode==="move") updateDoc(g.photoId,current=>({...current,items:g.before.map(item=>item.id===g.id ? moveMarkup(item,p.x-g.start.x,p.y-g.start.y) : item)}))
+    else updateDoc(g.photoId,current=>({...current,items:current.items.map(item=>item.id!==g.id ? item : { ...item,x2:p.x,y2:p.y,points:item.kind === "draw" ? [...item.points.slice(0,MARKUP_POINT_LIMIT-1),p] : [] })}))
   }
   const end = (event: PointerEvent<SVGSVGElement>,cancel=false) => {
     const g=gesture.current;if(!g || g.pointerId!==event.pointerId) return
     gesture.current=null
-    if(cancel) setItems(g.before)
-    else {
-      const valid=items.filter(item=>item.id!==g.id || g.moving || (item.kind === "draw" ? item.points.length>=2 : Math.abs(item.x2-item.x)+Math.abs(item.y2-item.y)>0.2))
-      setItems(valid);if(JSON.stringify(valid)!==JSON.stringify(g.before)) remember(g.before)
-    }
+    updateDoc(g.photoId,current=>{
+      if(cancel) return {...current,items:g.before}
+      // A click without dragging leaves no empty shape behind.
+      const valid=current.items.filter(item=>item.id!==g.id || g.mode!=="draw" || (item.kind === "draw" ? item.points.length>=2 : Math.abs(item.x2-item.x)+Math.abs(item.y2-item.y)>0.2))
+      return recordEdit(current,valid,g.before)
+    })
+    // A finished shape stays selected and the tool goes back to Select (as on the blueprint), ready to move or turn.
+    if(!cancel && g.mode==="draw" && Math.abs(g.last.x-g.start.x)+Math.abs(g.last.y-g.start.y)>0.2) setTool("select")
     if(svg.current?.hasPointerCapture(event.pointerId)) svg.current.releasePointerCapture(event.pointerId)
   }
-  const updateSelected = () => {
-    if(!selected) return
-    const row=items.find(item=>item.id===selected)
-    if(row?.kind === "text" && !text.trim()) return setError("Text cannot be empty.")
-    remember(items);setItems(items.map(item=>item.id===selected ? { ...item,color,stroke,fontSize,text:item.kind === "text" ? text.trim() : item.text } : item))
+  const chooseTool = (next: PhotoTool) => {
+    if(next==="pan") {setPanMode(true);return}
+    styleRun.current="";setPanMode(false);setTool(next)
+    if(next!=="select") setSelected("")
   }
-  const close = () => {
+  const undo = () => { if(gesture.current) return; styleRun.current="";setSelected("");edit(undoEdit) }
+  const redo = () => { if(gesture.current) return; styleRun.current="";setSelected("");edit(redoEdit) }
+  const selectedMark = items.find(item=>item.id===selected) ?? null
+  const deleteSelected = () => { if(!selectedMark || gesture.current) return; styleRun.current="";edit(current=>removeMark(current,selectedMark.id));setSelected("") }
+  // `live` changes (slider drag, typing, custom colour) of the same property stay one undo step; a pick is its own step.
+  const restyle = (style: MarkupStyle, key: string, live: boolean) => {
+    if(!selectedMark || gesture.current) return
+    const run=live ? `${photoId}:${selectedMark.id}:${key}` : ""
+    const continuing=live && styleRun.current===run
+    styleRun.current=run
+    edit(current=>restyleMark(current,selectedMark.id,style,continuing))
+  }
+  const rotateBy = (delta: number) => { if(selectedMark) restyle({rotation:(selectedMark.rotation ?? 0)+delta},"rotation",false) }
+  // Arrow keys nudge the selected mark (Shift = 10x); a run of presses is one undo step.
+  const nudge = (dx: number, dy: number) => {
+    if(!selectedMark || gesture.current) return
+    const run=`${photoId}:${selectedMark.id}:nudge`
+    const continuing=styleRun.current===run
+    styleRun.current=run
+    edit(current=>changeMark(current,selectedMark.id,item=>moveMarkup(item,dx,dy),continuing))
+  }
+  const changeText = (value: string) => {
+    setText(value)
+    if(selectedMark?.kind!=="text") return
+    if(!value.trim()) return setError("Text cannot be empty: type something or delete the mark.")
+    setError("");restyle({text:value},"text",true)
+  }
+  const changes = markupChanges(photos,docs)
+  const close = async () => {
     if(saving) return
-    if(!readOnly && (JSON.stringify(items)!==JSON.stringify(initial) || note!==caption) && !window.confirm("Discard unsaved photo markup?")) return
+    if(!readOnly && changes.length && !(await confirm({ title:"Discard unsaved photo markup?", message:`${changes.length === 1 ? "A photo has" : `${changes.length} photos have`} markup or caption changes that are not saved.`, confirmLabel:"Discard", tone:"danger" }))) return
     onClose()
   }
   const save = async () => {
-    const why=markupProblem(items);if(why) return setError(why)
+    if(saving || gesture.current) return
+    for(const change of changes) {
+      const why=markupProblem(change.annotations)
+      if(why) {goTo(photos.findIndex(row=>row.id===change.id));return setError(why)}
+    }
+    if(!changes.length) return onClose()
     setSaving(true);setError("")
-    try { await onSave?.(items,note);onClose() } catch(e) {setError((e as Error).message)} finally {setSaving(false)}
+    try { await onSave?.(changes);onClose() } catch(e) {setError((e as Error).message)} finally {setSaving(false)}
   }
-  return <Modal title={title ?? (readOnly ? "Issue photo and details" : "Annotate issue photo")} description="Original photo preserved. Text, lines, arrows, shapes and drawings are saved separately." size="2xl" fullscreen={fullscreen} onEscape={fullscreen ? exitFullscreen : undefined} onClose={close} footer={<><button type="button" className={buttonSecondary} disabled={saving} onClick={close}>Close</button>{!readOnly ? <button type="button" className={buttonPrimary} disabled={saving || !loaded || Boolean(gesture.current)} onClick={()=>void save()}>{saving ? "Saving..." : "Save photo markup"}</button> : null}</>}>
-    <div className="flex min-w-0 flex-col gap-3">
-      <div className="flex shrink-0 flex-wrap items-center gap-2">
-        {!readOnly ? markupTools.map(value=><button key={value} type="button" aria-pressed={tool===value && !panMode} disabled={saving || original || panning} className={`${buttonSecondary} !px-3 !py-1.5 ${tool===value && !panMode ? "!border-brand !text-brand-text" : ""}`} onClick={()=>{setTool(value);setPanMode(false);setSelected("")}}>{value === "draw" ? "Freehand" : value[0].toUpperCase()+value.slice(1)}</button>) : null}
-        <button type="button" className={buttonSecondary} aria-pressed={panMode} onClick={()=>setPanMode(value=>!value)} disabled={Boolean(gesture.current) || panning} title="Drag to pan; Space-drag and middle mouse also pan">Pan</button>
-        <button type="button" className={buttonSecondary} aria-pressed={original} onClick={()=>setOriginal(!original)}>{original ? "Show markup" : "View original"}</button>
-        <button type="button" className={buttonSecondary} aria-label="Zoom out photo" title="Zoom out (-)" disabled={view.scale<=MIN_CANVAS_SCALE || Boolean(gesture.current) || panning} onClick={()=>zoomAt(1/CANVAS_ZOOM_STEP)}>−</button><span className="w-12 text-center text-xs font-bold tabular-nums" role="status" aria-live="polite">{Math.round(view.scale*100)}%</span><button type="button" className={buttonSecondary} aria-label="Zoom in photo" title="Zoom in (+)" disabled={view.scale>=MAX_CANVAS_SCALE || Boolean(gesture.current) || panning} onClick={()=>zoomAt(CANVAS_ZOOM_STEP)}>+</button><button type="button" className={buttonSecondary} aria-pressed={sizing === "fill"} title="Fill the canvas" disabled={Boolean(gesture.current) || panning} onClick={()=>sizePhoto("fill")}>Fill</button><button type="button" className={buttonSecondary} aria-pressed={sizing === "fit"} title="Fit the whole photo (0)" disabled={Boolean(gesture.current) || panning} onClick={()=>sizePhoto("fit")}>Fit</button>
-        <button type="button" className={buttonSecondary + " !px-3"} aria-label={fullscreen ? "Exit fullscreen photo editor" : "Enter fullscreen photo editor"} title={fullscreen ? "Exit fullscreen (Esc)" : "Fullscreen photo editor"} aria-pressed={fullscreen} disabled={Boolean(gesture.current)} onClick={()=>fullscreen ? exitFullscreen() : setFullscreen(true)}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">{fullscreen ? <path d="M8 3v5H3m13-5v5h5M8 21v-5H3m13 5v-5h5" /> : <path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5" />}</svg></button>
-      </div>
-      {!readOnly ? <fieldset disabled={saving || original} className="flex shrink-0 flex-wrap items-center gap-3 rounded-lg bg-surface-muted p-3 text-xs">
-        <label>Color <input aria-label="Annotation color" type="color" value={color} onChange={e=>setColor(e.target.value)} /></label>
-        <label>Line width <input aria-label="Annotation line width" type="range" min={1} max={12} value={stroke} onChange={e=>setStroke(Number(e.target.value))} /></label>
-        <label>Text size <select value={fontSize} onChange={e=>setFontSize(Number(e.target.value))}>{[12,18,24,30,36,48,60,72].map(n=><option key={n}>{n}</option>)}</select></label>
-        <input aria-label="Annotation text" className={`${inputClass} !w-64 !py-1`} maxLength={300} placeholder="Text to place on photo" value={text} onChange={e=>setText(e.target.value)} />
-        <button type="button" className={buttonSecondary} disabled={!selected} onClick={updateSelected}>Apply to selected</button>
-        <button type="button" className={buttonSecondary} disabled={!selected} onClick={()=>{remember(items);setItems(items.filter(item=>item.id!==selected));setSelected("")}}>Delete selected</button>
-        <button type="button" className={buttonSecondary} disabled={!past.length} onClick={()=>{setFuture([items,...future]);setItems(past[past.length-1]);setPast(past.slice(0,-1));setSelected("")}}>Undo</button>
-        <button type="button" className={buttonSecondary} disabled={!future.length} onClick={()=>{setPast([...past,items]);setItems(future[0]);setFuture(future.slice(1));setSelected("")}}>Redo</button>
-      </fieldset> : null}
-      <p className="text-xs text-fg-muted">{readOnly ? note || "No caption." : "Scroll down to move through the editor. Ctrl/⌘ + scroll zooms toward the cursor. Select-drag, Pan or Space-drag moves the photo. Pinch with two fingers. Fit shows the whole photo."}</p>
+  const onKeys = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    const target=event.target as HTMLElement
+    if(/^(INPUT|TEXTAREA|SELECT)$/.test(target?.tagName ?? "")) return
+    if(event.key==="PageDown" || event.key==="PageUp") {
+      if(photos.length>1) {event.preventDefault();goTo(at+(event.key==="PageDown" ? 1 : -1))}
+      return
+    }
+    if(readOnly) return
+    const key=event.key.toLowerCase()
+    if((event.ctrlKey || event.metaKey) && (key==="z" || key==="y")) {event.preventDefault();if(key==="y" || event.shiftKey) redo();else undo();return}
+    if(event.ctrlKey || event.metaKey || event.altKey) return
+    if((event.key==="Delete" || event.key==="Backspace") && selectedMark) {event.preventDefault();deleteSelected();return}
+    if(selectedMark && !original && event.key.startsWith("Arrow")) {
+      event.preventDefault()
+      const step=NUDGE_STEP*(event.shiftKey ? 10 : 1)
+      nudge(event.key==="ArrowLeft" ? -step : event.key==="ArrowRight" ? step : 0,event.key==="ArrowUp" ? -step : event.key==="ArrowDown" ? step : 0)
+      return
+    }
+    if(selectedMark && !original && (event.key==="[" || event.key==="]")) {event.preventDefault();rotateBy(event.key==="]" ? ROTATE_STEP : -ROTATE_STEP);return}
+    const next=toolByKey[key]
+    if(next && !(original && next!=="select" && next!=="pan")) {event.preventDefault();chooseTool(next)}
+  }
+
+  if(!photo) return null
+  const many = photos.length>1
+  const busy = Boolean(gesture.current) || panning || saving
+  const showProps = !readOnly && !original && !panMode && (tool!=="select" || Boolean(selectedMark))
+  const slides = photos.map(row=>{const current=docs[row.id] ?? newDoc(row);return {id:row.id,src:row.src,caption:current.note,items:current.items,changed:docChanged(docs[row.id],row)}})
+  const captionLabel = many ? `Caption for image ${at+1}` : "Photo caption"
+  const caption = <textarea className={`${inputClass} mt-1`} rows={2} maxLength={captionLimit} disabled={saving} value={doc.note} onChange={e=>{const value=e.target.value;edit(current=>({...current,note:value}))}} />
+  return <Modal title={title ?? (readOnly ? "Issue photo and details" : "Annotate issue photo")} description={readOnly ? "Original photo with its saved markup." : "Original photo preserved. Text, lines, arrows, shapes and drawings are saved separately."} size="2xl" fullscreen={fullscreen} onEscape={fullscreen ? exitFullscreen : undefined} onClose={()=>void close()} footer={<>
+    {many && !readOnly ? <span className="mr-auto text-xs text-fg-muted" aria-live="polite">{changes.length ? `${changes.length} of ${photos.length} photos changed` : "No changes yet"}</span> : null}
+    <button type="button" className={buttonSecondary} disabled={saving} onClick={()=>void close()}>Close</button>
+    {!readOnly ? <button type="button" className={buttonPrimary} disabled={saving || Boolean(gesture.current)} onClick={()=>void save()}>{saving ? "Saving..." : many ? "Save markup" : "Save photo markup"}</button> : null}
+  </>}>
+    <div className={`flex min-w-0 flex-col gap-2 ${fullscreen ? "min-h-full" : ""}`} onKeyDown={onKeys}>
+      <PhotoEditorToolbar readOnly={readOnly} active={panMode ? "pan" : tool} onTool={chooseTool} busy={busy}
+        canUndo={doc.past.length>0 && !original} canRedo={doc.future.length>0 && !original} onUndo={undo} onRedo={redo}
+        original={original} onOriginal={()=>{cancelEdit();setOriginal(value=>!value)}}
+        scale={view.scale} canZoomIn={view.scale<MAX_CANVAS_SCALE} canZoomOut={view.scale>MIN_CANVAS_SCALE} onZoomIn={()=>zoomAt(CANVAS_ZOOM_STEP)} onZoomOut={()=>zoomAt(1/CANVAS_ZOOM_STEP)}
+        sizing={sizing} onFit={()=>sizePhoto("fit")} onFill={()=>sizePhoto("fill")}
+        fullscreen={fullscreen} onFullscreen={()=>fullscreen ? exitFullscreen() : setFullscreen(true)}
+        slides={many ? {index:at,count:photos.length,open:slidesOpen,onToggle:()=>setSlidesOpen(value=>!value),onPrev:()=>goTo(at-1),onNext:()=>goTo(at+1)} : undefined} />
+      {showProps ? <MarkupProperties mark={selectedMark} tool={tool} color={color} stroke={stroke} fontSize={fontSize} text={text} textRef={textInput} disabled={saving}
+        onColor={(value,live)=>{setColor(value);restyle({color:value},"color",live)}} onStroke={value=>{setStroke(value);restyle({stroke:value},"stroke",true)}}
+        onFontSize={value=>{setFontSize(value);restyle({fontSize:value},"fontSize",false)}} onText={changeText} onDelete={deleteSelected}
+        rotation={selectedMark?.rotation ?? 0} onRotate={(value,live)=>restyle({rotation:value},"rotation",live)} onRotateBy={rotateBy} /> : null}
       {error ? <p role="alert" className="text-sm text-danger-fg">{error}</p> : null}
-      <div ref={viewportRef} tabIndex={0} aria-label="Photo editing viewport" style={{touchAction:"none"}} className={`relative min-w-0 shrink-0 overflow-hidden rounded-xl border border-line bg-black/80 outline-none focus-visible:ring-2 focus-visible:ring-brand ${panning ? "cursor-grabbing" : space || panMode || tool==="select" || readOnly || original ? "cursor-grab" : "cursor-crosshair"} ${fullscreen ? "h-[78dvh] min-h-96" : "h-[72vh] min-h-96"}`} onPointerDownCapture={downView} onPointerMoveCapture={moveView} onPointerUpCapture={endView} onPointerCancelCapture={endView} onKeyDown={event=>{if(event.key===" "){event.preventDefault();setSpace(true)}else if(event.key==="+" || event.key==="="){event.preventDefault();zoomAt(CANVAS_ZOOM_STEP)}else if(event.key==="-"){event.preventDefault();zoomAt(1/CANVAS_ZOOM_STEP)}else if(event.key==="0" && !gesture.current && !panning){event.preventDefault();sizePhoto("fit")}}}>
-        <div data-photo-stage className="absolute left-0 top-0 origin-top-left" style={{width:imageSize.width,height:imageSize.height,transform:`translate(${view.tx}px, ${view.ty}px) scale(${view.scale})`}}>
-          <img src={src} alt={note || "Issue evidence"} className="pointer-events-none block h-full w-full select-none" draggable={false} onLoad={e=>{const size={width:e.currentTarget.naturalWidth,height:e.currentTarget.naturalHeight};sizeRef.current=size;setImageSize(size);sizePhoto("fill",size);setLoaded(true)}} onError={()=>{setLoaded(false);setError("Photo could not be loaded.")}} />
-          <svg ref={svg} viewBox={`0 0 1000 ${height}`} className="absolute inset-0 h-full w-full" style={{touchAction:readOnly || original ? "auto" : "none"}} onPointerDown={start} onPointerMove={move} onPointerUp={e=>end(e)} onPointerCancel={e=>end(e,true)} aria-label="Photo annotation canvas">
-            {!original ? <MarkupLayer items={items} height={height} selected={selected} onSelect={readOnly ? undefined : select} /> : null}
-          </svg>
+      <div className={`flex min-w-0 flex-col gap-2 md:flex-row ${fullscreen ? "min-h-80 flex-1" : "md:h-[64vh] md:min-h-80"}`}>
+        {many && slidesOpen ? <PhotoSlides slides={slides} index={at} onSelect={goTo} /> : null}
+        <div ref={viewportRef} tabIndex={0} aria-label="Photo editing viewport" style={{touchAction:"none"}} className={`relative min-w-0 shrink-0 overflow-hidden rounded-xl border border-line bg-black/80 outline-none focus-visible:ring-2 focus-visible:ring-brand md:flex-1 ${panning ? "cursor-grabbing" : space || panMode || tool==="select" || readOnly || original ? "cursor-grab" : "cursor-crosshair"} ${fullscreen ? "min-h-80 flex-1" : "h-[56vh] min-h-72 md:h-full"}`} onPointerDownCapture={downView} onPointerMoveCapture={moveView} onPointerUpCapture={endView} onPointerCancelCapture={endView} onKeyDown={event=>{if(event.key===" "){event.preventDefault();setSpace(true)}else if(event.key==="+" || event.key==="="){event.preventDefault();zoomAt(CANVAS_ZOOM_STEP)}else if(event.key==="-"){event.preventDefault();zoomAt(1/CANVAS_ZOOM_STEP)}else if(event.key==="0" && !gesture.current && !panning){event.preventDefault();sizePhoto("fit")}}}>
+          <div data-photo-stage className="absolute left-0 top-0 origin-top-left" style={{width:imageSize.width,height:imageSize.height,transform:`translate(${view.tx}px, ${view.ty}px) scale(${view.scale})`}}>
+            <img key={photoId} src={photo.src} alt={doc.note || (many ? `Image ${at+1} of ${photos.length}` : "Issue evidence")} className="pointer-events-none block h-full w-full select-none" draggable={false} onLoad={e=>{const size={width:e.currentTarget.naturalWidth,height:e.currentTarget.naturalHeight};sizeRef.current=size;setImageSize(size);sizePhoto(sizingRef.current==="fill" ? "fill" : "fit",size);setLoaded(true)}} onError={()=>{setLoaded(false);setError("Photo could not be loaded.")}} />
+            <svg ref={svg} viewBox={`0 0 1000 ${height}`} className="absolute inset-0 h-full w-full" style={{touchAction:readOnly || original ? "auto" : "none",overflow:"visible"}} onPointerDown={start} onPointerMove={move} onPointerUp={e=>end(e)} onPointerCancel={e=>end(e,true)} aria-label="Photo annotation canvas">
+              {!original && loaded ? <MarkupLayer items={items} height={height} selected={selected} onSelect={readOnly ? undefined : select} /> : null}
+              {!original && loaded && !readOnly && selectedMark && tool==="select" && !panMode ? <SelectionFrame item={selectedMark} height={height} unit={1000/(imageSize.width*view.scale)} onRotateStart={rotateStart} /> : null}
+            </svg>
+          </div>
         </div>
       </div>
-      {!readOnly ? fullscreen ? <details className="shrink-0 rounded-lg border border-line px-3 py-2"><summary className="cursor-pointer text-sm font-bold">Photo caption <span className="ml-2 font-normal text-fg-muted">Edit details</span></summary><label className="mt-2 block text-sm font-bold">Photo caption<textarea className={`${inputClass} mt-1`} rows={2} maxLength={captionLimit} disabled={saving} value={note} onChange={e=>setNote(e.target.value)} /></label></details> : <label className="block shrink-0 text-sm font-bold">Photo caption<textarea className={`${inputClass} mt-1`} rows={2} maxLength={captionLimit} disabled={saving} value={note} onChange={e=>setNote(e.target.value)} /></label> : null}
+      {readOnly ? <p className="shrink-0 text-sm">{doc.note || "No caption."}</p>
+        : fullscreen ? <details className="shrink-0 rounded-lg border border-line px-3 py-2"><summary className="cursor-pointer text-sm font-bold">{captionLabel} <span className="ml-2 font-normal text-fg-muted">Edit details</span></summary><label className="mt-2 block text-sm font-bold">{captionLabel}{caption}</label></details>
+        : <label className="block shrink-0 text-sm font-bold">{captionLabel}{caption}</label>}
+      <p className="shrink-0 text-xs text-fg-muted">Ctrl/⌘ + scroll zooms toward the cursor; plain scrolling moves down the editor. Pan, Space-drag or the middle button moves the photo; pinch with two fingers.{readOnly ? "" : " Keys: V select, H pan, T text, L A R E D shapes; with a mark selected: drag to move, arrow keys nudge, the round handle or [ ] rotates, Del deletes; Ctrl+Z / Ctrl+Shift+Z."}{many ? " Page Up / Page Down change the photo." : ""}</p>
     </div>
   </Modal>
 }

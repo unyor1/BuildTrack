@@ -3,7 +3,8 @@ import Modal from "../Modal"
 import { buttonSecondary } from "../ui/PageParts"
 import { useSignedUrl } from "../../lib/blueprints"
 import { useSnags, useSnagPhotos, type SnagPhoto } from "../../lib/snags"
-import IssuePhotoEditor, { MarkupLayer } from "../issues/IssuePhotoEditor"
+import IssuePhotoEditor from "../issues/IssuePhotoEditor"
+import { MarkupLayer } from "../issues/MarkupLayer"
 
 function Thumb({ photo, className }: { photo: SnagPhoto; className: string }) {
   const [height, setHeight] = useState(750)
@@ -31,7 +32,7 @@ export function SnagPhotoStrip({ photos }: { photos: SnagPhoto[] }) {
 function SavedSnagPhoto({ photo, onClose }: { photo: SnagPhoto; onClose: () => void }) {
   const { url, failed } = useSignedUrl("snag-photos", photo.path)
   if (!url) return <Modal title="Report photo" onClose={onClose} footer={<button type="button" className={buttonSecondary} onClick={onClose}>Close</button>}><p>{failed ? "Photo unavailable" : "Loading photo…"}</p></Modal>
-  return <IssuePhotoEditor src={url} initial={photo.annotations ?? []} caption={photo.caption || "Reported problem"} readOnly onClose={onClose} />
+  return <IssuePhotoEditor photos={[{ id: photo.id, src: url, annotations: photo.annotations ?? [], caption: photo.caption || "Reported problem" }]} readOnly onClose={onClose} />
 }
 
 // Keep the client's original annotated problem visible alongside the Foreman's
