@@ -14,6 +14,9 @@ This is the ONLY context file. Do NOT reference or touch anything from the "ebal
 - Type-check: `npx tsc --noEmit`
 - If `pnpm install` fails with "Access is denied" in node_modules, an IDE (Antigravity) is locking it: close it or skip install.
 
+## 2b. Documentation Tasks
+All non-code work (papers, manuals, progress reports, slides, spreadsheets) follows [DOCUMENTATION_GUIDE.md](DOCUMENTATION_GUIDE.md): surgical edits, line-range reads, no full-document dumps in chat, no changes to `src/` or `supabase/`, and a short note in `docs/audits/` for major additions. Documentation work moved to Codex on 2026-10-21: current state, links and the starting prompt are in [docs/DOCUMENTATION_HANDOFF.md](docs/DOCUMENTATION_HANDOFF.md).
+
 ## Stack
 React 19, TypeScript, Vite 8, Tailwind v4, `@supabase/supabase-js`. Custom `pushState` routing in `src/App.tsx` (no router lib). Backend = Supabase (Auth, Postgres+RLS, Edge Functions in Deno). Email via Brevo SMTP configured inside Supabase.
 
