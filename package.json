@@ -14,8 +14,18 @@
     "db:apply": "node scripts/db-migrate.mjs apply",
     "test:lib": "node scripts/test-lib.mjs",
     "test:comparison": "node scripts/test-comparison.mjs",
+    "test:issue-editor": "node scripts/test-issue-editor.mjs",
+    "test:attendance": "node scripts/test-attendance.mjs",
+    "test:biometric-access": "node scripts/test-biometric-access.mjs",
+    "test:worker-camera": "node scripts/test-worker-camera.mjs",
+    "test:worker-enrollment": "node scripts/test-worker-enrollment.mjs",
+    "test:foreman-attendance": "node scripts/test-foreman-attendance.mjs",
+    "test:admin-worker-profiles": "node scripts/test-admin-worker-profiles.mjs",
+    "test:attendance-reports": "node scripts/test-attendance-reports.mjs",
+    "test:direct-qa": "node scripts/test-direct-qa.mjs",
+    "test:assignments": "node scripts/test-assignments.mjs",
     "test:load": "node scripts/load-test.mjs",
-    "check": "tsc --noEmit && pnpm test:lib && pnpm test:comparison && pnpm test:sql && pnpm build"
+    "check": "tsc --noEmit && pnpm test:lib && pnpm test:comparison && pnpm test:issue-editor && pnpm test:attendance && pnpm test:biometric-access && pnpm test:worker-camera && pnpm test:worker-enrollment && pnpm test:foreman-attendance && pnpm test:admin-worker-profiles && pnpm test:attendance-reports && pnpm test:direct-qa && pnpm test:assignments && pnpm test:sql && pnpm build"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.117.3",

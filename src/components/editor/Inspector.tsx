@@ -70,16 +70,16 @@ function ChecklistSummary({ pinId }: { pinId: string }) {
 // Checklist ticks, remarks and photo uploads: ONLY the Foreman the pin is assigned to. Engineers build the checklist and
 // approve; the database enforces the same rule (can_work_on_pin, 0040).
 export const canWorkOn = (props: Pick<InspectorProps, "role" | "canReport" | "meId">, pin: Pin) =>
-  props.role === "foreman" && props.canReport && pin.assigned_to === props.meId && pin.status !== "for_review" && pin.status !== "verified"
+  props.role === "foreman" && props.canReport && pin.assigned_to === props.meId && pin.status !== "verified"
 
 // Why the checklist is read-only for this person (shown above the items so nobody wonders where the Upload button went).
 export const checklistNotice = (props: Pick<InspectorProps, "role" | "canReport" | "meId">, pin: Pin, assigneeName?: string) => {
   if (props.role === "foreman" && pin.assigned_to !== props.meId) {
     return pin.assigned_to
-      ? `This work is assigned to ${assigneeName ?? "another foreman"}. Only that foreman can upload photos and tick the checklist. Ask the engineer to reassign it if it is yours.`
-      : "This work is not assigned to anyone yet. The engineer must assign this pin to you (Details > Assigned foreman) before you can upload photos and tick the checklist."
+      ? `This work is assigned to ${assigneeName ?? "another foreman"}. Only that foreman can add evidence and submit for QA. Ask the engineer to reassign it if it is yours.`
+      : "This work is not assigned to anyone yet. The engineer must assign this pin to you (Details > Assigned foreman) before you can add evidence and submit for QA."
   }
-  if (props.role === "engineer") return "The assigned foreman uploads a photo on each item and ticks it. You verify the work once every item is done and QA is clear."
+  if (props.role === "engineer") return "Add each checklist item with its inspection criteria. The assigned Foreman opens the item, adds photos and submits directly for QA. You inspect and accept each item."
   return ""
 }
 

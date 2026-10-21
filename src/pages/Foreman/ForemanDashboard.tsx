@@ -136,7 +136,7 @@ export default function ForemanDashboard({ onNavigate }: ForemanPageProps) {
           : <ul className="divide-y divide-line overflow-hidden rounded-xl border border-line bg-surface">{shown.map(row)}</ul>}
       </section>
 
-      <p className="mt-8 text-xs text-fg-muted">Attendance (biometrics) is the one part still being connected. <button type="button" className="inline-flex min-h-6 items-center font-bold text-brand-text underline" onClick={() => onNavigate("daily-work")}>Open the site plan</button></p>
+      <p className="mt-8 text-xs text-fg-muted">Worker biometric registration is handled by Admin only. <button type="button" className="inline-flex min-h-6 items-center font-bold text-brand-text underline" onClick={() => onNavigate("attendance")}>Open workforce management</button></p>
 
       {reporting ? <ReportModal pin={reporting} onClose={() => setReporting(null)} onSaved={async () => { setReporting(null); await load() }} /> : null}
     </div>

@@ -13,7 +13,7 @@ const permissions: Array<{ key: AdminPermission; label: string; short: string; n
   { key: "users.approve", label: "Review access requests", short: "Approve", note: "Decide registrations, ID checks, requests, whitelist" },
   { key: "users.disable", label: "Suspend / enable users", short: "Suspend", note: "Suspend or re-enable accounts" },
   { key: "users.impersonate", label: "Log in as a user", short: "Log in as", note: "See the app as another person (audited)" },
-  { key: "biometrics.manage", label: "Biometric registration", short: "Biometrics", note: "Register fingerprints (when built)" },
+  { key: "biometrics.manage", label: "Biometric registration", short: "Biometrics", note: "Admin-only worker profiles, sensor enrollment IDs and device management" },
   { key: "projects.manage", label: "Project management", short: "Projects", note: "Create projects, teams, backups" },
   { key: "blueprints.manage", label: "Blueprint management", short: "Blueprints", note: "Upload and edit plans and QA" },
 ]

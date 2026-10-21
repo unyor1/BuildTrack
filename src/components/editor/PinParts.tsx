@@ -4,7 +4,7 @@ import PhotoViewer from "../PhotoViewer"
 import { Skeleton, SkeletonList } from "../ui/Skeleton"
 import BeforeAfter from "../BeforeAfter"
 import StampChip from "../StampChip"
-import PinQaSubmission from "../qa/PinQaSubmission"
+import WorkChecklistEditor from "../qa/WorkChecklistEditor"
 import { usePinQa } from "../../lib/pinQa"
 import { captureStamp, stampFields, stampSummary, photoEligible, photoPreviewBlocked } from "../../lib/photoStamp"
 import { StageChip } from "../qa/WorkItemParts"
@@ -107,30 +107,35 @@ export function ChecklistProgress({ done, total }: { done: number; total: number
 }
 
 // Work items of this work (FLOOR, WALL…). Each row shows its stage and the one next action; "Open" shows the item's whole QA record
-// (evidence, inspection, corrections and NCRs, attempts). The database refuses "ready" without a photo.
-export function PinChecklist({ pin, canEdit, canTick, notice = "", onChange, onPinChanged, submissionNote }: { pin: Pin; canEdit: boolean; canTick: boolean; notice?: string; onChange?: (done: number, total: number) => void; onPinChanged?: () => void | Promise<void>; submissionNote?: string }) {
+// (evidence, inspection, corrections and NCRs, attempts). Photo controls live inside that record, not on these rows.
+export function PinChecklist({ pin, canEdit, canTick, notice = "", onChange, onPinChanged }: { pin: Pin; canEdit: boolean; canTick: boolean; notice?: string; onChange?: (done: number, total: number) => void; onPinChanged?: () => void | Promise<void>; submissionNote?: string }) {
   const pinId = pin.id
   const qa = usePinQa(pinId)
-  const locked = !qa.state || qa.state.open || qa.state.status === "for_review" || qa.state.status === "verified"
+  const editViewAllowed = canEdit
+  const locked = !qa.state || Boolean(qa.error) || qa.state.status === "verified"
   canEdit = canEdit && !locked
   canTick = canTick && !locked
   const toast = useToast()
   const { profile } = useAuth()
+  const engineer = profile?.role === "engineer"
+  const editBlock = !editViewAllowed ? "This sheet view is read-only. Open the latest sheet revision and exit presentation mode to add checklist items."
+    : qa.error ? `Could not check QA status: ${qa.error}. Retry the QA check below.`
+    : !qa.state ? "Checking QA status before adding checklist items…"
+    : qa.state.status === "verified" ? "This work is Completed. Reopen it from Details before adding checklist items."
+    : ""
   // QA records are staff-only: clients see the items and whether each is accepted, never the QA workspace.
   const staff = profile?.role !== "client" && profile?.role !== "user"
-  const { items, setItems, loading, error: checklistError, reload } = useChecklist(pinId)
+  const { items, loading, error: checklistError, reload } = useChecklist(pinId)
   const { photos, reload: reloadPhotos } = usePinPhotos(pinId)
   const history = useWorkQaHistory(pinId)
   const defects = usePinDefects(pinId)
-  const [text, setText] = useState("")
-  const [busy, setBusy] = useState(false)
+  const [editing, setEditing] = useState<ChecklistItem | "new" | null>(null)
   const [openId, setOpenId] = useState<string | null>(null)
   const done = items.filter((item) => item.done).length
   const stages = useMemo(() => new Map(items.map((item) => [item.id, stageOf({
     item, pin, pinItems: items, submissions: history.submissions as unknown as SubmissionRef[], inspections: history.inspections, defects,
     draft: history.attempts.find((row) => row.item_id === item.id && !row.submitted_inspection_id) ?? null, photos,
   })])), [items, pin, history.submissions, history.inspections, history.attempts, defects, photos])
-  const firstTimeReady = items.filter((item) => item.done && stages.get(item.id)?.view.stage === "ready" && !stages.get(item.id)?.attempts.length)
   const changed = useRef(onPinChanged)
   changed.current = onPinChanged
   useEffect(() => {
@@ -143,31 +148,6 @@ export function PinChecklist({ pin, canEdit, canTick, notice = "", onChange, onP
 
   const refresh = async () => { await Promise.all([reload(), reloadPhotos(), history.reload(), qa.reload()]); await onPinChanged?.() }
 
-  const add = async (event: FormEvent) => {
-    event.preventDefault()
-    const value = text.trim()
-    if (!value) return
-    if (value.length > 200) return toast.error("That item is too long", "Keep it under 200 characters.")
-    setBusy(true)
-    const { error } = await supabase.from("pin_checklist_items").insert({ pin_id: pinId, project_id: "00000000-0000-0000-0000-000000000000", text: value })
-    setBusy(false)
-    if (error) return toast.error("Could not add the item", dbMessage(error))
-    setText("")
-    await reload()
-  }
-
-  const tick = async (id: string, value: boolean) => {
-    if (value && !photos.some((photo) => photo.checklist_item_id === id && !photo.qa_attempt_id && photoEligible(photo))) {
-      return toast.info("Upload a photo first", "Use Upload on this item to add a photo of the finished work, then tick it.")
-    }
-    setItems((current) => current.map((item) => (item.id === id ? { ...item, done: value } : item)))
-    const { data, error } = await supabase.from("pin_checklist_items").update({ done: value }).eq("id", id).select("id")
-    if (error || !data?.length) {
-      toast.error("Could not update the item", error ? dbMessage(error) : "You may not be allowed to tick items on this pin.")
-    }
-    await reload()
-  }
-
   const remove = async (id: string) => {
     const { error } = await supabase.from("pin_checklist_items").delete().eq("id", id)
     if (error) return toast.error("Could not remove the item", dbMessage(error))
@@ -176,12 +156,20 @@ export function PinChecklist({ pin, canEdit, canTick, notice = "", onChange, onP
 
   return (
     <div className="space-y-3">
+      {engineer ? <section aria-label="Checklist actions" className="space-y-2 rounded-xl border border-line bg-surface-muted p-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h3 className="text-sm font-extrabold">Checklist items</h3>
+          <button type="button" disabled={Boolean(editBlock) || loading} aria-describedby={editBlock ? `checklist-add-reason-${pin.id}` : undefined} className="rounded-lg bg-brand px-3 py-2 text-sm font-bold text-white hover:bg-brand-hover disabled:cursor-not-allowed disabled:opacity-60" onClick={() => setEditing("new")}>Add item &amp; criteria</button>
+        </div>
+        {editBlock ? <p id={`checklist-add-reason-${pin.id}`} role="status" className="text-xs text-fg-muted">{editBlock}</p> : <p className="text-xs text-fg-muted">Add a work item and its inspection criteria together.</p>}
+        {qa.error ? <button type="button" onClick={() => void qa.reload()} className="text-xs font-bold text-brand-text underline">Retry QA check</button> : null}
+      </section> : null}
       {checklistError ? <p role="alert" className="rounded-lg bg-danger-soft p-3 text-sm text-danger-fg">{checklistError}</p> : null}
       {notice && !canTick ? <p role="status" className="rounded-lg bg-amber-100 px-3 py-2 text-xs font-semibold text-amber-950 dark:bg-amber-900/40 dark:text-amber-100">{notice}</p> : null}
       {loading ? <SkeletonList rows={3} label="Loading the work items" /> : (
         <>
-          {items.length ? <ChecklistProgress done={done} total={items.length} /> : <p className="text-sm text-fg-muted">{canEdit ? "No work items yet. Add the parts of this work the Foreman prepares and the Engineer accepts one by one (e.g. FLOOR, WALL, CEILING)." : "No work items for this pin."}</p>}
-          {items.length ? <p className="text-xs text-fg-muted">Ready: {done}/{items.length} · Accepted by the Engineer: {items.filter((item) => item.review_status === "verified").length}/{items.length}</p> : null}
+          {items.length ? <ChecklistProgress done={items.filter((item) => item.review_status === "verified").length} total={items.length} /> : <p className="text-sm text-fg-muted">{canEdit ? "No work items yet. Add the parts of this work the Foreman prepares and the Engineer accepts one by one (e.g. FLOOR, WALL, CEILING)." : "No work items for this pin."}</p>}
+          {items.length ? <p className="text-xs text-fg-muted">Accepted by the Engineer: {items.filter((item) => item.review_status === "verified").length}/{items.length}</p> : null}
           <ul className="space-y-1">
             {items.map((item) => {
               const stage = stages.get(item.id)
@@ -189,7 +177,6 @@ export function PinChecklist({ pin, canEdit, canTick, notice = "", onChange, onP
               const count = photos.filter((photo) => photo.checklist_item_id === item.id && !photo.qa_attempt_id).length
               return (
                 <li key={item.id} className="group flex items-start gap-2 rounded-lg border border-line p-3 hover:bg-surface-muted/60">
-                  <input type="checkbox" className="mt-1 h-4 w-4 flex-none accent-[#9e1f93]" checked={item.done} disabled={!canTick || !fresh} onChange={(e) => void tick(item.id, e.target.checked)} aria-label={`${item.text} ready`} />
                   <div className="min-w-0 flex-1 text-sm">
                     <span className="flex flex-wrap items-center gap-2">
                       <span className="font-semibold">{item.text}</span>
@@ -197,8 +184,8 @@ export function PinChecklist({ pin, canEdit, canTick, notice = "", onChange, onP
                     </span>
                     {stage && staff ? <span className="mt-0.5 block text-xs text-fg-muted">{stage.view.blocker ? `Blocked: ${stage.view.blocker}` : `Next: ${stage.view.next}`}</span> : null}
                     <span className="mt-0.5 flex flex-wrap items-center gap-x-3">
-                      {canTick && fresh ? <ChecklistUploadButton pin={pin} itemId={item.id} label={item.text} onAdded={() => void reloadPhotos()} /> : null}
                       {fresh ? <span className="text-[11px] text-fg-muted">{count} photo{count === 1 ? "" : "s"}{item.remark ? " · remark" : ""}</span> : null}
+                      {canEdit && fresh ? <button type="button" onClick={() => setEditing(item)} className="min-h-6 text-[11px] font-bold text-brand-text underline underline-offset-2">Edit item &amp; criteria</button> : null}
                       {staff ? <button type="button" aria-haspopup="dialog" onClick={() => setOpenId(item.id)} className="min-h-6 text-[11px] font-bold text-brand-text underline underline-offset-2 hover:no-underline">Open {item.text}</button> : null}
                     </span>
                   </div>
@@ -209,13 +196,7 @@ export function PinChecklist({ pin, canEdit, canTick, notice = "", onChange, onP
           </ul>
         </>
       )}
-      {canEdit ? (
-        <form className="flex gap-2" onSubmit={(event) => void add(event)}>
-          <input className={field + " mt-0"} value={text} onChange={(e) => setText(e.target.value)} placeholder="Add a work item" maxLength={200} aria-label="New work item" />
-          <button type="submit" disabled={busy || !text.trim()} className="rounded-lg bg-brand px-3 py-2 text-sm font-bold text-white hover:bg-brand-hover disabled:opacity-60">Add</button>
-        </form>
-      ) : null}
-      <PinQaSubmission pin={pin} qa={qa} items={items} firstTimeReady={firstTimeReady} onChanged={refresh} note={submissionNote} />
+      {editing ? <WorkChecklistEditor pin={pin} item={editing === "new" ? undefined : editing} onClose={() => setEditing(null)} onSaved={refresh} /> : null}
       {openId ? <Suspense fallback={null}><WorkItemWorkspace itemId={openId} fromPlan onClose={() => setOpenId(null)} onChanged={refresh} /></Suspense> : null}
     </div>
   )
@@ -383,7 +364,7 @@ export function ChecklistUploadButton({ pin, itemId, label, onAdded, attemptId }
 
 // With checklistItemId: only that item's photos, and new photos are linked to it (evidence for one checklist item).
 // Without it: only the pin's progress photos; checklist photos are shown under their checklist item, never mixed in here.
-export function PinPhotos({ pin, checklistItemId, canAdd, canRemoveAny, meId, onChanged, columns = 3, attemptId }: { pin: Pin; checklistItemId?: string; attemptId?: string | null; canAdd: boolean; canRemoveAny: boolean; meId: string; onChanged?: () => void; columns?: 2 | 3 | 4 }) {
+export function PinPhotos({ pin, checklistItemId, canAdd, canRemoveAny, meId, onChanged, columns = 3, attemptId, unsubmitted = false }: { pin: Pin; checklistItemId?: string; attemptId?: string | null; canAdd: boolean; canRemoveAny: boolean; meId: string; onChanged?: () => void; columns?: 2 | 3 | 4; unsubmitted?: boolean }) {
   const toast = useToast()
   const confirm = useConfirm()
   const { profile } = useAuth()
@@ -422,12 +403,12 @@ export function PinPhotos({ pin, checklistItemId, canAdd, canRemoveAny, meId, on
         <>
           {photos.length > 1 && !checklistItemId && photos.every(photo => !photoPreviewBlocked(profile?.role, photo)) ? <BeforeAfter bucket="pin-photos" before={{ path: photos[0].path, at: photos[0].created_at, caption: photos[0].caption,photo:{...photos[0],label:`${pin.title} · First photo`} }} after={{ path: photos[photos.length - 1].path, at: photos[photos.length - 1].created_at, caption: photos[photos.length - 1].caption,photo:{...photos[photos.length - 1],label:`${pin.title} · Latest photo`} }} /> : null}
           <div className={`grid gap-2 ${grid}`}>
-            {photos.map((photo) => <Thumb key={photo.id} photo={photo} onRemove={(!evidence || Boolean(attemptId)) && (canRemoveAny || photo.uploaded_by === meId) ? () => void remove(photo) : undefined} />)}
+            {photos.map((photo) => <Thumb key={photo.id} photo={photo} onRemove={(!evidence || Boolean(attemptId) || unsubmitted) && (canRemoveAny || photo.uploaded_by === meId) ? () => void remove(photo) : undefined} />)}
           </div>
         </>
       )}
       {stampSummary(photos) ? <p role="status" className="rounded-lg bg-amber-100 px-2.5 py-1.5 text-xs font-semibold text-amber-950 dark:bg-amber-900/40 dark:text-amber-100">Check these photos: {stampSummary(photos)}.</p> : null}
-      {evidence && photos.length ? (
+      {evidence && !unsubmitted && photos.length ? (
         <p className="flex items-start gap-1.5 text-xs text-fg-muted">
           <svg className="mt-0.5 flex-none" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V8a4 4 0 0 1 8 0v3" /></svg>
           Evidence locked: this work was sent for review, so its photos stay on record. You can still add new ones.

@@ -8,13 +8,13 @@ import { usePinQa } from "./pinQa"
 import type { Defect, DefectEvent, Inspection } from "./qa"
 import { useQaSubmissionIndex, useWorkQaHistory } from "./qaAttempts"
 import type { WorkQaAttempt } from "./qaAttemptsModel"
-import { itemAttempts, linkedDefects, pinBusy, workItemStage, type StageView, type SubmissionRef } from "./workItemModel"
+import { itemAttempts, linkedDefects, workItemStage, type StageView, type SubmissionRef } from "./workItemModel"
 
 type DraftRow = Pick<WorkQaAttempt, "id" | "item_id" | "pin_id" | "remarks" | "submitted_inspection_id">
 const isOpen = (row: { status: string }) => row.status === "requested" || row.status === "in_progress"
 
 // Criteria count as approved when the Engineer approved them, or already inspected this work against them (same as SQL).
-export const criteriaApproved = (pin: Pin, inspections: Inspection[]) => Boolean(pin.qa_template_id && (pin.qa_approved_by
+export const criteriaApproved = (pin: Pin, inspections: Inspection[], item?: ChecklistItem) => Boolean(item?.qa_template_id || pin.qa_template_id && (pin.qa_approved_by
   || inspections.some((row) => row.pin_id === pin.id && row.template_id === pin.qa_template_id && row.started_at && ["passed", "failed", "conditional"].includes(row.status))))
 
 // The stage of one item from already-loaded rows. Photo counts are optional (boards do not load photos; the workspace does).
@@ -26,7 +26,7 @@ export function stageOf(input: {
   const attempts = itemAttempts(item.id, submissions, inspections)
   const current = inspections.find((row) => row.id === item.review_inspection_id) ?? attempts[attempts.length - 1]?.inspection ?? null
   const ncrs = linkedDefects(item.id, pin.id, submissions, defects)
-  const open = inspections.find((row) => row.pin_id === pin.id && isOpen(row)) ?? null
+  const open = current && isOpen(current) ? current : null
   const eligible = (rows: PinPhoto[]) => rows.filter(photoEligible).length
   const view: StageView = workItemStage({
     item,
@@ -35,8 +35,7 @@ export function stageOf(input: {
     ncrs,
     draft: draft ? { remarks: draft.remarks, photos: photos ? eligible(photos.filter((photo) => photo.qa_attempt_id === draft.id)) : null } : null,
     eligiblePhotos: photos ? eligible(photos.filter((photo) => photo.checklist_item_id === item.id && !photo.qa_attempt_id)) : null,
-    criteriaApproved: criteriaApproved(pin, inspections),
-    pinBusy: pinBusy(item.id, input.pinItems, open),
+    criteriaApproved: criteriaApproved(pin, inspections, item),
     pinCompleted: pin.status === "verified",
   })
   return { view, attempts, current, ncrs, open }
@@ -124,12 +123,13 @@ export function useWorkItem(itemId: string) {
     if (pinRow.data) setPin(pinRow.data as Pin)
     else if (!pinRow.error) setMissing(true)
     if (!defectRows.error) setDefects(defectRows.data)
-    const template = (pinRow.data as Pin | null)?.qa_template_id
+    const { data: itemRow } = await supabase.from("pin_checklist_items").select("qa_template_id").eq("id", itemId).maybeSingle()
+    const template = itemRow?.qa_template_id ?? (pinRow.data as Pin | null)?.qa_template_id
     if (template) {
       const { data } = await supabase.from("qa_templates").select("name").eq("id", template).maybeSingle()
       if (run === sequence.current) setTemplateName((data?.name as string | undefined) ?? null)
     } else setTemplateName(null)
-  }, [pinId])
+  }, [pinId, itemId])
   useEffect(() => { void reloadWork(); return () => { sequence.current++ } }, [reloadWork])
   useLiveReload([...byColumn("pins", "id", pinId), ...byColumn("qa_defects", "pin_id", pinId)], () => void reloadWork())
 

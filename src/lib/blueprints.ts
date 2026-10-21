@@ -117,6 +117,7 @@ export type Annotation = {
 }
 
 export type ChecklistItem = {
+  qa_template_id?: string | null
   review_status?: "not_submitted" | "for_review" | "verified" | "returned"
   review_inspection_id?: string | null
   verified_by?: string | null
@@ -249,8 +250,10 @@ export function useBlueprints(projectId: string | null) {
   const [blueprints, setBlueprints] = useState<Blueprint[]>([])
   const [loading, setLoading] = useState(Boolean(projectId))
   const [error, setError] = useState("")
+  const sequence = useRef(0)
 
   const reload = useCallback(async () => {
+    const current = ++sequence.current
     if (!projectId) {
       setBlueprints([])
       setLoading(false)
@@ -261,6 +264,7 @@ export function useBlueprints(projectId: string | null) {
       .select("*, blueprint_revisions(*)")
       .eq("project_id", projectId)
       .order("created_at", { ascending: true })
+    if(current !== sequence.current) return
     setError(loadError ? "Could not load blueprints. Check your connection and try again." : "")
     const rows = ((data as Blueprint[] | null) ?? []).map((bp) => ({
       ...bp,
@@ -271,8 +275,11 @@ export function useBlueprints(projectId: string | null) {
   }, [projectId])
 
   useEffect(() => {
+    setBlueprints([])
+    setError("")
     setLoading(Boolean(projectId))
     void reload()
+    return () => {sequence.current++}
   }, [reload, projectId])
 
   return { blueprints, loading, error, reload }
@@ -313,22 +320,28 @@ export function useProjectPins(projectId: string | null, live = false) {
   const [pins, setPins] = useState<Pin[]>([])
   const [loading, setLoading] = useState(Boolean(projectId))
   const [error, setError] = useState("")
+  const sequence = useRef(0)
 
   const reload = useCallback(async () => {
+    const current=++sequence.current
     if (!projectId) {
       setPins([])
       setLoading(false)
       return
     }
     const { data, error: loadError } = await fetchAll<Pin>((from, to) => supabase.from("pins").select("*").eq("project_id", projectId).order("created_at", { ascending: true }).order("id").range(from, to))
+    if(current!==sequence.current) return
     setError(loadError ? "Could not load pins. Check your connection and try again." : "")
     setPins(data.map((pin) => ({ ...pin, x: Number(pin.x), y: Number(pin.y) })))
     setLoading(false)
   }, [projectId])
 
   useEffect(() => {
+    setPins([])
+    setError("")
     setLoading(Boolean(projectId))
     void reload()
+    return () => {sequence.current++}
   }, [reload, projectId])
   useLiveReload(live ? byProject("pins", projectId) : [], reload)
 
@@ -489,7 +502,7 @@ export function usePinEvidence(pinId: string | null, status: Pin["status"] | nul
 // Private files need a short-lived signed link. Cached so panning/zooming never re-requests it.
 const urlCache = new Map<string, { url: string; expires: number }>()
 
-export async function signedUrl(bucket: "blueprints" | "pin-photos" | "qa-evidence" | "snag-photos" | "identity-docs" | "daily-photos", path: string): Promise<string | null> {
+export async function signedUrl(bucket: "blueprints" | "pin-photos" | "qa-evidence" | "snag-photos" | "identity-docs" | "daily-photos" | "issue-photos", path: string): Promise<string | null> {
   const { data: { session } } = await supabase.auth.getSession()
   const key = `${session?.user.id ?? "anonymous"}/${bucket}/${path}`
   if (["pin-photos", "qa-evidence", "daily-photos"].includes(bucket)) {
@@ -505,7 +518,7 @@ export async function signedUrl(bucket: "blueprints" | "pin-photos" | "qa-eviden
   return data.signedUrl
 }
 
-export function useSignedUrl(bucket: "blueprints" | "pin-photos" | "qa-evidence" | "snag-photos" | "identity-docs" | "daily-photos", path: string | null) {
+export function useSignedUrl(bucket: "blueprints" | "pin-photos" | "qa-evidence" | "snag-photos" | "identity-docs" | "daily-photos" | "issue-photos", path: string | null) {
   const [url, setUrl] = useState<string | null>(null)
   const [failed, setFailed] = useState(false)
 

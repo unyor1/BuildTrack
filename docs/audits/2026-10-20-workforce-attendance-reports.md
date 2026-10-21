@@ -1,0 +1,14 @@
+# Workforce Management and attendance reports
+
+2026-10-20. Foreman section only; no schema, grants, hardware or standalone screen changes.
+
+- Renamed the sidebar, page heading and dashboard launch link to Workforce Management. The existing attendance route stays compatible. Attendance records is first and opens by default; Workers remains the second, detailed-list tab.
+- Generate report is available beside the project records calendar and inside an individual worker’s details. Both support daily, weekly and monthly reports using a selected date. Weeks are Monday–Sunday, months are calendar months, and current periods stop at today in Philippine time.
+- Reports fetch every matching scan with stable ordering and exact counts in 1,000-row pages, independently of the visible list’s pagination. They validate project access and optional worker identity through existing RLS-protected queries. Worker exports filter both project ID and permanent worker ID. Export queries do not request contact numbers or emails.
+- A page error, inconsistent count, duplicate record, unexpected scope, truncated response or more than 50,000 records blocks the export instead of generating a partial report. Live changes during generation may require another attempt. Date/period changes discard the previous export; closing a report invalidates pending results.
+- Print / Save as PDF uses the existing application print helper with a landscape report containing daily worker summaries and all raw scans. CSV contains all scan records and period/project metadata, using existing spreadsheet-formula escaping. Report HTML escapes user-entered names and metadata. These are on-demand local exports, not scheduled jobs or saved database report records.
+- Summaries count actual scans and days with scans, plus first IN and last OUT per worker/day. They do not assume attendance hours, absences, overtime or payroll from incomplete pairs. Separate workers sharing a name are not merged.
+
+Verification: full `pnpm check` passed (TypeScript, 109 helper cases, component/handler suites, 412 SQL cases and production build). The new report suite checks calendar boundaries/leap years/cross-year weeks, current-period cutoffs, 2,500+ scan multi-page exports, empty reports, project/worker scope, count/truncation errors, safe HTML/CSV, launcher/generation/period change/export actions and unmount races. Existing Foreman tab tests check the new order/default and worker-report wiring. Hosted read-only query confirms TST-002 has zero October scans through October 20; no demonstration data was inserted.
+
+Standalone source hashes remain unchanged for `BiometricAttendancePage.tsx`, `AttendanceBoard.tsx`, `attendance.ts` and `attendanceModel.ts`. No browser visual print-dialog/PDF rendering or physical device test was performed. Print/PDF availability depends on the browser’s print controls.

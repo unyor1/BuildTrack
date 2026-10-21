@@ -17,10 +17,10 @@ const labels: Record<ForemanPageKey, { label: string; icon: AdminIconName }> = {
   "quality-control": { label: "QA Requests", icon: "clipboard" },
   issues: { label: "Corrections", icon: "edit" },
   "qa-workflow": { label: "Checklist Reference", icon: "check" },
-  attendance: { label: "Biometric Attendance", icon: "fingerprint" },
+  attendance: { label: "Workforce Management", icon: "users" },
 }
 
-const samplePages: ForemanPageKey[] = ["attendance"]
+const samplePages: ForemanPageKey[] = []
 
 // First the Foreman's assigned projects; inside a project, the sidebar shows only that project's sections (and its own badges).
 export default function ForemanShell({

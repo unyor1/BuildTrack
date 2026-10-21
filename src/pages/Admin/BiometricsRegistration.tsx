@@ -1,154 +1,131 @@
 import { useState } from "react"
-import {
-  AdminButton,
-  AdminSelect,
-  PageIntro,
-  Panel,
-  StatusBadge,
-} from "./AdminShell"
-import AdminIcon from "./AdminIcon"
+import AdminProjectSelect, {
+  useAdminProject,
+} from "../../components/AdminProjectSelect"
+import WorkerManagement from "../../components/attendance/WorkerManagement"
+import DeviceManagement from "../../components/attendance/DeviceManagement"
+import BiometricAdminGuard from "../../components/attendance/BiometricAdminGuard"
+import { PageIntro } from "./AdminShell"
 import type { AdminPageProps } from "./types"
 
-const steps = [
-  "Select User",
-  "Register Fingerprint",
-  "Verify Fingerprint",
-  "Save Biometric Template",
-  "Ready for Clock-in",
-]
+export default function BiometricsRegistration(_: AdminPageProps) {
+  return (
+    <BiometricAdminGuard>
+      <AdminRegistration />
+    </BiometricAdminGuard>
+  )
+}
 
-export default function BiometricsRegistration({ onNavigate }: AdminPageProps) {
-  const [selected, setSelected] = useState("Ramon Santos (Foreman)")
-  const [step, setStep] = useState(2)
-  const [registered, setRegistered] = useState(true)
-
+function AdminRegistration() {
+  const { projects, project, projectId, error, choose } = useAdminProject()
+  const [tab, setTab] = useState<"register" | "profiles" | "devices">(
+    "register",
+  )
   return (
     <div className="admin-page">
       <PageIntro
-        eyebrow="Workforce identity • Secure template storage"
-        title="Fingerprint Biometrics Registration"
-        description="Register an approved workforce member for secure biometric attendance. Raw fingerprint images are never displayed or stored here."
-        action={
-          <AdminButton
-            variant="outline"
-            onClick={() => onNavigate("user-management")}
-          >
-            Back to users
-          </AdminButton>
-        }
+        eyebrow="Biometric attendance / Worker identity"
+        title="Worker biometric registration"
+        description="Admin only: register workers, capture their portraits and enroll fingerprints through the connected ESP32 / AS608 sensor. Foremen can view attendance only."
       />
-      <Panel className="admin-toolbar-panel biometric-user-picker">
-        <strong>Select Approved User:</strong>
-        <AdminSelect label="Approved user" value={selected} onChange={setSelected}>
-          <option>Ramon Santos (Foreman)</option>
-          <option>Eduardo Santos (Foreman)</option>
-          <option>Paolo Cruz (Foreman)</option>
-        </AdminSelect>
-        <StatusBadge tone="success">Approved account</StatusBadge>
-      </Panel>
-      <Panel title="Enroll for On-Site Workforce Attendance">
-        <div className="biometric-steps">
-          {steps.map((label, index) => (
-            <div
-              className={`biometric-step ${
-                index + 1 <= step ? "is-complete" : ""
-              } ${index + 1 === step ? "is-current" : ""}`}
-              key={label}
-            >
-              <div className="biometric-step__line" />
-              <span>
-                {index + 1 === 1 ? (
-                  <AdminIcon name="users" />
-                ) : index + 1 === 2 ? (
-                  <AdminIcon name="fingerprint" />
-                ) : index + 1 === 3 ? (
-                  <AdminIcon name="eye" />
-                ) : index + 1 === 4 ? (
-                  <AdminIcon name="lock" />
-                ) : (
-                  <AdminIcon name="check" />
-                )}
-              </span>
-              <strong>Step {index + 1}</strong>
-              <small>{label}</small>
-            </div>
-          ))}
-        </div>
-        <div className="biometric-step-actions">
-          <AdminButton
-            variant="outline"
-            onClick={() => setStep((current) => Math.max(1, current - 1))}
+      <AdminProjectSelect
+        projects={projects}
+        value={projectId}
+        onChange={choose}
+      />
+      {error && <p role="alert">{error}</p>}
+      {project && projectId ? (
+        <div className="space-y-6" key={projectId}>
+          <div
+            role="tablist"
+            aria-label="Worker registration tabs"
+            className="flex flex-wrap gap-2 border-b border-border pb-3"
           >
-            Previous step
-          </AdminButton>
-          <AdminButton
-            onClick={() => {
-              setStep((current) => Math.min(5, current + 1))
-              if (step >= 4) setRegistered(true)
-            }}
-            icon={step >= 5 ? "check" : "fingerprint"}
-          >
-            {step >= 5 ? "Registration complete" : "Continue enrollment"}
-          </AdminButton>
-        </div>
-      </Panel>
-      <div className="admin-two-column biometric-columns">
-        <Panel title="Foreman Attendance Profile">
-          <div className="biometric-profile">
-            <div className="profile-avatar">RS</div>
-            <div>
-              <h3>Ramon Santos</h3>
-              <p>
-                Role: Site Foreman <span>•</span> ID: BT-2026-089
-              </p>
-            </div>
-          </div>
-          <div className="profile-facts">
-            <div>
-              <span>Biometric Status</span>
-              <strong className="fact-success">
-                <i />
-                {registered ? "Registered" : "Not registered"}
-              </strong>
-            </div>
-            <div>
-              <span>Project Assignment</span>
-              <strong>VCB-024 • Valencia Commercial Building</strong>
-            </div>
-            <div>
-              <span>Last Updated</span>
-              <strong>September 30, 2026</strong>
-            </div>
-          </div>
-        </Panel>
-        <Panel title="Fingerprint Checklist">
-          <div className="fingerprint-list">
-            {[
-              ["Left Thumb", true],
-              ["Right Thumb", true],
-              ["Left Index", false],
-              ["Right Index", false],
-            ].map(([finger, done]) => (
-              <div key={finger as string}>
-                <span>{finger}</span>
-                <strong className={done ? "fact-success" : "fact-muted"}>
-                  <AdminIcon name={done ? "check" : "close"} />
-                  {done ? "Enrolled" : "Not Enrolled"}
-                </strong>
-              </div>
+            {([
+              ["register", "Register worker"],
+              ["profiles", "Worker profiles"],
+              ["devices", "Devices"],
+            ] as const).map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                role="tab"
+                id={`biometric-tab-${key}`}
+                aria-selected={tab === key}
+                aria-controls="biometric-tab-panel"
+                className={`min-h-11 rounded-xl px-5 text-sm font-bold ${
+                  tab === key
+                    ? "bg-brand text-white"
+                    : "border border-border bg-surface"
+                }`}
+                onClick={() => setTab(key)}
+              >
+                {label}
+              </button>
             ))}
           </div>
-          <AdminButton
-            className="admin-button--full"
-            icon="fingerprint"
-            onClick={() => {
-              setRegistered(true)
-              setStep(5)
-            }}
+          <div
+            id="biometric-tab-panel"
+            role="tabpanel"
+            aria-labelledby={`biometric-tab-${tab}`}
           >
-            Register biometrics
-          </AdminButton>
-        </Panel>
+            {tab === "devices" ? (
+              <DeviceManagement projectId={projectId} />
+            ) : (
+              <WorkerManagement
+                projectId={projectId}
+                view={tab}
+                onRegister={() => setTab("register")}
+              />
+            )}
+          </div>
+          <details
+            aria-labelledby="worker-registration-steps"
+            className="rounded-xl border border-border bg-surface p-5"
+          >
+            <summary
+              id="worker-registration-steps"
+              className="mb-2 text-base font-bold"
+            >
+              Admin registration process
+            </summary>
+            <ol className="list-decimal space-y-2 pl-5 text-sm text-fg-muted">
+              <li>
+                Add the worker’s name, worker code and trade to the selected
+                project, then use Open camera to capture their profile photo.
+              </li>
+              <li>
+                Save the worker’s details, then click Register fingerprint and
+                select the project device. The enrollment ID is assigned
+                automatically.
+              </li>
+              <li>
+                Have the worker place, lift and scan the same finger again on
+                the AS608. Wait for Fingerprint registered; saving the form
+                alone does not enroll a fingerprint.
+              </li>
+              <li>
+                Register the project’s ESP32 in the Devices tab, configure it
+                with the updated enrollment firmware, then test a scan and check
+                the worker’s name and photo on the attendance screen.
+              </li>
+            </ol>
+            <p className="mt-3 text-xs text-fg-muted">
+              Worker accounts are not required. Fingerprint capture happens on
+              the physical device; fingerprint templates remain on the sensor.
+              Enrollment setup: hardware/esp32-as608/README.md.
+            </p>
+          </details>
+        </div>
+      ) : (
+        <p className="p-6 text-sm text-fg-muted">
+          Select an accessible project to register or manage its workers.
+        </p>
+      )}
+      <div className="mt-5 rounded-xl border border-border bg-surface p-5 text-sm text-fg-muted">
+        Device integration required: the scanner or its trusted server bridge
+        must send successful IN/OUT events to the database. No raw fingerprint
+        images or biometric templates are stored by this page.
       </div>
     </div>
   )

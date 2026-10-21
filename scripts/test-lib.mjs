@@ -1,10 +1,11 @@
 // Tests for the pure editor helpers (geometry + layering). Run: pnpm test:lib  (needs Node 22.18+ for TypeScript imports).
 import assert from "node:assert/strict"
+import { attendanceDay, attendancePath, filterAttendance, workerInitials, workerPhotoProblem } from "../src/lib/attendanceModel.ts"
 import { qaSubmissionMessage, submitAfterConfirmation } from "../src/lib/pinQaModel.ts"
 import { checklistAttemptNumber, checklistGroups, checklistNames, checklistNameKey, submittedChecklistItems } from "../src/lib/qaChecklistModel.ts"
 import { selectedVerification, timelineWindow } from "../src/lib/verificationViewModel.ts"
 import { currentAttemptPhotos, itemSubmissions, qaRecordPath } from "../src/lib/qaAttemptsModel.ts"
-import { acceptProblem, connectedHistory, headline as itemHeadline, itemAttempts, linkedDefects, pinBusy, pinLevelDefects, workItemPath, workItemStage } from "../src/lib/workItemModel.ts"
+import { acceptProblem, connectedHistory, headline as itemHeadline, itemAttempts, linkedDefects, pinLevelDefects, workItemPath, workItemStage } from "../src/lib/workItemModel.ts"
 import { adjustPhotoZoom, changePhotoScope, defaultPhotoDates, emptyPhotoScope, photoDateBounds, photoRangeDates, photoRangeOf, readPhotoDates, readPhotoScope, validPhotoDate, photoTime } from "../src/lib/photoGalleryModel.ts"
 import { foremanTasks, manilaDayRange, reportStatusLabel, taskCounts, taskFilters } from "../src/lib/foremanDashboardModel.ts"
 import { fieldPagePath, fieldShellMode, projectPath, projectSections, readProjectRoute } from "../src/lib/projectRoutes.ts"
@@ -22,6 +23,9 @@ import { escapeHtml, reportHtml } from "../src/lib/printReport.ts"
 import { reportableDates } from "../src/lib/reportFormat.ts"
 import { buildZip, crc32, safeEntryName, textBytes } from "../src/lib/zipWriter.ts"
 import { parseSettings, defaultSettings } from "../src/lib/settingsModel.ts"
+import { inspectionReportHtml } from "../src/lib/qaPrint.ts"
+import { issuePhotoProblem, issueTab, markupProblem, moveMarkup, zonePlanPath } from "../src/lib/issueMarkup.ts"
+import { issueChecklistIndex, issueChecklistKey, issueChecklistLabel, issueChecklistOptions, issueChecklistSelectionProblem, WHOLE_PIN_CHECKLIST } from "../src/lib/issueChecklist.ts"
 import { MAX_ATTEMPTS, backoffSeconds, isNetworkProblem, sendOrder, summarizeQueue, verdictFor } from "../src/lib/offlineModel.ts"
 import { pinLink, qrMatrix, qrSvg } from "../src/lib/qr.ts"
 import { canFormat, decorations, displayLines, labelToSize, mergeFormat, resolveFormat, sanitizeFormat, sizeToLabel, transformText } from "../src/lib/textFormat.ts"
@@ -43,6 +47,81 @@ const test = (name, fn) => {
     process.exitCode = 1
   }
 }
+
+test("Attendance uses Manila dates, safe photo inputs and project-specific links", () => {
+  assert.equal(attendanceDay(new Date("2026-10-18T16:00:00Z")), "2026-10-19")
+  assert.equal(attendanceDay(new Date("2026-10-18T15:59:59Z")), "2026-10-18")
+  assert.equal(attendancePath("project 1"), "/attendance?project=project%201")
+  assert.equal(workerInitials("Juan Dela Cruz"), "JD")
+  assert.equal(workerPhotoProblem({type:"image/png",size:2000}), "")
+  assert.ok(workerPhotoProblem({type:"image/svg+xml",size:2000}))
+  assert.ok(workerPhotoProblem({type:"image/jpeg",size:0}))
+  assert.ok(workerPhotoProblem({type:"image/jpeg",size:3*1024*1024}))
+})
+test("Attendance filters recent records without changing daily totals or the latest scan", () => {
+  const rows=[{id:"one",direction:"in",device_id:"Gate 1",worker:{full_name:"Juan Cruz",worker_code:"W-1"}},{id:"two",direction:"out",device_id:"Gate 2",worker:{full_name:"Ana Lopez",worker_code:"W-2"}}]
+  assert.deepEqual(filterAttendance(rows," juan ","").map(row=>row.id),["one"])
+  assert.deepEqual(filterAttendance(rows,"w-2","out").map(row=>row.id),["two"])
+  assert.equal(filterAttendance(rows,"Gate 1","out").length,0)
+  assert.equal(rows[0].id,"one")
+})
+test("Issue markup: safe normalized geometry, text, limits, movement and photo originals", () => {
+  const item={id:"test-1",kind:"line",x:10,y:20,x2:70,y2:80,color:"#d93a3a",stroke:4,fontSize:30,text:"",points:[]}
+  assert.equal(markupProblem([item]),"")
+  assert.equal(markupProblem([{...item,kind:"text",text:"Engineer observation"}]),"")
+  assert.ok(markupProblem([{...item,kind:"script"}]))
+  assert.ok(markupProblem([{...item,color:"url(javascript:alert(1))"}]))
+  assert.ok(markupProblem([{...item,x:NaN}]))
+  assert.ok(markupProblem([{...item,points:[{x:101,y:0}]}]))
+  assert.ok(markupProblem([{...item,onclick:"x"}]))
+  assert.ok(markupProblem([item,item]))
+  assert.ok(markupProblem([{...item,kind:"draw",points:[{x:1,y:1}]}]))
+  assert.deepEqual(moveMarkup(item,99,-99),{...item,x:40,y:0,x2:100,y2:60})
+  assert.equal(issuePhotoProblem({type:"image/png",size:1000}),"")
+  assert.ok(issuePhotoProblem({type:"image/svg+xml",size:1000}))
+  assert.ok(issuePhotoProblem({type:"image/jpeg",size:9*1024*1024}))
+})
+
+test("Issue status follows the work pin; zone links retain the exact project and sheet", () => {
+  assert.equal(issueTab("issue"),"open")
+  for(const status of ["not_started","in_progress","for_review"]) assert.equal(issueTab(status),"following_up")
+  assert.equal(issueTab("verified"),"resolved")
+  assert.equal(zonePlanPath("engineer","project-1","sheet-2"),"/engineer/annotation?project=project-1&sheet=sheet-2")
+})
+
+test("Issue checklist filter groups saved names and keeps summaries scoped to the selected checklist", () => {
+  const reports=[
+    {pin_id:"pin-a",checklist_item_id:"floor-a",checklist_name:" FLOOR ",description:"First FLOOR issue"},
+    {pin_id:"pin-b",checklist_item_id:"floor-b",checklist_name:"floor",description:"Other pin FLOOR issue"},
+    {pin_id:"pin-a",checklist_item_id:"wall-a",checklist_name:"WALL",description:"Latest WALL issue"},
+    {pin_id:"pin-b",checklist_item_id:null,checklist_name:" FLOOR ",description:"Deleted checklist's historical FLOOR issue"},
+    {pin_id:"pin-c",checklist_item_id:null,checklist_name:null,description:"Whole pin issue"},
+  ]
+  assert.equal(issueChecklistOptions(reports).length,2)
+  assert.equal(issueChecklistKey({checklist_name:"  Ceiling   finish  "}),"ceiling finish")
+  const floor=issueChecklistIndex(reports,"floor")
+  assert.equal(floor.matches("pin-a"),true)
+  assert.equal(floor.matches("pin-c"),false)
+  assert.equal(floor.matches("legacy-pin"),false)
+  assert.equal(floor.latest.get("pin-a").description,"First FLOOR issue")
+  assert.equal(floor.latest.get("pin-b").description,"Deleted checklist's historical FLOOR issue")
+  const whole=issueChecklistIndex(reports,WHOLE_PIN_CHECKLIST)
+  assert.equal(whole.matches("pin-a"),false)
+  assert.equal(whole.matches("pin-c"),true)
+  assert.equal(whole.matches("legacy-pin"),true)
+  assert.equal(issueChecklistIndex(reports,"").latest.get("pin-a").description,"Latest WALL issue")
+  assert.equal(issueChecklistLabel({}),"Whole work pin")
+})
+
+test("Issue checklist selection blocks stale/wrong-pin choices and load failures, but permits whole-pin issues", () => {
+  const items=[{id:"floor-a",pin_id:"pin-a"},{id:"floor-b",pin_id:"pin-b"}]
+  assert.equal(issueChecklistSelectionProblem("pin-a","floor-a",items,false,""),"")
+  assert.match(issueChecklistSelectionProblem("pin-a","floor-b",items,false,""),/belonging/)
+  assert.match(issueChecklistSelectionProblem("pin-b","floor-a",items,false,""),/belonging/)
+  assert.match(issueChecklistSelectionProblem("pin-a","floor-a",items,true,""),/Loading/)
+  assert.match(issueChecklistSelectionProblem("pin-a","",[],false,"offline"),/Retry/)
+  assert.equal(issueChecklistSelectionProblem("pin-a","",[],false,""),"")
+})
 
 test("Photo calendar uses inclusive Manila dates, optional bounds, and validates ranges", () => {
   assert.deepEqual(photoDateBounds({ from: "2026-10-15", to: "2026-10-15" }), { start: "2026-10-14T16:00:00.000Z", end: "2026-10-15T16:00:00.000Z" })
@@ -730,6 +809,21 @@ test("QA checklist editor: problems are reported before saving", () => {
   assert.match(checklistProblem("Slab list", [item(), item({ kind: "measure", min_value: "9", max_value: "1" })]), /Item 2.*above/)
   assert.match(checklistProblem("Slab list", [item({ kind: "measure", min_value: "abc" })]), /numbers/)
   assert.equal(checklistProblem("Slab list", [item({ kind: "measure", min_value: "40", max_value: "60", unit: "mm" })]), "")
+  assert.equal(checklistProblem("Masonry receiving", [item({ reference: "PNS ASTM C90:2019 Amd. 1:2019; project clause supplied by Engineer", acceptance_criteria: "Synthetic project requirement", evidence_requirement: "Synthetic test report and batch photos" })]), "")
+  assert.match(checklistProblem("Slab list", [item({ reference: "x".repeat(201) })]), /edition and clause/)
+  assert.match(checklistProblem("Slab list", [item({ acceptance_criteria: "x".repeat(1001) })]), /acceptance criteria/)
+  assert.match(checklistProblem("Slab list", [item({ evidence_requirement: "x".repeat(1001) })]), /evidence/)
+})
+
+test("QA print report preserves criteria and test instructions and escapes their content", () => {
+  const inspection = { number: 1, status: "requested", score: null, trade: "general", completed_at: null, title: "Synthetic inspection", location: null, requested_by: null, requested_at: "2026-10-19T00:00:00Z", inspector_id: null, started_at: null, standards: ["TEST 2026"], reinspection_of: null, summary: null }
+  const item = { position: 0, text: "Synthetic check", reference: "TEST 2026, clause TEST", severity: "major", hold_point: false, kind: "check", result: "pending", measured_value: null, remarks: null, acceptance_criteria: "<script>alert(1)</script>", evidence_requirement: "Synthetic lab report & batch photo" }
+  const html = inspectionReportHtml({ inspection, items: [item], defects: [], project: { name: "Synthetic project", code: "TEST" }, nameOf: () => "Test person" })
+  assert.ok(html.includes("Acceptance criteria:"))
+  assert.ok(html.includes("Evidence / test:"))
+  assert.ok(html.includes("TEST 2026, clause TEST"))
+  assert.ok(html.includes("&lt;script&gt;"))
+  assert.ok(!html.includes("<script>alert(1)</script>"))
 })
 
 test("QA badges and pin quality warning: engineer counts decisions, foreman counts own repairs, warnings are specific", () => {
@@ -1125,7 +1219,7 @@ test("Work item records link NCRs and attempts by the item's permanent id, even 
 })
 test("Every work item stage names the responsible person, the blocker and one next action", () => {
   const item={ id:"floor",text:"FLOOR",done:true,review_status:"for_review",review_inspection_id:"i2" }
-  const base={ item,attempts:2,current:{number:2,status:"passed"},ncrs:[],draft:null,eligiblePhotos:1,criteriaApproved:true,pinBusy:null,pinCompleted:false }
+  const base={ item,attempts:2,current:{number:2,status:"passed"},ncrs:[],draft:null,eligiblePhotos:1,criteriaApproved:true,pinCompleted:false }
   assert.equal(itemHeadline(workItemStage(base)),"Inspection passed. Next action: Engineer accepts FLOOR.")
   const closed=workItemStage({...base,ncrs:[{number:1,status:"closed"},{number:2,status:"closed"}]})
   assert.equal(itemHeadline(closed),"Inspection passed. NCRs closed. Next action: Engineer accepts FLOOR.")
@@ -1140,21 +1234,20 @@ test("Every work item stage names the responsible person, the blocker and one ne
   const draft=workItemStage({...failed,draft:{remarks:"Fixed",photos:0}})
   assert.equal(draft.action,"submit_correction"); assert.match(draft.blocker,/at least 10 characters.*new eligible photo/)
   assert.equal(workItemStage({...failed,draft:{remarks:"Re-levelled the slab",photos:2}}).blocker,"")
-  assert.equal(workItemStage({...failed,pinBusy:"IR-0009 is open on this work."}).owner,null)
   assert.equal(workItemStage({...base,current:{number:4,status:"requested"}}).owner,"Engineer")
   assert.equal(workItemStage({...base,current:{number:4,status:"in_progress"}}).stage,"inspecting")
   const fresh={...base,item:{id:"wall",text:"WALL",done:false,review_status:"not_submitted"},attempts:0,current:null}
-  assert.equal(workItemStage({...fresh,eligiblePhotos:0}).next,"Foreman adds photos of WALL and marks it ready.")
+  assert.equal(workItemStage({...fresh,eligiblePhotos:0}).next,"Foreman adds photos of WALL, then submits for QA.")
+  assert.equal(workItemStage(fresh).action,"submit")
   assert.equal(workItemStage({...fresh,item:{...fresh.item,done:true}}).action,"submit")
   assert.equal(workItemStage({...fresh,item:{...fresh.item,done:true},criteriaApproved:false}).owner,"Engineer")
   assert.equal(workItemStage({...base,item:{...item,review_status:"verified"},pinCompleted:true}).status,"FLOOR accepted by the Engineer. Work completed.")
 })
-test("One request per work: another item's open inspection or pending acceptance blocks this item only", () => {
-  const items=[{id:"floor",text:"FLOOR",done:true,review_status:"for_review",review_inspection_id:"i4"},{id:"wall",text:"WALL",done:true,review_status:"returned"}]
-  assert.match(pinBusy("wall",items,{id:"i4",number:4}),/IR-0004 \(FLOOR\) is open/)
-  assert.equal(pinBusy("floor",items,{id:"i4",number:4}),null)
-  assert.match(pinBusy("wall",items,null),/FLOOR is waiting for Engineer acceptance/)
-  assert.equal(pinBusy("floor",items,null),null)
+test("Independent items: another item's open inspection or pending acceptance does not block submission", () => {
+  const input={item:{id:"wall",text:"WALL",done:false,review_status:"not_submitted"},attempts:0,current:null,ncrs:[],draft:null,eligiblePhotos:1,criteriaApproved:true,pinCompleted:false}
+  assert.equal(workItemStage(input).action,"submit")
+  assert.equal(workItemStage({...input,current:{number:4,status:"requested"},attempts:1}).action,"inspect")
+  assert.equal(workItemStage({...input,item:{...input.item,review_status:"returned"},current:{number:3,status:"failed"},attempts:1}).action,"start_correction")
 })
 test("The connected history merges inspection and NCR events newest first", () => {
   const rows=connectedHistory(

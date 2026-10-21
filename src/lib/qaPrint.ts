@@ -41,7 +41,7 @@ export function inspectionReportHtml(input: { inspection: Inspection; items: Ins
           head: ["No.", "Item", "Class", "Hold", "Requirement", "Result", "Measured", "Remarks"],
           rows: items.map((item) => [
             String(item.position + 1),
-            item.text + (item.reference ? ` [${item.reference}]` : ""),
+            [item.text, item.reference ? `Reference: ${item.reference}` : "", item.acceptance_criteria ? `Acceptance criteria: ${item.acceptance_criteria}` : "", item.evidence_requirement ? `Evidence / test: ${item.evidence_requirement}` : ""].filter(Boolean).join("\n"),
             qaSeverityLabels[item.severity],
             item.hold_point ? "Yes" : "",
             item.kind === "measure" ? toleranceText(item) : "",

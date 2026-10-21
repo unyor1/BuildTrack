@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react"
+import { useCallback, useMemo, useState, type FormEvent } from "react"
 import Modal from "../../components/Modal"
 import ProjectContextBar from "../../components/ProjectContextBar"
 import { dbMessage } from "../../components/editor/PinParts"
-import { EmptyState, PageHead, StatCard, buttonDanger, buttonPrimary, buttonSecondary, inputClass } from "../../components/ui/PageParts"
+import { EmptyState, PageHead, StatCard, buttonPrimary, buttonSecondary, inputClass } from "../../components/ui/PageParts"
 import { SkeletonList } from "../../components/ui/Skeleton"
 import { categoryLabels, severityChip, severityLabels, severityRank, type Pin, type PinSeverity } from "../../lib/blueprints"
 import { useConfirm } from "../../lib/confirm"
@@ -13,44 +13,27 @@ import { useProjectWork } from "../../lib/projectWork"
 import { supabase } from "../../lib/supabase"
 import { useToast } from "../../lib/toast"
 import type { EngineerPageProps } from "./types"
+import LogIssueModal from "../../components/issues/LogIssueModal"
+import IssueDetails from "../../components/issues/IssueDetails"
+import { useIssueRegister } from "../../lib/siteIssues"
+import { issueTab } from "../../lib/issueMarkup"
+import { issueChecklistIndex, issueChecklistLabel, issueChecklistOptions, WHOLE_PIN_CHECKLIST } from "../../lib/issueChecklist"
 
-type Tab = "open" | "resolved"
-
-// When each pin was last marked as an issue (from its timeline), so the register can show how long it has been open.
-function useRaisedDates(projectId: string | null, version: number) {
-  const [raised, setRaised] = useState<Record<string, string>>({})
-  const [everRaised, setEverRaised] = useState<Set<string>>(new Set())
-  useEffect(() => {
-    if (!projectId) return
-    let active = true
-    supabase
-      .from("pin_events")
-      .select("pin_id,created_at")
-      .eq("project_id", projectId)
-      .eq("kind", "status")
-      .eq("to_status", "issue")
-      .order("created_at", { ascending: true })
-      .then(({ data }) => {
-        if (!active) return
-        const latest: Record<string, string> = {}
-        for (const row of (data as Array<{ pin_id: string; created_at: string }> | null) ?? []) latest[row.pin_id] = row.created_at
-        setRaised(latest)
-        setEverRaised(new Set(Object.keys(latest)))
-      })
-    return () => {
-      active = false
-    }
-  }, [projectId, version])
-  return { raised, everRaised }
-}
+type Tab = "open" | "following_up" | "resolved"
 
 export default function EngineerReportIssue({ onNavigate }: EngineerPageProps) {
   const projectId = getSelectedProjectId()
   const work = useProjectWork(projectId)
   const toast = useToast()
   const confirm = useConfirm()
-  const [version, setVersion] = useState(0)
-  const { raised, everRaised } = useRaisedDates(projectId, version)
+  const register = useIssueRegister(projectId)
+  const { raised, everRaised } = register
+  const [sheet,setSheet] = useState(new URLSearchParams(window.location.search).get("sheet") ?? "")
+  const [viewing,setViewing] = useState<string|null>(new URLSearchParams(window.location.search).get("issue"))
+  const [checklist,setChecklist]=useState("")
+  const checklistIndex=useMemo(()=>issueChecklistIndex(register.reports,checklist),[register.reports,checklist])
+  const latest=checklistIndex.latest
+  const checklistOptions=useMemo(()=>issueChecklistOptions(register.reports),[register.reports])
   const [tab, setTab] = useState<Tab>("open")
   const [query, setQuery] = useState("")
   const [severity, setSeverity] = useState<PinSeverity | "all">("all")
@@ -58,23 +41,24 @@ export default function EngineerReportIssue({ onNavigate }: EngineerPageProps) {
   const [reopening, setReopening] = useState<Pin | null>(null)
 
   const refresh = useCallback(async () => {
-    await work.reloadPins()
-    setVersion((value) => value + 1)
+    await work.reload()
+    await register.reload()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [work.reloadPins])
+  }, [work.reload,register.reload])
 
   const foremen = work.team.filter((member) => member.role === "foreman")
   const open = work.pins.filter((pin) => pin.status === "issue")
   const resolved = work.pins.filter((pin) => pin.status === "verified" && everRaised.has(pin.id))
+  const following = work.pins.filter(pin=>everRaised.has(pin.id) && issueTab(pin.status)==="following_up")
 
   const rows = useMemo(() => {
     const text = query.trim().toLowerCase()
-    const source = tab === "open" ? open : resolved
+    const source = tab === "open" ? open : tab === "resolved" ? resolved : following
     return source
-      .filter((pin) => (severity === "all" || pin.severity === severity) && (!text || `${pin.title} ${pin.description ?? ""} ${work.sheetOf(pin.blueprint_id)}`.toLowerCase().includes(text)))
+      .filter((pin) => checklistIndex.matches(pin.id) && (!sheet || pin.blueprint_id===sheet) && (severity === "all" || pin.severity === severity) && (!text || `${pin.title} ${latest.get(pin.id)?.checklist_name ?? ""} ${latest.get(pin.id)?.description ?? pin.description ?? ""} ${work.sheetOf(pin.blueprint_id)}`.toLowerCase().includes(text)))
       .sort((a, b) => severityRank[b.severity] - severityRank[a.severity] || (raised[a.id] ?? a.updated_at).localeCompare(raised[b.id] ?? b.updated_at))
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, open, resolved, query, severity, raised])
+  }, [tab, open, resolved, following, query, severity, raised, sheet, register.reports, checklistIndex])
 
   const ageOf = (pin: Pin) => {
     const days = daysBetween((raised[pin.id] ?? pin.updated_at).slice(0, 10), work.today)
@@ -94,8 +78,8 @@ export default function EngineerReportIssue({ onNavigate }: EngineerPageProps) {
   }
 
   const exportCsv = () => {
-    const header = ["Title", "Sheet", "Category", "Severity", "Status", "Assigned to", "Raised", "Open for", "Due", "Description"]
-    const body = rows.map((pin) => [pin.title, work.sheetOf(pin.blueprint_id), categoryLabels[pin.category], severityLabels[pin.severity], tab === "open" ? "Open" : "Resolved", work.nameOf(pin.assigned_to), (raised[pin.id] ?? pin.updated_at).slice(0, 10), tab === "open" ? ageOf(pin) : "", pin.due_date ?? "", pin.description ?? ""])
+    const header = ["Title", "Sheet", "Checklist", "Category", "Severity", "Status", "Assigned to", "Raised", "Open for", "Due", "Description"]
+    const body = rows.map((pin) => [pin.title, work.sheetOf(pin.blueprint_id), issueChecklistLabel(latest.get(pin.id) ?? {}), categoryLabels[pin.category], severityLabels[pin.severity], tab === "resolved" ? "Resolved" : tab === "open" ? "Open" : "Following up", work.nameOf(pin.assigned_to), (raised[pin.id] ?? pin.updated_at).slice(0, 10), tab === "open" ? ageOf(pin) : "", pin.due_date ?? "", latest.get(pin.id)?.description ?? pin.description ?? ""])
     downloadCsv(`issue-register-${work.project?.code ?? "project"}-${work.today}.csv`, toCsv(header, body))
     toast.success("Exported", `${rows.length} issue${rows.length === 1 ? "" : "s"}`)
   }
@@ -113,13 +97,15 @@ export default function EngineerReportIssue({ onNavigate }: EngineerPageProps) {
           <>
             <button type="button" className={buttonSecondary} disabled={!projectId} onClick={() => followLink(`/engineer/qa?project=${projectId}&tab=defects`, projectId)}>Open QA defects (NCR)</button>
             <button type="button" className={buttonSecondary} onClick={exportCsv} disabled={!rows.length}>Export CSV</button>
-            <button type="button" className={buttonPrimary} onClick={() => setLogging(true)} disabled={!projectId}>Log an issue</button>
+            <button type="button" className={buttonPrimary} onClick={() => setLogging(true)} disabled={!projectId || Boolean(work.error || register.error)}>Log an issue</button>
           </>
         }
       />
 
       {!projectId ? null : (
         <>
+          {work.error || register.error ? <p role="alert" className="mb-3 rounded-lg bg-danger-soft p-3 text-sm text-danger-fg">{work.error || register.error} <button type="button" className="underline" onClick={()=>void refresh()}>Retry</button></p> : null}
+          <p className="mb-3 text-xs text-fg-muted">Live project records. Issue status follows the same work pin shown on the plan and in Progress by Zone. <button type="button" className="font-bold underline" onClick={()=>void refresh()}>Refresh database data</button></p>
           <div className="mb-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <StatCard label="Open issues" value={open.length} tone={open.length ? "red" : "green"} note={open.length ? `${open.filter((pin) => isOverdue(pin, work.today)).length} past deadline` : "Nothing open"} />
             <StatCard label="Critical" value={counts.critical} tone="red" note="Fix first" onClick={() => { setTab("open"); setSeverity("critical") }} />
@@ -129,10 +115,12 @@ export default function EngineerReportIssue({ onNavigate }: EngineerPageProps) {
 
           <div className="mb-3 flex flex-wrap items-center gap-2">
             <div className="inline-flex max-w-full flex-wrap gap-0.5 rounded-xl border border-line bg-surface p-1 shadow-sm" role="tablist" aria-label="Issue list">
-              {([["open", `Open (${open.length})`], ["resolved", `Resolved (${resolved.length})`]] as const).map(([key, label]) => (
+              {([["open", `Open (${open.length})`], ["following_up", `Following up (${following.length})`], ["resolved", `Resolved (${resolved.length})`]] as const).map(([key, label]) => (
                 <button key={key} type="button" role="tab" aria-selected={tab === key} onClick={() => setTab(key)} className={`rounded-lg px-3.5 py-1.5 text-sm font-bold transition ${tab === key ? "bg-brand text-white shadow-[0_6px_14px_-8px_rgba(158,31,147,0.9)]" : "text-fg-muted hover:bg-surface-muted hover:text-fg"}`}>{label}</button>
               ))}
             </div>
+            <select aria-label="Filter issues by zone" className={`${inputClass} !w-56`} value={sheet} onChange={event=>setSheet(event.target.value)}><option value="">All sheets / zones</option>{work.blueprints.map(bp=><option key={bp.id} value={bp.id}>{bp.title}</option>)}</select>
+            <select aria-label="Filter issues by checklist" className={`${inputClass} !w-56`} value={checklist} onChange={event=>setChecklist(event.target.value)}><option value="">All checklist items</option><option value={WHOLE_PIN_CHECKLIST}>Whole work pin / no checklist</option>{checklistOptions.map(item=><option key={item.key} value={item.key}>{item.name}</option>)}</select>
             <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search issues..." aria-label="Search issues" className={`${inputClass} !w-56`} />
             <select value={severity} onChange={(event) => setSeverity(event.target.value as PinSeverity | "all")} aria-label="Filter by severity" className={`${inputClass} !w-40`}>
               <option value="all">All severities</option>
@@ -140,10 +128,10 @@ export default function EngineerReportIssue({ onNavigate }: EngineerPageProps) {
             </select>
           </div>
 
-          {work.loading ? (
+          {work.loading || register.loading ? (
             <SkeletonList rows={5} label="Loading issues" />
           ) : rows.length === 0 ? (
-            <EmptyState title={tab === "open" ? (open.length ? "No issue matches" : "No open issues") : "No resolved issues yet"}>
+            <EmptyState title={tab === "open" ? (open.length ? "No issue matches" : "No open issues") : tab === "following_up" ? "No issues under follow-up match" : "No resolved issues yet"}>
               {tab === "open" && !open.length ? "Mark a pin as an issue on the plan, or press \"Log an issue\"." : "Change the search or the severity filter."}
             </EmptyState>
           ) : (
@@ -153,7 +141,7 @@ export default function EngineerReportIssue({ onNavigate }: EngineerPageProps) {
                   <tr>
                     <th className="px-4 py-2.5">Issue</th>
                     <th className="px-3 py-2.5">Severity</th>
-                    <th className="px-3 py-2.5">{tab === "open" ? "Open for" : "Closed"}</th>
+                    <th className="px-3 py-2.5">{tab === "resolved" ? "Closed" : "Since raised"}</th>
                     <th className="px-3 py-2.5">Assigned to</th>
                     <th className="px-3 py-2.5 text-right">Actions</th>
                   </tr>
@@ -162,9 +150,10 @@ export default function EngineerReportIssue({ onNavigate }: EngineerPageProps) {
                   {rows.map((pin) => (
                     <tr key={pin.id} className="align-top">
                       <td className="px-4 py-3">
-                        <p className="font-bold text-fg">{pin.title}</p>
+                        <button type="button" className="text-left font-bold text-brand-text hover:underline" onClick={()=>setViewing(pin.id)}>{pin.title}</button>
+                        <p className="text-xs font-semibold text-brand-text">Checklist: {issueChecklistLabel(latest.get(pin.id) ?? {})}</p>
                         <p className="text-xs text-fg-muted">{work.sheetOf(pin.blueprint_id)} • {categoryLabels[pin.category]}{pin.due_date && isOverdue(pin, work.today) ? " • past deadline" : ""}</p>
-                        {pin.description ? <p className="mt-1 line-clamp-2 max-w-md text-xs text-fg-muted">{pin.description}</p> : null}
+                        {latest.get(pin.id)?.description || pin.description ? <p className="mt-1 line-clamp-2 max-w-md text-xs text-fg-muted">{latest.get(pin.id)?.description ?? pin.description}</p> : null}
                       </td>
                       <td className="px-3 py-3">
                         {tab === "open" ? (
@@ -175,7 +164,7 @@ export default function EngineerReportIssue({ onNavigate }: EngineerPageProps) {
                           <span className={`rounded px-2 py-1 text-xs font-extrabold ${severityChip[pin.severity]}`}>{severityLabels[pin.severity]}</span>
                         )}
                       </td>
-                      <td className="px-3 py-3 text-fg-muted">{tab === "open" ? ageOf(pin) : pin.verified_at ? new Date(pin.verified_at).toLocaleDateString("en-PH", { day: "numeric", month: "short" }) : ""}</td>
+                      <td className="px-3 py-3 text-fg-muted">{tab !== "resolved" ? ageOf(pin) : pin.verified_at ? new Date(pin.verified_at).toLocaleDateString("en-PH", { day: "numeric", month: "short" }) : ""}</td>
                       <td className="px-3 py-3">
                         {tab === "open" ? (
                           <select value={pin.assigned_to ?? ""} aria-label={`Assign ${pin.title}`} onChange={(event) => void patch(pin, { assigned_to: event.target.value || null }, "Assignment updated")} className="max-w-[10rem] rounded-md border border-line bg-surface px-2 py-1 text-xs">
@@ -188,6 +177,7 @@ export default function EngineerReportIssue({ onNavigate }: EngineerPageProps) {
                       </td>
                       <td className="px-3 py-3">
                         <div className="flex flex-wrap justify-end gap-1.5">
+                          <button type="button" className="rounded-md border border-line px-2.5 py-1 text-xs font-bold hover:bg-surface-muted" onClick={()=>setViewing(pin.id)}>Details / photos</button>
                           <button type="button" className="rounded-md border border-line px-2.5 py-1 text-xs font-bold hover:bg-surface-muted" onClick={() => followLink(`/engineer/annotation?project=${pin.project_id}&pin=${pin.id}`, pin.project_id)}>Plan</button>
                           {tab === "open" ? (
                             <>
@@ -206,64 +196,11 @@ export default function EngineerReportIssue({ onNavigate }: EngineerPageProps) {
         </>
       )}
 
-      {logging ? <LogIssueModal pins={work.pins} sheetOf={work.sheetOf} onClose={() => setLogging(false)} onDone={async () => { setLogging(false); setTab("open"); await refresh() }} /> : null}
+      {logging ? <LogIssueModal pins={work.pins} sheetOf={work.sheetOf} onClose={() => setLogging(false)} onDone={async () => { toast.success("Issue logged", "Description, photos and markup saved together."); setLogging(false); setTab("open"); await refresh() }} /> : null}
+      {viewing && work.pins.find(pin=>pin.id===viewing) ? <IssueDetails key={viewing} pin={work.pins.find(pin=>pin.id===viewing)!} canEdit nameOf={work.nameOf} onClose={()=>setViewing(null)} /> : null}
       {reopening ? <BackToForemanModal pin={reopening} onClose={() => setReopening(null)} onDone={async () => { setReopening(null); await refresh() }} /> : null}
       <p className="mt-6 text-xs text-fg-muted">Tip: foremen and engineers can also mark a pin as an issue directly on the plan. <button type="button" className="inline-flex min-h-6 items-center font-bold text-brand-text underline" onClick={() => onNavigate("annotation")}>Open the plan</button></p>
     </div>
-  )
-}
-
-function LogIssueModal({ pins, sheetOf, onClose, onDone }: { pins: Pin[]; sheetOf: (id: string) => string; onClose: () => void; onDone: () => Promise<void> }) {
-  const toast = useToast()
-  const candidates = pins.filter((pin) => pin.status !== "issue" && pin.category !== "note")
-  const [pinId, setPinId] = useState(candidates[0]?.id ?? "")
-  const [severity, setSeverity] = useState<PinSeverity>("medium")
-  const [reason, setReason] = useState("")
-  const [error, setError] = useState("")
-  const [busy, setBusy] = useState(false)
-
-  const submit = async (event: FormEvent) => {
-    event.preventDefault()
-    if (!pinId) return setError("Pick the pin where the problem is.")
-    if (reason.trim().length < 5) return setError("Describe the problem (at least 5 characters).")
-    setError("")
-    setBusy(true)
-    const { data, error: updateError } = await supabase.from("pins").update({ status: "issue", severity }).eq("id", pinId).select("id")
-    if (updateError || !data?.length) {
-      setBusy(false)
-      return setError(updateError ? dbMessage(updateError) : "You may not be allowed to change this pin.")
-    }
-    const { error: commentError } = await supabase.from("pin_events").insert({ pin_id: pinId, project_id: "00000000-0000-0000-0000-000000000000", kind: "comment", note: `Issue: ${reason.trim()}`.slice(0, 2000) })
-    setBusy(false)
-    if (commentError) toast.error("Logged, but the description was not saved", dbMessage(commentError))
-    else toast.success("Issue logged")
-    await onDone()
-  }
-
-  return (
-    <Modal title="Log an issue" description="Mark an existing pin as a problem. To mark a new spot, add a pin on the plan first." onClose={busy ? () => undefined : onClose}
-      footer={<><button type="button" className={buttonSecondary} onClick={onClose} disabled={busy}>Cancel</button><button type="submit" form="log-issue-form" className={buttonDanger} disabled={busy || !candidates.length}>{busy ? "Saving..." : "Log issue"}</button></>}>
-      {!candidates.length ? (
-        <p className="text-sm text-fg-muted">There are no pins to mark yet. Add pins on the plan first.</p>
-      ) : (
-        <form id="log-issue-form" className="space-y-3" noValidate onSubmit={(event) => void submit(event)}>
-          <label className="block text-sm font-semibold">Pin
-            <select className={`${inputClass} mt-1`} value={pinId} onChange={(event) => setPinId(event.target.value)}>
-              {candidates.map((pin) => <option key={pin.id} value={pin.id}>{pin.title} ({sheetOf(pin.blueprint_id)})</option>)}
-            </select>
-          </label>
-          <label className="block text-sm font-semibold">Severity
-            <select className={`${inputClass} mt-1`} value={severity} onChange={(event) => setSeverity(event.target.value as PinSeverity)}>
-              {severityOrder.slice().reverse().map((level) => <option key={level} value={level}>{severityLabels[level]}</option>)}
-            </select>
-          </label>
-          <label className="block text-sm font-semibold">What is wrong? *
-            <textarea className={`${inputClass} mt-1`} rows={3} maxLength={1000} value={reason} onChange={(event) => setReason(event.target.value)} />
-          </label>
-          {error ? <p role="alert" className="text-sm text-danger-fg">{error}</p> : null}
-        </form>
-      )}
-    </Modal>
   )
 }
 
@@ -277,15 +214,11 @@ function BackToForemanModal({ pin, onClose, onDone }: { pin: Pin; onClose: () =>
     event.preventDefault()
     if (note.trim().length < 5) return setError("Tell the foreman what to fix (at least 5 characters).")
     setBusy(true)
-    const { data, error: updateError } = await supabase.from("pins").update({ status: "in_progress" }).eq("id", pin.id).select("id")
-    if (updateError || !data?.length) {
-      setBusy(false)
-      return setError(updateError ? dbMessage(updateError) : "You may not be allowed to change this pin.")
-    }
-    const { error: commentError } = await supabase.from("pin_events").insert({ pin_id: pin.id, project_id: "00000000-0000-0000-0000-000000000000", kind: "comment", note: `Please fix: ${note.trim()}`.slice(0, 2000) })
+    setError("")
+    const { error: updateError } = await supabase.rpc("return_site_issue",{p_pin:pin.id,p_note:note.trim()})
     setBusy(false)
-    if (commentError) toast.error("Reopened, but the note was not saved", dbMessage(commentError))
-    else toast.success("Sent back to the foreman")
+    if(updateError) return setError(dbMessage(updateError))
+    toast.success("Sent back to the foreman")
     await onDone()
   }
 

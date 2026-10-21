@@ -5,7 +5,8 @@ import LimitedTimeline from "../ui/LimitedTimeline"
 import { SkeletonList } from "../ui/Skeleton"
 import { buttonDanger, buttonPrimary, buttonSecondary, inputClass } from "../ui/PageParts"
 import { ChecklistUploadButton, PinPhotos, dbMessage, field } from "../editor/PinParts"
-import { CriteriaApproval } from "./PinQaSubmission"
+import WorkChecklistEditor from "./WorkChecklistEditor"
+import QaRequirements from "./QaRequirements"
 import CorrectionForm from "./CorrectionForm"
 import DefectDetail from "./DefectDetail"
 import InspectionDetail from "./InspectionDetail"
@@ -20,7 +21,7 @@ import { followLink } from "../../lib/notifications"
 import { photoEligible, photoPreviewBlocked } from "../../lib/photoStamp"
 import { manilaToday } from "../../lib/progress"
 import { useProject, useProjectTeam } from "../../lib/projects"
-import { defectStatusLabels, defectTone, dueText, inspectionStatusLabels, inspectionTone, qaActions, useInspectionItems, type Defect, type Inspection } from "../../lib/qa"
+import { defectStatusLabels, defectTone, dueText, inspectionStatusLabels, inspectionTone, qaActions, useInspectionItems, useTemplates, type Defect, type Inspection } from "../../lib/qa"
 import { useSettings } from "../../lib/settings"
 import { supabase } from "../../lib/supabase"
 import { useDefectHistory, useWorkItem } from "../../lib/workItem"
@@ -51,6 +52,10 @@ export default function WorkItemWorkspace({ itemId, onClose, onChanged, fromPlan
   const [inspectionOpen, setInspectionOpen] = useState<string | null>(null)
   const [defectOpen, setDefectOpen] = useState<string | null>(null)
   const [returning, setReturning] = useState(false)
+  const [editingCriteria, setEditingCriteria] = useState(false)
+  const draftRemark = useRef<string | null>(null)
+  const { templates } = useTemplates(pin?.project_id ?? null)
+  useEffect(() => { draftRemark.current = null; setTab(null); setEditingCriteria(false) }, [itemId])
 
   const nameOf = (id: string | null) => (id ? team.find((member) => member.user_id === id)?.full_name ?? "Someone on the team" : "Unassigned")
   const engineer = profile?.role === "engineer"
@@ -99,23 +104,22 @@ export default function WorkItemWorkspace({ itemId, onClose, onChanged, fromPlan
 
   const name = item.text
   const responsible = view.owner === "Foreman" ? nameOf(pin.assigned_to) : current?.inspector_id ? nameOf(current.inspector_id) : current?.escalation_owner ? nameOf(current.escalation_owner) : "Project Engineer"
-  const eligibleInitial = photos.filter((photo) => photo.checklist_item_id === item.id && !photo.qa_attempt_id && photoEligible(photo)).length
+  const template = templates.find(row => row.id === (item.qa_template_id ?? pin.qa_template_id))
   const openNcrs = ncrs.filter((row) => row.status !== "closed").length
   const acceptBlock = acceptProblem({ loading: history.loading, error: data.error, open: Boolean(stage.open), inspectionStatus: current?.status, openItemNcrs: openNcrs })
   const firstToFix = ncrs.find((row) => row.status === "open" || row.status === "in_progress")
 
-  const tick = async (value: boolean) => {
-    if (value && !eligibleInitial) { setTab("evidence"); return toast.info("Add a photo first", `Upload a photo of the finished ${name}, then mark it ready.`) }
-    await run(async () => {
-      const { data: rows, error } = await supabase.from("pin_checklist_items").update({ done: value }).eq("id", item.id).select("id")
-      return error || !rows?.length ? { ok: false, message: error ? dbMessage(error) : "Only the Foreman assigned to this work can mark it ready." } : { ok: true }
-    }, "Not saved", value ? `${name} is ready` : `${name} reopened`)
-  }
   const submitFirst = async () => {
-    const problem = await qa.preflight().catch((error: Error) => error.message)
+    const problem = await qa.preflight(item.id).catch((error: Error) => error.message)
     if (problem) return toast.error("QA request not sent", problem)
     if (!(await confirm({ title: `Submit ${name} for QA?`, message: `${pin.title} → ${name}. The Engineer inspects it against the approved criteria. Its photos and remark are locked while the request is open.`, confirmLabel: "Submit for inspection" }))) return
-    await run(() => qaActions.submitItems(pin.id, [item.id]), "QA request not sent", "QA requested", "The project Engineer has been notified.")
+    await run(async () => {
+      if (draftRemark.current !== null && draftRemark.current.trim() !== (item.remark ?? "")) {
+        const { data: rows, error } = await supabase.from("pin_checklist_items").update({ remark: draftRemark.current.trim() || null }).eq("id", item.id).select("id")
+        if (error || !rows?.length) return { ok: false as const, message: error ? dbMessage(error) : "The remark could not be saved. Try again." }
+      }
+      return qaActions.submitItems(pin.id, [item.id])
+    }, "QA request not sent", "QA requested", "The project Engineer has been notified.")
   }
   const startCorrection = async () => {
     if (await run(() => qaActions.beginCorrection(item.id), "Could not start the correction", "Correction started", "Describe the fix, add new photos and choose the NCRs it answers.")) setTab("corrections")
@@ -128,9 +132,7 @@ export default function WorkItemWorkspace({ itemId, onClose, onChanged, fromPlan
 
   const primary = (() => {
     if (foreman) {
-      if (view.action === "add_evidence") return !item.done && eligibleInitial
-        ? <button type="button" className={buttonPrimary} disabled={busy} onClick={() => void tick(true)}>Mark {name} ready</button>
-        : <button type="button" className={buttonPrimary} onClick={() => setTab("evidence")}>Add photos</button>
+      if (view.action === "add_evidence") return <button type="button" className={buttonPrimary} onClick={() => setTab("evidence")}>Add photos</button>
       if (view.action === "submit") return <button type="button" className={buttonPrimary} disabled={busy} onClick={() => void submitFirst()}>Submit {name} for QA</button>
       if (view.action === "start_correction") return <button type="button" className={buttonPrimary} disabled={busy} onClick={() => void startCorrection()}>Start correction</button>
       if (view.action === "submit_correction") return tab === "corrections"
@@ -157,7 +159,7 @@ export default function WorkItemWorkspace({ itemId, onClose, onChanged, fromPlan
     <Modal title={`${pin.title} → ${name}`} description={`Inspection criteria: ${data.templateName ?? "not approved yet"} · Foreman: ${nameOf(pin.assigned_to)}`} size="2xl" onClose={busy ? () => undefined : onClose} footer={footer}>
       <div className="min-w-0 space-y-4">
         <NextActionCard view={view} responsible={responsible}>
-          {engineer && view.action === "approve_criteria" ? <CriteriaApproval pin={pin} qa={qa} compact onChanged={reload} /> : null}
+          {engineer && !stage.attempts.length && !stage.open && pin.status !== "verified" ? <button type="button" className={buttonSecondary} onClick={() => setEditingCriteria(true)}>{item.qa_template_id ? "Edit item & criteria" : "Add criteria to this item"}</button> : null}
         </NextActionCard>
         <StageRail stage={view.stage} completed={pin.status === "verified"} />
         {data.error ? <p role="alert" className="rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger-fg">{data.error}</p> : null}
@@ -192,8 +194,9 @@ export default function WorkItemWorkspace({ itemId, onClose, onChanged, fromPlan
         </section>
 
         <section hidden={tab !== "evidence"} role="tabpanel" id={`${formId}-panel-evidence`} aria-labelledby={`${formId}-tab-evidence`} className="space-y-4">
+          {!stage.attempts.length ? <div><h3 className={heading}>Inspection criteria for {name}</h3>{template ? <ul className="space-y-2">{template.qa_template_items.map(row => <li key={row.id} className="rounded-lg border border-line p-3 text-sm"><strong>{row.text}</strong>{row.reference ? <p className="mt-1 text-xs text-fg-muted">Reference: {row.reference}</p> : null}<QaRequirements item={row} /></li>)}</ul> : <p className="text-sm text-fg-muted">The Engineer must add the criteria to this item.</p>}</div> : null}
           <EvidenceCompare itemId={item.id} label={`${pin.title} → ${name}`} attempts={stage.attempts.map((row) => row.submission as unknown as { photos_snapshot: PinPhoto[] })} draftPhotos={draft ? photos.filter((photo) => photo.qa_attempt_id === draft.id) : []} role={profile?.role} />
-          {!stage.attempts.length ? <InitialEvidence item={item} pin={pin} canWork={foreman && item.review_status !== "for_review"} meId={profile?.id ?? ""} onTick={tick} busy={busy} onChanged={data.reload} />
+          {!stage.attempts.length ? <InitialEvidence item={item} pin={pin} canWork={foreman && !stage.open && item.review_status !== "for_review" && item.review_status !== "verified" && pin.status !== "verified"} meId={profile?.id ?? ""} onRemarkChange={value => { draftRemark.current = value }} onChanged={data.reload} />
             : draft ? <div><h3 className={heading}>Correction photos (next request)</h3><PinPhotos pin={pin} checklistItemId={item.id} attemptId={draft.id} canAdd={false} canRemoveAny={false} meId={profile?.id ?? ""} columns={3} /><p className="mt-1 text-xs text-fg-muted">Add or remove them in the correction form under Corrections &amp; NCRs.</p></div>
             : <p className="text-sm text-fg-muted">Submitted photos and remarks are kept with each request under Attempts &amp; history, unchanged.</p>}
         </section>
@@ -216,6 +219,7 @@ export default function WorkItemWorkspace({ itemId, onClose, onChanged, fromPlan
           nameOf={nameOf} onClose={() => setDefectOpen(null)} onChanged={reload} onOpenInspection={(id) => { setDefectOpen(null); setInspectionOpen(id) }} /> : null
       })() : null}
       {returning ? <ReturnDialog name={name} reopen={item.review_status === "verified"} busy={busy} onClose={() => setReturning(false)} onSubmit={async (reason) => { if (await run(() => qaActions.reviewItem(item.id, false, reason), "Not returned", `${name} returned for correction`)) setReturning(false) }} /> : null}
+      {editingCriteria ? <WorkChecklistEditor pin={pin} item={item} onClose={() => setEditingCriteria(false)} onSaved={reload} /> : null}
     </Modal>
   )
 }
@@ -246,7 +250,7 @@ function CurrentInspection({ inspection, attemptLabel, nameOf, onOpen }: { inspe
           ))}
         </ol>
       )}
-      <p className="text-xs text-fg-muted">The Foreman's ready tick is never an inspection result: only the Engineer records Pass or Fail against these criteria.</p>
+      <p className="text-xs text-fg-muted">Submitting evidence is not an inspection result: only the Engineer records Pass or Fail against these criteria.</p>
     </div>
   )
 }
@@ -301,8 +305,8 @@ function EvidenceCompare({ itemId, label, attempts, draftPhotos, role }: { itemI
   </div>
 }
 
-// Evidence of an item that was never submitted: remark, photos and the Ready tick (the Foreman's declaration, not a result).
-function InitialEvidence({ item, pin, canWork, meId, onTick, busy, onChanged }: { item: NonNullable<ReturnType<typeof useWorkItem>["item"]>; pin: NonNullable<ReturnType<typeof useWorkItem>["pin"]>; canWork: boolean; meId: string; onTick: (value: boolean) => Promise<void>; busy: boolean; onChanged: () => Promise<void> }) {
+// Photos and remarks live inside the opened item. Submission saves the remark and declares the work finished.
+function InitialEvidence({ item, pin, canWork, meId, onRemarkChange, onChanged }: { item: NonNullable<ReturnType<typeof useWorkItem>["item"]>; pin: NonNullable<ReturnType<typeof useWorkItem>["pin"]>; canWork: boolean; meId: string; onRemarkChange: (value: string) => void; onChanged: () => Promise<void> }) {
   const toast = useToast()
   const [remark, setRemark] = useState(item.remark ?? "")
   const [saving, setSaving] = useState(false)
@@ -318,16 +322,13 @@ function InitialEvidence({ item, pin, canWork, meId, onTick, busy, onChanged }: 
   return <div className="space-y-3">
     <h3 className={heading}>Evidence for the first request</h3>
     {canWork ? <span className="flex flex-wrap gap-3"><ChecklistUploadButton pin={pin} itemId={item.id} label={item.text} onAdded={() => void onChanged()} /></span> : null}
-    <PinPhotos pin={pin} checklistItemId={item.id} attemptId={null} canAdd={false} canRemoveAny={false} meId={meId} columns={3} onChanged={() => void onChanged()} />
+    <PinPhotos pin={pin} checklistItemId={item.id} attemptId={null} canAdd={false} canRemoveAny={false} unsubmitted={canWork} meId={meId} columns={3} onChanged={() => void onChanged()} />
     {canWork ? <div>
       <label className="block text-[11px] font-bold uppercase tracking-wider text-fg-muted" htmlFor={`remark-${item.id}`}>Remark</label>
-      <textarea id={`remark-${item.id}`} className={field} rows={2} maxLength={1000} value={remark} onChange={(event) => setRemark(event.target.value)} placeholder="What was done or measured" />
+      <textarea id={`remark-${item.id}`} className={field} rows={2} maxLength={1000} value={remark} onChange={(event) => { setRemark(event.target.value); onRemarkChange(event.target.value) }} placeholder="What was done or measured" />
+      <p className="mt-1 text-xs text-fg-muted">Your remark is saved when you submit for QA. You can also save it before submitting.</p>
       <button type="button" disabled={saving || remark.trim() === (item.remark ?? "")} onClick={() => void save()} className={buttonSecondary + " mt-1 !py-1 !text-xs"}>{saving ? "Saving…" : "Save remark"}</button>
     </div> : item.remark ? <p className="whitespace-pre-wrap text-sm"><strong>Remark:</strong> {item.remark}</p> : null}
-    {canWork ? <label className="flex items-center gap-2 text-sm font-semibold">
-      <input type="checkbox" className="h-4 w-4 accent-[#9e1f93]" checked={item.done} disabled={busy} onChange={(event) => void onTick(event.target.checked)} />
-      Ready: {item.text} is finished and the photos show it
-    </label> : <p className="text-sm">{item.done ? `Ready${item.done_at ? ` since ${formatStamp(item.done_at)}` : ""}.` : "Not ready yet."}</p>}
   </div>
 }
 

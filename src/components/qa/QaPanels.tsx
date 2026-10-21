@@ -1,4 +1,5 @@
 import DefectTrends from "./DefectTrends"
+import QaRequirements from "./QaRequirements"
 import { useEffect, useMemo, useState } from "react"
 import Modal from "../Modal"
 import { EmptyState, Meter, StatCard, buttonPrimary, buttonSecondary, inputClass } from "../ui/PageParts"
@@ -286,6 +287,7 @@ function Viewer({ template, canEdit, onClose, onDuplicate }: { template: Templat
               {item.kind === "measure" ? <span className="text-xs text-fg-muted">Measure: {toleranceText(item)}</span> : null}
               {item.reference ? <span className="text-xs text-fg-muted">{item.reference}</span> : null}
             </div>
+            <QaRequirements item={item} />
           </li>
         ))}
       </ol>

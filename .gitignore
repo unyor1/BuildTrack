@@ -8,6 +8,7 @@ vite.config.*.timestamp-*
 *.tsbuildinfo
 *-debug.log*
 logs/
+hardware/esp32-as608/attendance/config.h
 *.log
 .claude-replay.*
 .tmp-*

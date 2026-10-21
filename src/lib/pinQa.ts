@@ -30,8 +30,10 @@ export function usePinQa(pinId: string) {
     ...byColumn("qa_defects", "pin_id", pinId), ...byColumn("pin_checklist_items", "pin_id", pinId),
     ...byColumn("pin_photos", "pin_id", pinId),
   ], () => void reload())
-  const preflight = useCallback(async () => {
-    const { data, error } = await supabase.rpc("pin_qa_submission_problem", { p_pin: pinId })
+  const preflight = useCallback(async (itemId?: string) => {
+    const { data, error } = itemId
+      ? await supabase.rpc("checklist_qa_submission_problem", { p_item: itemId })
+      : await supabase.rpc("pin_qa_submission_problem", { p_pin: pinId })
     if (error) throw new Error(error.message)
     await reload()
     return data as string | null

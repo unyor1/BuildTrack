@@ -119,10 +119,10 @@ export default async function ({ db, ids, as, asOwner, test, expectFail, count }
     if ((await count("select count(*) n from public.pins where id = $1", [fresh])) !== 0) throw new Error("the fresh sheet should be deleted with its pins")
   })
 
-  await test("Live updates are published for the work tables only; profiles, identity and audit are never published", async () => {
+  await test("Live updates publish work/attendance only; account profiles, identity and audit are never published", async () => {
     await asOwner()
     const rows = (await db.query("select tablename from pg_publication_tables where pubname = 'supabase_realtime' order by tablename")).rows.map((row) => row.tablename)
-    const expected = ["biometric_daily_totals", "client_snags", "daily_report_photos", "daily_report_revisions", "daily_reports", "notifications", "pin_checklist_items", "pin_events", "pin_photos", "pins", "project_questions", "qa_defect_events", "qa_defects", "qa_inspection_events", "qa_inspection_items", "qa_inspections", "qa_photos", "qa_work_attempts"]
+    const expected = ["attendance_workers", "biometric_attendance_events", "biometric_daily_totals", "blueprint_revisions", "blueprints", "client_snags", "daily_report_photos", "daily_report_revisions", "daily_reports", "notifications", "pin_checklist_items", "pin_events", "pin_photos", "pins", "project_questions", "qa_defect_events", "qa_defects", "qa_inspection_events", "qa_inspection_items", "qa_inspections", "qa_photos", "qa_work_attempts", "site_issue_photo_revisions", "site_issue_photos", "site_issue_reports"]
     if (JSON.stringify(rows) !== JSON.stringify(expected)) throw new Error("published: " + rows.join(", "))
   })
 }

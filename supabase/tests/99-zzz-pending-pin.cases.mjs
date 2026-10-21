@@ -40,10 +40,10 @@ export default async function({db,ids,as,asOwner,addUser,test,expectFail,count})
     await expectFail("select public.request_inspection($1,$2,'Second stage',$3)",[project,template,pins[0]],/already pending/)
     await expectFail("select public.request_reinspection($1)",[previous],/already pending/)
     await expectFail("select public.submit_pin_qa($1)",[pins[0]],/already pending/)
-    await expectFail("select public.submit_checklist_qa($1,$2::uuid[])",[pins[0],[item]],/already pending/)
+    assert.equal((await db.query("select public.checklist_qa_submission_problem($1) problem",[item])).rows[0].problem,null)
     assert.equal(await count("select count(*) n from public.qa_inspections where pin_id=$1 and status in ('requested','in_progress')",[pins[0]]),1)
   }
-  await test("Pending pin: requested QA blocks stage, old re-inspection, legacy and item submission routes",blockedRoutes)
+  await test("Pending pin: stage and legacy routes stay guarded; independent work-item preflight is allowed",blockedRoutes)
   await test("Pending pin: starting inspection keeps every duplicate route blocked; another pin remains independent",async()=>{
     await as("pendingEng"); await db.query("select public.start_inspection($1)",[pending])
     await blockedRoutes()

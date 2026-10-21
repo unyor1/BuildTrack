@@ -128,7 +128,7 @@ export default function SystemSettings(_: AdminPageProps) {
             </fieldset>
           </Card>
 
-          <Card title="Standards and codes" description="The codes that inspections may cite, for example the structural or electrical code. Up to 30." updated={updatedOf(settingKeys.standards)} dirty={dirty.standards} busy={busy === "standards"} canEdit={canEdit} error={errors.standards ?? ""} onReset={load} onSave={() => void commit("standards", settingKeys.standards, standards.map((item) => ({ code: item.code.trim(), title: item.title.trim() })))}>
+          <Card title="Standards and codes" description="Reference catalog, including cement, masonry and roofing standards. Include the edition; applicability and exact clauses must be confirmed by the project Engineer. Up to 30." updated={updatedOf(settingKeys.standards)} dirty={dirty.standards} busy={busy === "standards"} canEdit={canEdit} error={errors.standards ?? ""} onReset={load} onSave={() => void commit("standards", settingKeys.standards, standards.map((item) => ({ code: item.code.trim(), title: item.title.trim() })))}>
             {standards.length === 0 ? <p className="rounded-lg border border-dashed border-line px-3 py-3 text-sm text-fg-muted">No standards yet.</p> : null}
             <ul className="space-y-2">
               {standards.map((item, index) => (

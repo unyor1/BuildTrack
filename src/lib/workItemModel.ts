@@ -1,6 +1,6 @@
 // The work item (a checklist item of a work pin, e.g. LAUNDRY -> FLOOR) is the QA record. Pure rules, tested in `pnpm test:lib`.
 // Keep linkedDefects identical to SQL item_defect_ids and the acceptance gate identical to review_checklist_item.
-//   Ready     = the Foreman finished preparing the item (photos + ticked).
+//   Submitted = the Foreman declares the item finished and sends its photos for QA (no Ready tick).
 //   Passed    = its inspection criteria passed.
 //   Accepted  = the Engineer verified the item.
 //   Completed = every item accepted and every NCR / inspection on the work is clear (the pin's "verified" status).
@@ -56,16 +56,6 @@ export function pinLevelDefects<D extends DefectRef>(pinId: string, submissions:
   return defects.filter((row) => row.pin_id === pinId && (row.inspection_id === null || !workInspections.has(row.inspection_id))).sort((a, b) => a.number - b.number)
 }
 
-// One request per work at a time: another item's open inspection or pending acceptance blocks new requests on this item.
-export function pinBusy(itemId: string, items: ItemRef[], open: { id: string; number: number } | null): string | null {
-  if (open && !items.some((row) => row.id === itemId && row.review_inspection_id === open.id)) {
-    const names = items.filter((row) => row.review_inspection_id === open.id).map((row) => row.text)
-    return `${irRef(open.number)}${names.length ? ` (${names.join(", ")})` : ""} is open on this work. One request per work at a time.`
-  }
-  const waiting = items.filter((row) => row.id !== itemId && row.review_status === "for_review")
-  return waiting.length ? `${waiting.map((row) => row.text).join(", ")} ${waiting.length === 1 ? "is" : "are"} waiting for Engineer acceptance on this work. One request per work at a time.` : null
-}
-
 export type StageInput = {
   item: ItemRef
   attempts: number
@@ -74,7 +64,6 @@ export type StageInput = {
   draft: { remarks: string; photos: number | null } | null
   eligiblePhotos: number | null
   criteriaApproved: boolean
-  pinBusy: string | null
   pinCompleted: boolean
 }
 export type StageView = { stage: ItemStage; label: string; owner: Owner | null; status: string; blocker: string; next: string; action: StageAction | null }
@@ -108,7 +97,6 @@ export function workItemStage(input: StageInput): StageView {
   if (returned) {
     const head = current ? `Inspection ${outcome[current.status] ?? current.status} (${irRef(current.number)}).` : "Returned for correction."
     const status = `${head}${toFix.length ? ` ${plural(toFix.length, "NCR")} to correct.` : ""}${toVerify.length ? ` ${refs(toVerify)} awaits the Engineer's decision.` : ""}`
-    if (input.pinBusy) return view("correction", null, status, "Submit the correction after the current request on this work is finished.", null, input.pinBusy)
     if (!input.draft) return view("correction", "Foreman", status, `Foreman starts the correction for ${name}: describe the fix and add new photos.`, "start_correction")
     const minimum = toFix.length ? 10 : 5
     const missing = [
@@ -118,13 +106,9 @@ export function workItemStage(input: StageInput): StageView {
     return view("correction", "Foreman", status, "Foreman submits the correction package.", "submit_correction", missing.length ? `Still needed: ${missing.join(" and ")}.` : "")
   }
 
-  if (!item.done) {
-    return view("preparing", "Foreman", "Preparing.", input.eligiblePhotos === 0 ? `Foreman adds photos of ${name} and marks it ready.` : `Foreman marks ${name} ready.`, "add_evidence")
-  }
-  if (!input.criteriaApproved) return view("ready", "Engineer", "Ready.", "Engineer approves the inspection criteria for this work.", "approve_criteria")
-  if (input.pinBusy) return view("ready", null, "Ready.", "Submit after the current request on this work is finished.", null, input.pinBusy)
-  if (input.eligiblePhotos === 0) return view("ready", "Foreman", "Ready.", "Foreman adds an eligible photo, then submits for QA.", "add_evidence", "No eligible photo: away-from-site or wrong-time photos do not count.")
-  return view("ready", "Foreman", "Ready.", `Foreman submits ${name} for QA.`, "submit")
+  if (!input.criteriaApproved) return view("preparing", "Engineer", "Inspection criteria needed.", `Engineer adds the inspection criteria to ${name}.`, "approve_criteria")
+  if (input.eligiblePhotos === 0) return view("preparing", "Foreman", "Evidence needed.", `Foreman adds photos of ${name}, then submits for QA.`, "add_evidence", "No eligible photo: away-from-site or wrong-time photos do not count.")
+  return view("preparing", "Foreman", "Not submitted.", `Foreman submits ${name} for QA.`, "submit")
 }
 
 export const headline = (stage: StageView) => `${stage.status} Next action: ${stage.next}`

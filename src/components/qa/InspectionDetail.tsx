@@ -15,6 +15,7 @@ import { useToast } from "../../lib/toast"
 import WorkSubmissionEvidence, { useWorkSubmission } from "./WorkSubmissionEvidence"
 import { photoEligible } from "../../lib/photoStamp"
 import InspectionSchedule from "./InspectionSchedule"
+import QaRequirements from "./QaRequirements"
 import { useInspectionTimeline } from "../../lib/qaAttempts"
 import { submittedChecklistItems } from "../../lib/qaChecklistModel"
 import { workItemPath } from "../../lib/workItemModel"
@@ -125,6 +126,7 @@ function ItemRow({ item, index, editable, prepBy, photos, projectId, onSave, onP
             {item.requires_photo ? <Chip tone="bg-surface-muted text-fg-muted" title="A photo is required as evidence">Photo required</Chip> : null}
             {item.reference ? <span className="text-xs text-fg-muted">{item.reference}</span> : null}
           </div>
+          <QaRequirements item={item} />
           {item.kind === "measure" ? (
             <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
               <label htmlFor={`m-${item.id}`} className="font-bold text-fg-muted">Measured</label>

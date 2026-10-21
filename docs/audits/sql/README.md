@@ -4,6 +4,9 @@ One document per SQL file in `supabase/`. Same sections every time so changes ar
 
 | Doc | SQL file | Status |
 |---|---|---|
+| [Independent checklist-item QA](../2026-10-20-concurrent-checklist-qa.md) | `supabase/migrations/20261020072554_concurrent_checklist_qa.sql` | Applied; item-scoped requests allow adding and submitting other items during review; evidence, authorization and completion guards verified |
+| [Direct checklist-item QA](../2026-10-20-direct-item-qa.md) | `supabase/migrations/20261020064247_direct_item_qa.sql` | Applied; atomic Engineer item+criteria save, direct Foreman submission, pending/evidence guards and legacy history verified |
+| [Biometric attendance](../2026-10-19-biometric-attendance.md) | `supabase/migrations/20261019104906_biometric_attendance_board.sql`, `20261019105837_biometric_device_receiver.sql` | Applied; worker profiles, private photos, live display and authenticated ESP32 receiver verified; physical AS608/ESP32 setup and acceptance test required |
 | [Progress / QA review](../2026-10-18-progress-and-qa-review.md) | `supabase/migrations/20261018124654_report_review_and_checklist_acceptance.sql` | Applied; local checks and live rollback smoke passed |
 | [0001_profiles_rbac](0001_profiles_rbac.md) | `supabase/migrations/0001_profiles_rbac.sql` | Applied |
 | [0002_admin_mfa_aal2](0002_admin_mfa_aal2.md) | `supabase/migrations/0002_admin_mfa_aal2.sql` | Applied |
@@ -48,6 +51,9 @@ One document per SQL file in `supabase/`. Same sections every time so changes ar
 
 ## Latest workflow migrations
 
+- `20261019101438_site_issue_checklist_filter.sql`: applied and live-verified; see [issue checklist filtering audit](../2026-10-19-issue-checklist-filter.md). Pin-scoped checklist selection, durable name snapshot, checklist filters and backward-compatible RPC signatures.
+- `20261019095439_site_issue_photos.sql`: applied and live-verified; see [site issue and zone progress audit](../2026-10-19-site-issues-and-zone-progress.md). Private original photos, versioned markup, atomic issue/return actions, shared pin-state progress and exact-sheet links.
+- `20261019093602_philippine_qa_standards.sql`: applied and live-verified; see [Philippine QA standards audit](../2026-10-19-philippine-qa-standards.md); additive references and snapshot-safe acceptance/evidence instructions.
 - [`20261018172839_daily_report_photo_limit.sql`](20261018172839_daily_report_photo_limit.md): applied via connector; up to 50 photos per daily report.
 - [`20261018170444_daily_report_checklist_links.sql`](20261018170444_daily_report_checklist_links.md): applied via connector; daily report linked work is a work pin + checklist item.
 - [`20261018153632_work_item_correction_package.sql`](20261018153632_work_item_correction_package.md): applied via connector; see [work item QA workspace audit](../2026-10-18-work-item-qa-workspace.md). Live rollback validation: `20261018-correction-package-smoke.sql` (aborts itself with SMOKE_OK).
@@ -56,7 +62,10 @@ One document per SQL file in `supabase/`. Same sections every time so changes ar
 - `20261018124654_report_review_and_checklist_acceptance.sql`: applied via connector; see [progress and QA review](../2026-10-18-progress-and-qa-review.md).
 - `20261018133531_qa_resubmission_attempts.sql`: applied via connector; see [QA resubmission audit](../2026-10-18-qa-resubmission-attempts.md). Validation SQL: `20261018-qa-attempts-smoke.sql`, run only inside a transaction ending in ROLLBACK.
 
+- `20261020090300_worker_sensor_enrollment.sql`: applied via connector; automatic worker fingerprint enrollment and split contact fields. See [worker sensor enrollment audit](../2026-10-20-worker-sensor-enrollment.md).
+
 ## Document template (copy for every new migration)
+
 1. Header table: file, date written, date applied, depends on, status, reversible
 2. Purpose (why, 2-3 lines)
 3. Objects created or changed (table)

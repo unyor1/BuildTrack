@@ -47,7 +47,7 @@ export default function EngineerProgressVerification({ onNavigate }: EngineerPag
     { key: "inspect", short: "Inspect", title: "Inspect", hint: "Requested or in progress: record the results against the inspection criteria.", rows: rows.filter((row) => row.view.action === "inspect") },
     { key: "ncrs", short: "NCRs", title: "Decide NCR corrections", hint: "The Foreman's correction package is in: close each NCR or send it back (sending back returns the work item).", rows: rows.filter((row) => row.view.action !== "inspect" && row.ncrs.some((ncr) => ncr.status === "for_verification")) },
     { key: "accept", short: "Accept", title: "Accept", hint: "Inspection passed and every linked NCR is closed.", rows: rows.filter((row) => row.view.action === "accept") },
-    { key: "criteria", short: "Criteria", title: "Approve inspection criteria", hint: "Items are ready but their work has no approved criteria yet.", rows: rows.filter((row) => row.view.action === "approve_criteria") },
+    { key: "criteria", short: "Criteria missing", title: "Add criteria to existing items", hint: "These older items need criteria. New items include criteria when created.", rows: rows.filter((row) => row.view.action === "approve_criteria") },
   ]
   const yours = new Set(groups.flatMap((group) => group.rows.map((row) => row.item.id))).size
   const stageOpen = ws.inspections.filter((row) => (row.status === "requested" || row.status === "in_progress") && !items.workInspectionIds.has(row.id))

@@ -7,6 +7,7 @@ import { supabase } from "./supabase"
 // Not used inside the blueprint editor, whose optimistic edits and undo stack must not be replaced mid-gesture.
 
 export type LiveTable =
+  | "blueprints" | "blueprint_revisions" | "site_issue_reports" | "site_issue_photos" | "site_issue_photo_revisions"
   | "pins" | "pin_events" | "pin_photos" | "pin_checklist_items" | "daily_report_photos"
   | "qa_inspections" | "qa_inspection_items" | "qa_defects" | "qa_defect_events" | "qa_photos"
   | "client_snags" | "daily_reports" | "project_questions" | "notifications"

@@ -91,7 +91,7 @@ export default function BlueprintEditor({ projectId, role, canEdit, canUpload = 
   const { prefs, update: setPrefs, reset: resetPrefs } = useEditorPrefs()
   const desktop = useMediaQuery("(min-width: 1024px)")
 
-  const [blueprintId, setBlueprintId] = useState<string | null>(null)
+  const [blueprintId, setBlueprintId] = useState<string | null>(new URLSearchParams(window.location.search).get("sheet"))
   const [revisionId, setRevisionId] = useState<string | null>(null)
   const [tool, setTool] = useState<EditorTool>("select")
   const [shapeKind, setShapeKind] = useState<ShapeKind>("rect")
@@ -226,7 +226,13 @@ export default function BlueprintEditor({ projectId, role, canEdit, canUpload = 
   const pendingPin = useRef<string | null>(new URLSearchParams(window.location.search).get("pin"))
   const [pinLinkVersion, setPinLinkVersion] = useState(0)
   useEffect(() => {
-    const changed = () => { pendingPin.current = new URLSearchParams(window.location.search).get("pin"); setPinLinkVersion(v => v + 1) }
+    const changed = () => {
+      const params=new URLSearchParams(window.location.search)
+      pendingPin.current=params.get("pin")
+      const sheetId=params.get("sheet")
+      if(sheetId) setBlueprintId(sheetId)
+      setPinLinkVersion(v => v + 1)
+    }
     window.addEventListener("popstate", changed)
     return () => window.removeEventListener("popstate", changed)
   }, [])

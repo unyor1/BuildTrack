@@ -11,7 +11,7 @@ import type { AdminNavigate, AdminPageKey } from "./types"
 export const pageTitles: Record<AdminPageKey, string> = {
   dashboard: "Admin Dashboard",
   "user-management": "User Management & Approval",
-  biometrics: "Fingerprint Biometrics Registration",
+  biometrics: "Worker Biometric Registration",
   "project-management": "Project Management",
   "blueprint-upload": "Blueprint Management",
   "blueprint-mapping": "Blueprint Mapping Monitor",
@@ -47,7 +47,7 @@ const navItems: Array<{
   { key: "settings", label: "System Settings", icon: "grid" },
 ]
 
-const samplePages: AdminPageKey[] = ["biometrics"]
+const samplePages: AdminPageKey[] = []
 
 // Which admin function unlocks which page. Pages not listed are open to every admin.
 export const adminPagePermission: Partial<Record<AdminPageKey, AdminPermission>> = {

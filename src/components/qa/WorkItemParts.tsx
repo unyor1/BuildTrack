@@ -5,15 +5,15 @@ export function StageChip({ stage }: { stage: ItemStage }) {
   return <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-bold ${stageTone[stage]}`}>{stageLabels[stage]}</span>
 }
 
-// Ready -> Passed -> Accepted -> Completed: the four words used everywhere, so readiness never looks like a result.
+// Submission declares the work finished; no separate Ready tick.
 const rail: Array<{ key: string; label: string; help: string }> = [
-  { key: "ready", label: "Ready", help: "The Foreman finished preparing the work" },
+  { key: "submitted", label: "Submitted", help: "The Foreman submitted the evidence for QA" },
   { key: "passed", label: "Passed", help: "The inspection criteria passed" },
   { key: "accepted", label: "Accepted", help: "The Engineer verified the work item" },
   { key: "completed", label: "Completed", help: "Every item accepted, all NCRs and hold points cleared" },
 ]
 const reached = (stage: ItemStage, completed: boolean): number =>
-  completed ? 4 : stage === "accepted" ? 3 : stage === "passed" ? 2 : stage === "preparing" ? 0 : 1
+  completed ? 4 : stage === "accepted" ? 3 : stage === "passed" ? 2 : stage === "requested" || stage === "inspecting" || stage === "correction" ? 1 : 0
 
 export function StageRail({ stage, completed }: { stage: ItemStage; completed: boolean }) {
   const done = reached(stage, completed)

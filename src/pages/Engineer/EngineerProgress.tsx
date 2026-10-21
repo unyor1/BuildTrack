@@ -9,6 +9,7 @@ import { STATUSES, byZone, daysBetween, downloadCsv, isDueSoon, isOverdue, sched
 import { disciplineLabels, getSelectedProjectId } from "../../lib/projects"
 import { useProjectWork } from "../../lib/projectWork"
 import type { EngineerPageProps } from "./types"
+import { zonePlanPath } from "../../lib/issueMarkup"
 
 export function StackedBar({ totals }: { totals: Totals }) {
   if (!totals.total) return <div className="h-2.5 rounded-full bg-surface-muted" aria-label="No pins yet" />
@@ -72,11 +73,13 @@ export default function EngineerProgress({ onNavigate }: EngineerPageProps) {
         eyebrow="Progress"
         title="Progress by zone"
         description="Only work the engineer has verified counts as done. Sheets with problems or late work are listed first."
-        actions={<button type="button" className={buttonSecondary} onClick={exportCsv} disabled={!zones.length}>Export CSV</button>}
+        actions={<><button type="button" className={buttonSecondary} onClick={()=>void work.reload()} disabled={work.loading}>Refresh database data</button><button type="button" className={buttonSecondary} onClick={exportCsv} disabled={!zones.length || Boolean(work.error)}>Export CSV</button></>}
       />
 
       {!projectId ? null : work.loading ? (
         <SkeletonCardGrid count={3} />
+      ) : work.error ? (
+        <p role="alert" className="rounded-lg bg-danger-soft p-4 text-sm text-danger-fg">{work.error} <button type="button" className="underline" onClick={()=>void work.reload()}>Retry</button></p>
       ) : totals.total === 0 ? (
         <EmptyState title="No work pins yet">Add pins on the plan to track work here. Notes do not count as work.</EmptyState>
       ) : (
@@ -131,7 +134,8 @@ export default function EngineerProgress({ onNavigate }: EngineerPageProps) {
                     {zone.totals.for_review ? <span className="font-bold text-fuchsia-700 dark:text-fuchsia-300">{zone.totals.for_review} to review</span> : null}
                     {zone.totals.issue ? <span className="font-bold text-red-700 dark:text-red-300">{zone.totals.issue} issue{zone.totals.issue === 1 ? "" : "s"}</span> : null}
                     {zone.totals.overdue ? <span className="font-bold text-red-700 dark:text-red-300">{zone.totals.overdue} overdue</span> : null}
-                    <button type="button" className="ml-auto inline-flex min-h-6 items-center font-bold text-brand-text hover:underline" onClick={() => followLink(`/engineer/annotation?project=${projectId}`, projectId)}>Open plan</button>
+                    <button type="button" className="inline-flex min-h-6 items-center font-bold text-brand-text hover:underline" onClick={() => followLink(`/engineer/report-issue?project=${projectId}&sheet=${zone.blueprintId}`, projectId)}>Issue register</button>
+                    <button type="button" className="ml-auto inline-flex min-h-6 items-center font-bold text-brand-text hover:underline" onClick={() => followLink(zonePlanPath("engineer",projectId!,zone.blueprintId), projectId)}>Open this sheet</button>
                   </div>
                 </article>
               ))}

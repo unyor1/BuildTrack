@@ -20,17 +20,16 @@ export default function ForemanQualityControl({ onNavigate }: ForemanPageProps) 
   const mine = work.rows.filter((row) => row.pin.assigned_to === profile?.id)
   const corrections = mine.filter((row) => row.view.stage === "correction" || row.view.action === "open_ncr").length
   const groups = [
-    { key: "submit", short: "Ready", title: "Ready for you to submit", hint: "Finished and photographed: submit each item for QA.", rows: mine.filter((row) => row.view.stage === "ready" && row.view.owner === "Foreman") },
+    { key: "submit", short: "Submit QA", title: "Open an item and submit for QA", hint: "Add the item's photos and submit directly. No Ready tick is needed.", rows: mine.filter((row) => row.view.action === "submit") },
     { key: "engineer", short: "Waiting", title: "Waiting for the Engineer", hint: "Requested, being inspected, or passed and waiting for the Engineer's decision.", rows: mine.filter((row) => row.view.owner === "Engineer" && row.view.stage !== "correction") },
-    { key: "blocked", short: "Blocked", title: "Waiting for another request on the same work", hint: "One request per work at a time.", rows: mine.filter((row) => !row.view.owner && row.view.stage === "ready") },
-    { key: "preparing", short: "Preparing", title: "Still being prepared", hint: "Add photos and mark the item ready.", rows: mine.filter((row) => row.view.stage === "preparing") },
+    { key: "preparing", short: "Add evidence", title: "Photos needed", hint: "Open the item to add its photos, then submit for QA.", rows: mine.filter((row) => row.view.action === "add_evidence") },
     { key: "accepted", short: "Accepted", title: "Accepted", rows: mine.filter((row) => row.view.stage === "accepted") },
   ]
   return (
     <div className="foreman-page">
       <ProjectContextBar listPath="/foreman/projects" listLabel="My projects" />
       <PageHead eyebrow="Quality assurance" title="QA requests"
-        description="Each work item is one record: open it to see the next action, the inspection, its NCRs, photos and every attempt. Ready means you finished it; Passed means the inspection criteria passed; Accepted means the Engineer verified it."
+        description="Open each item, add photos and submit for QA. The Engineer defines its criteria when creating the item, records the inspection and accepts passed work. Earlier requests and corrections stay on record."
         actions={corrections ? <button type="button" className={buttonSecondary} onClick={() => onNavigate("issues")}>{corrections} correction{corrections === 1 ? "" : "s"} to do</button> : undefined} />
       {projectId ? <>
         <WorkItemBoard groups={groups} loading={work.loading || ws.loading} error={work.error} nameOf={ws.nameOf} sheetOf={ws.work.sheetOf} onOpen={setItemId}

@@ -23,6 +23,7 @@ const areaOf = (page: Page) => page.split("/")[0]
 const RETURN_KEY = "buildtrack.returnTo"
 
 const rolesForArea: Record<string, AppRole[]> = {
+  attendance: ["super_admin", "admin", "engineer", "foreman"],
   "pin-link": ["super_admin", "admin", "engineer", "foreman", "client", "user"],
   admin: ["super_admin", "admin"],
   engineer: ["engineer"],
@@ -121,7 +122,7 @@ export default function RouteGuard({
     }
     if (!session && !isPublic) {
       // A pin link opened while signed out: remember it and finish it after sign-in.
-      if (page === "pin-link") {
+      if (page === "pin-link" || page === "attendance") {
         try {
           sessionStorage.setItem(RETURN_KEY, window.location.pathname + window.location.search)
         } catch {
@@ -137,7 +138,7 @@ export default function RouteGuard({
       } catch {
         back = null
       }
-      if (back && back.startsWith("/pin")) {
+      if (back && (back.startsWith("/pin") || back === "/attendance" || back.startsWith("/attendance?"))) {
         window.history.replaceState({}, "", back)
         window.dispatchEvent(new PopStateEvent("popstate"))
       } else navigate(homeFor(profile?.role ?? null))

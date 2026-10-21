@@ -7,6 +7,7 @@ import ProjectWorkspace from "./pages/Admin/ProjectWorkspace"
 import { fieldPagePath, projectPath, projectSections, readProjectRoute, type ProjectSection } from "./lib/projectRoutes"
 import { getSelectedProjectId } from "./lib/projects"
 const LandingPage = lazy(() => import("./pages/Public/LandingPage"))
+const BiometricAttendancePage = lazy(() => import("./pages/Attendance/BiometricAttendancePage"))
 const PinLink = lazy(() => import("./pages/Public/PinLink"))
 const LoginPage = lazy(() => import("./pages/Auth/LoginPage"))
 const RegisterPage = lazy(() => import("./pages/Auth/RegisterPage"))
@@ -67,7 +68,7 @@ const withLoading = (node: ReactNode) => (
   <Suspense fallback={<div className="p-6"><SkeletonCardGrid count={3} label="Loading the page" /></div>}>{node}</Suspense>
 )
 
-export type Page = "home" | "login" | "register" | "pin-link" | `admin/${AdminPageKey}` | `engineer/${EngineerPageKey}` | `foreman/${ForemanPageKey}` | `client/${ClientPageKey}` | `user/${UserPageKey}`
+export type Page = "home" | "login" | "register" | "pin-link" | "attendance" | `admin/${AdminPageKey}` | `engineer/${EngineerPageKey}` | `foreman/${ForemanPageKey}` | `client/${ClientPageKey}` | `user/${UserPageKey}`
 
 function pageFromPath(): Page {
   const projectRoute = readProjectRoute(window.location.pathname)
@@ -155,6 +156,7 @@ function pageFromPath(): Page {
     if (["home"].includes(key)) return `user/${key}`
   }
   if (window.location.pathname === "/pin") return "pin-link"
+  if (window.location.pathname === "/attendance") return "attendance"
   if (window.location.pathname === "/login") return "login"
   if (window.location.pathname === "/register") return "register"
   return "home"
@@ -239,6 +241,7 @@ export default class App extends Component<Record<string, never>, AppState> {
   }
 
   renderPage() {
+    if (this.state.page === "attendance") return withLoading(<BiometricAttendancePage navigate={this.navigate} />)
     if (this.state.page === "pin-link") return withLoading(<PinLink />)
     if (this.state.page === "login")
       return withLoading(<LoginPage navigate={this.navigate} />)

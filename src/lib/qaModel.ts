@@ -150,7 +150,7 @@ export function dueText(defect: { status: DefectStatus; due_date: string | null 
 export const defaultDueDate = (severity: QaSeverity, today: string): string => new Date(Date.parse(today) + dueDays[severity] * 86_400_000).toISOString().slice(0, 10)
 
 // Check that a checklist is worth saving before it is sent to the database (the database checks again).
-export type DraftItem = { text: string; severity: QaSeverity; kind: "check" | "measure"; unit: string; min_value: string; max_value: string; reference: string; requires_photo: boolean; hold_point: boolean }
+export type DraftItem = { text: string; severity: QaSeverity; kind: "check" | "measure"; unit: string; min_value: string; max_value: string; reference: string; acceptance_criteria?: string; evidence_requirement?: string; requires_photo: boolean; hold_point: boolean }
 
 export function checklistProblem(name: string, items: DraftItem[]): string {
   if (name.trim().length < 3) return "Give the checklist a name (at least 3 characters)."
@@ -159,6 +159,9 @@ export function checklistProblem(name: string, items: DraftItem[]): string {
   for (const [index, item] of items.entries()) {
     const label = `Item ${index + 1}`
     if (item.text.trim().length < 3) return `${label}: describe what is checked.`
+    if (item.reference.trim().length > 200) return `${label}: the standard, edition and clause must be at most 200 characters.`
+    if ((item.acceptance_criteria?.trim().length ?? 0) > 1000) return `${label}: acceptance criteria must be at most 1000 characters.`
+    if ((item.evidence_requirement?.trim().length ?? 0) > 1000) return `${label}: evidence / test instructions must be at most 1000 characters.`
     if (item.kind === "measure") {
       const min = item.min_value.trim() === "" ? null : Number(item.min_value)
       const max = item.max_value.trim() === "" ? null : Number(item.max_value)

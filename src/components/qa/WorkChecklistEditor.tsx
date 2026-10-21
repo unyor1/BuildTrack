@@ -1,0 +1,71 @@
+import { useId, useRef, useState } from "react"
+import Modal from "../Modal"
+import { buttonPrimary, buttonSecondary, inputClass } from "../ui/PageParts"
+import { checklistProblem, useTemplates, type DraftItem, type Template } from "../../lib/qa"
+import type { ChecklistItem, Pin } from "../../lib/blueprints"
+import { supabase } from "../../lib/supabase"
+import { useToast } from "../../lib/toast"
+
+const blank = (): DraftItem => ({ text: "", acceptance_criteria: "", evidence_requirement: "", reference: "", severity: "major", kind: "check", unit: "", min_value: "", max_value: "", requires_photo: false, hold_point: false })
+const fromTemplate = (template?: Template): DraftItem[] => template?.qa_template_items.map(row => ({ ...row, unit: row.unit ?? "", min_value: row.min_value == null ? "" : String(row.min_value), max_value: row.max_value == null ? "" : String(row.max_value), reference: row.reference ?? "", acceptance_criteria: row.acceptance_criteria ?? "", evidence_requirement: row.evidence_requirement ?? "" })) ?? [blank()]
+
+// Criteria and work item are saved atomically. There is no later approval step for the Foreman to chase.
+export default function WorkChecklistEditor({ pin, item, onClose, onSaved }: { pin: Pin; item?: ChecklistItem; onClose: () => void; onSaved: () => void | Promise<void> }) {
+  const { templates, loading, error } = useTemplates(pin.project_id)
+  const selected = templates.find(row => row.id === item?.qa_template_id)
+  return loading || error || item?.qa_template_id && !selected
+    ? <Modal title="Checklist criteria" onClose={onClose}><p role="status">{error || (loading ? "Loading criteria…" : "The saved criteria could not be loaded. Close and try again.")}</p></Modal>
+    : <Editor pin={pin} item={item} templates={templates} selected={selected} onClose={onClose} onSaved={onSaved} />
+}
+
+function Editor({ pin, item, templates, selected, onClose, onSaved }: { pin: Pin; item?: ChecklistItem; templates: Template[]; selected?: Template; onClose: () => void; onSaved: () => void | Promise<void> }) {
+  const toast = useToast()
+  const id = useId()
+  const [name, setName] = useState(item?.text ?? "")
+  const [criteria, setCriteria] = useState(() => fromTemplate(selected))
+  const [busy, setBusy] = useState(false)
+  const pending = useRef(false)
+  const problem = checklistProblem(name, criteria) || (name.trim().length > 200 ? "Keep the name under 200 characters." : "") || (criteria.some(row => (row.acceptance_criteria?.trim().length ?? 0) < 5) ? "Enter a specific passing requirement for every criterion." : "")
+  const patch = (index: number, change: Partial<DraftItem>) => setCriteria(rows => rows.map((row, at) => at === index ? { ...row, ...change } : row))
+  const save = async () => {
+    if (pending.current || problem) return
+    pending.current = true; setBusy(true)
+    try {
+      const { error } = await supabase.rpc("save_work_checklist_item", { p_pin: pin.id, p_item: item?.id ?? null, p_text: name.trim(), p_criteria: criteria })
+      if (error) throw error
+      await onSaved()
+      toast.success("Checklist item and criteria saved", "The Foreman can add evidence and submit directly for QA.")
+      onClose()
+    } catch (error) { toast.error("Checklist not saved", (error as Error).message) }
+    finally { pending.current = false; setBusy(false) }
+  }
+  return <Modal title={item ? `Edit ${item.text} and criteria` : "Add checklist item and criteria"} size="lg" onClose={busy ? () => undefined : onClose}
+    description="Define the checks now. The Foreman adds photos and submits; no Ready tick or separate criteria approval."
+    footer={<>{problem ? <p role="status" className="mr-auto text-xs text-danger-fg">{problem}</p> : null}<button type="button" className={buttonSecondary} disabled={busy} onClick={onClose}>Cancel</button><button type="button" className={buttonPrimary} disabled={busy || Boolean(problem)} onClick={() => void save()}>{busy ? "Saving…" : "Save item and criteria"}</button></>}>
+    <div className="space-y-4">
+      <label className="block text-sm font-bold">Checklist item name<input className={inputClass + " mt-1"} value={name} maxLength={200} onChange={event => setName(event.target.value)} placeholder="For example: FLOOR" /></label>
+      <label className="block text-sm">Copy criteria from an existing checklist (optional)
+        <select className={inputClass + " mt-1"} defaultValue="" onChange={event => { const template = templates.find(row => row.id === event.target.value); if (template) setCriteria(fromTemplate(template)) }}>
+          <option value="" disabled>Select only an applicable checklist</option>{templates.filter(row => !row.archived && row.qa_template_items.length).map(row => <option key={row.id} value={row.id}>{row.name}</option>)}
+        </select>
+      </label>
+      <p className="text-xs text-fg-muted">Use the approved project specification for test conditions and limits. Copying a checklist does not confirm that it applies to this item.</p>
+      {criteria.map((row, index) => <fieldset key={index} className="space-y-2 rounded-xl border border-line p-3">
+        <legend className="px-1 text-sm font-bold">Criterion {index + 1}</legend>
+        <label className="block text-sm" htmlFor={`${id}-${index}-test`}>Test / check<input id={`${id}-${index}-test`} className={inputClass + " mt-1"} value={row.text} maxLength={500} onChange={event => patch(index, { text: event.target.value })} /></label>
+        <label className="block text-sm" htmlFor={`${id}-${index}-pass`}>Passing requirement<textarea id={`${id}-${index}-pass`} className={inputClass + " mt-1"} rows={2} value={row.acceptance_criteria} maxLength={1000} onChange={event => patch(index, { acceptance_criteria: event.target.value })} /></label>
+        <details className="text-sm"><summary className="cursor-pointer font-semibold">Reference, evidence and measurement options</summary><div className="mt-2 space-y-2">
+          <label className="block">Reference / specification clause<input className={inputClass} maxLength={200} value={row.reference} onChange={event => patch(index, { reference: event.target.value })} /></label>
+          <label className="block">Required evidence / test instructions<textarea className={inputClass} rows={2} maxLength={1000} value={row.evidence_requirement} onChange={event => patch(index, { evidence_requirement: event.target.value })} /></label>
+          <label className="block">Severity<select className={inputClass} value={row.severity} onChange={event => patch(index, { severity: event.target.value as DraftItem["severity"] })}><option value="minor">Minor</option><option value="major">Major</option><option value="critical">Critical</option></select></label>
+          <label className="block">Result type<select className={inputClass} value={row.kind} onChange={event => patch(index, { kind: event.target.value as DraftItem["kind"] })}><option value="check">Pass / fail</option><option value="measure">Measured value</option></select></label>
+          {row.kind === "measure" ? <div className="grid grid-cols-3 gap-2">{(["unit", "min_value", "max_value"] as const).map(key => <label key={key}>{key === "unit" ? "Unit" : key === "min_value" ? "Minimum" : "Maximum"}<input className={inputClass} type={key === "unit" ? "text" : "number"} step="any" value={row[key]} onChange={event => patch(index, { [key]: event.target.value })} /></label>)}</div> : null}
+          <label className="flex items-center gap-2"><input type="checkbox" checked={row.requires_photo} onChange={event => patch(index, { requires_photo: event.target.checked })} />Engineer must attach inspection evidence</label>
+          <label className="flex items-center gap-2"><input type="checkbox" checked={row.hold_point} onChange={event => patch(index, { hold_point: event.target.checked })} />Hold point</label>
+        </div></details>
+        <button type="button" className="text-xs font-bold text-danger-fg" disabled={criteria.length === 1} onClick={() => setCriteria(rows => rows.filter((_, at) => at !== index))}>Remove criterion {index + 1}</button>
+      </fieldset>)}
+      <button type="button" className={buttonSecondary} disabled={criteria.length >= 60} onClick={() => setCriteria(rows => [...rows, blank()])}>Add criterion</button>
+    </div>
+  </Modal>
+}

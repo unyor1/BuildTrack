@@ -19,6 +19,8 @@ export type TemplateItem = {
   min_value: number | null
   max_value: number | null
   reference: string | null
+  acceptance_criteria?: string | null
+  evidence_requirement?: string | null
   requires_photo: boolean
   hold_point: boolean
 }
@@ -74,6 +76,8 @@ export type InspectionItem = {
   min_value: number | null
   max_value: number | null
   reference: string | null
+  acceptance_criteria?: string | null
+  evidence_requirement?: string | null
   requires_photo: boolean
   hold_point: boolean
   result: ItemResult

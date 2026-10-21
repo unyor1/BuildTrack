@@ -31,10 +31,11 @@ export default function CorrectionForm({ formId, item, pin, draft, previousIr, p
   const eligibleOf = (attemptId: string) => photos.filter((photo) => photo.qa_attempt_id === attemptId && photoEligible(photo)).length
 
   // Other returned items of the same work whose correction is already prepared can travel in the same package (one request per work).
-  const others = useMemo(() => pinItems.filter((row) => row.id !== item.id && row.review_status !== "verified" && row.review_status !== "for_review").flatMap((row) => {
+  const others = useMemo(() => pinItems.filter((row) => row.id !== item.id && row.review_status !== "verified" && row.review_status !== "for_review"
+    && (row.qa_template_id ?? pin.qa_template_id) === (item.qa_template_id ?? pin.qa_template_id)).flatMap((row) => {
     const other = attempts.find((attempt) => attempt.item_id === row.id && !attempt.submitted_inspection_id)
     return other ? [{ item: row, draft: other, ready: other.remarks.trim().length >= 5 && eligibleOf(other.id) > 0 }] : []
-  }), [pinItems, attempts, photos, item.id]) // eslint-disable-line react-hooks/exhaustive-deps
+  }), [pinItems, attempts, photos, item.id, item.qa_template_id, pin.qa_template_id]) // eslint-disable-line react-hooks/exhaustive-deps
   const included = [item.id, ...also]
   const ncrs = useMemo(() => {
     const seen = new Map<string, Defect>()
@@ -137,7 +138,7 @@ export default function CorrectionForm({ formId, item, pin, draft, previousIr, p
       </div> : null}
       {others.length ? <fieldset className="space-y-1.5">
         <legend className={label}>Include other corrections on this work</legend>
-        <p className="text-xs text-fg-muted">Only one request per work can be open, so prepared corrections of other items can go in the same package.</p>
+        <p className="text-xs text-fg-muted">Items with the same criteria can share a correction package. Other items can also be submitted separately while QA is pending.</p>
         {others.map((row) => <label key={row.item.id} className="flex items-center gap-2 text-sm">
           <input type="checkbox" className="h-4 w-4 accent-[#9e1f93]" disabled={!row.ready} checked={also.includes(row.item.id)} onChange={(event) => setAlso((current) => event.target.checked ? [...current, row.item.id] : current.filter((id) => id !== row.item.id))} />
           {row.item.text}{row.ready ? "" : <span className="text-xs text-fg-muted"> (needs remarks and a new photo in its own correction first)</span>}

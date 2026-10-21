@@ -5,10 +5,10 @@ import { checklistProblem, qaActions, qaSeverityLabels, severities, trades, trad
 import { useToast } from "../../lib/toast"
 
 const label = "mb-1 block text-xs font-extrabold uppercase tracking-wider text-fg-muted"
-const blank = (): DraftItem => ({ text: "", severity: "major", kind: "check", unit: "", min_value: "", max_value: "", reference: "", requires_photo: false, hold_point: false })
+const blank = (): DraftItem => ({ text: "", severity: "major", kind: "check", unit: "", min_value: "", max_value: "", reference: "", acceptance_criteria: "", evidence_requirement: "", requires_photo: false, hold_point: false })
 const fromTemplate = (template: Template | null): DraftItem[] =>
   template?.qa_template_items.length
-    ? template.qa_template_items.map((item) => ({ text: item.text, severity: item.severity, kind: item.kind, unit: item.unit ?? "", min_value: item.min_value === null ? "" : String(item.min_value), max_value: item.max_value === null ? "" : String(item.max_value), reference: item.reference ?? "", requires_photo: item.requires_photo, hold_point: item.hold_point }))
+    ? template.qa_template_items.map((item) => ({ text: item.text, severity: item.severity, kind: item.kind, unit: item.unit ?? "", min_value: item.min_value === null ? "" : String(item.min_value), max_value: item.max_value === null ? "" : String(item.max_value), reference: item.reference ?? "", acceptance_criteria: item.acceptance_criteria ?? "", evidence_requirement: item.evidence_requirement ?? "", requires_photo: item.requires_photo, hold_point: item.hold_point }))
     : [blank()]
 
 // Create or edit an inspection checklist (an Inspection and Test Plan sheet). The built-in lists cannot be edited: duplicate one first.
@@ -42,6 +42,8 @@ export default function TemplateEditor({ template, projectId, standards, onClose
       min_value: item.kind === "measure" ? item.min_value.trim() : "",
       max_value: item.kind === "measure" ? item.max_value.trim() : "",
       reference: item.reference.trim(),
+      acceptance_criteria: item.acceptance_criteria?.trim() ?? "",
+      evidence_requirement: item.evidence_requirement?.trim() ?? "",
       requires_photo: item.requires_photo,
       hold_point: item.hold_point,
     }))
@@ -67,6 +69,7 @@ export default function TemplateEditor({ template, projectId, standards, onClose
       }
     >
       <div className="space-y-4">
+        <p className="rounded-lg bg-surface-muted p-3 text-xs text-fg-muted">References are not automatic proof of compliance. Record the applicable edition and exact clause, acceptance criteria, and required evidence or test for each item. The Engineer can copy applicable criteria while creating each work checklist item. Existing inspections keep their original criteria.</p>
         <div className="grid gap-4 sm:grid-cols-3">
           <div className="sm:col-span-2"><label className={label} htmlFor="t-name">Name</label><input id="t-name" className={inputClass} maxLength={120} value={name} onChange={(event) => setName(event.target.value)} placeholder="e.g. Slab pre-pour inspection" /></div>
           <div><label className={label} htmlFor="t-trade">Trade</label><select id="t-trade" className={inputClass} value={trade} onChange={(event) => setTrade(event.target.value as Trade)}>{trades.map((t) => <option key={t} value={t}>{tradeLabels[t]}</option>)}</select></div>
@@ -76,7 +79,7 @@ export default function TemplateEditor({ template, projectId, standards, onClose
           <fieldset>
             <legend className={label}>Standards cited</legend>
             <div className="flex flex-wrap gap-2">
-              {standards.map((standard) => {
+              {[...standards, ...cited.filter(code => !standards.some(standard => standard.code === code)).map(code => ({ code, title: "Previously cited reference (retained)" }))].map((standard) => {
                 const on = cited.includes(standard.code)
                 return <button key={standard.code} type="button" aria-pressed={on} title={standard.title} onClick={() => setCited((current) => (on ? current.filter((code) => code !== standard.code) : [...current, standard.code].slice(0, 10)))} className={`rounded-full border px-3 py-1 text-xs font-bold transition ${on ? "border-brand bg-brand-soft text-brand-text" : "border-line text-fg-muted hover:bg-surface-muted"}`}>{standard.code}</button>
               })}
@@ -107,7 +110,15 @@ export default function TemplateEditor({ template, projectId, standards, onClose
                         <span className="text-fg-muted">Leave both empty to record a value without a limit.</span>
                       </div>
                     ) : null}
-                    <input aria-label={`Item ${index + 1} requirement`} className={inputClass + " !py-1"} maxLength={200} value={item.reference} onChange={(event) => patch(index, { reference: event.target.value })} placeholder="Standard and clause, from your project specification (optional)" />
+                    <label className="block text-xs font-bold">Standard, edition and exact clause
+                      <input aria-label={`Item ${index + 1} requirement`} className={inputClass + " mt-1 !py-1"} maxLength={200} value={item.reference} onChange={(event) => patch(index, { reference: event.target.value })} placeholder="Copy the applicable code, edition and clause from the approved specification" />
+                    </label>
+                    <label className="block text-xs font-bold">Acceptance criteria
+                      <textarea aria-label={`Item ${index + 1} acceptance criteria`} rows={2} className={inputClass + " mt-1 !py-1"} maxLength={1000} value={item.acceptance_criteria ?? ""} onChange={(event) => patch(index, { acceptance_criteria: event.target.value })} placeholder="Engineer-defined pass/fail requirement; use the approved specification, not an assumed limit" />
+                    </label>
+                    <label className="block text-xs font-bold">Required evidence / test
+                      <textarea aria-label={`Item ${index + 1} required evidence or test`} rows={2} className={inputClass + " mt-1 !py-1"} maxLength={1000} value={item.evidence_requirement ?? ""} onChange={(event) => patch(index, { evidence_requirement: event.target.value })} placeholder="Required photos, certificates, sampling/test method and report references" />
+                    </label>
                   </div>
                   <div className="flex flex-none flex-col gap-1">
                     <button type="button" aria-label={`Move item ${index + 1} up`} disabled={index === 0} onClick={() => move(index, -1)} className="rounded border border-line px-2 text-xs hover:bg-surface-muted disabled:opacity-40">↑</button>

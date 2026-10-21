@@ -43,12 +43,12 @@ export default async function(ctx) {
     assert.equal((await db.query("select review_status from public.pin_checklist_items where id=$1",[steps[0]])).rows[0].review_status,"for_review")
     assert.equal((await db.query("select review_status from public.pin_checklist_items where id=$1",[steps[1]])).rows[0].review_status,"not_submitted")
   })
-  await test("Pending QA: item, batch and stage routes all block another open request for the same work",async()=>{
+  await test("Pending QA: different items can be requested concurrently; legacy whole-pin and stage routes stay guarded",async()=>{
     await as("revFore")
-    await expectFail("select public.submit_checklist_qa($1,$2::uuid[])",[pin,[steps[1]]],/already pending/)
+    second=(await db.query("select public.submit_checklist_qa($1,$2::uuid[]) id",[pin,[steps[1]]])).rows[0].id
     await expectFail("select public.submit_pin_qa($1)",[pin],/already pending/)
     await expectFail("select public.request_inspection($1,$2,'Different stage title',$3)",[project,template,pin],/already pending/)
-    assert.equal(await count("select count(*) n from public.qa_inspections where pin_id=$1 and status in ('requested','in_progress')",[pin]),1)
+    assert.equal(await count("select count(*) n from public.qa_inspections where pin_id=$1 and status in ('requested','in_progress')",[pin]),2)
     await as("revEng")
     await expectFail("select public.review_checklist_item($1,true)",[steps[0]],/pending QA/)
   })
@@ -61,11 +61,10 @@ export default async function(ctx) {
     await db.query("select public.review_checklist_item($1,true)",[steps[0]])
     const item = (await db.query("select * from public.pin_checklist_items where id=$1",[steps[0]])).rows[0]
     assert.equal(item.review_status,"verified"); assert.equal(item.verified_by,ids.revEng); assert.ok(item.verified_at)
-    assert.equal((await db.query("select status from public.pins where id=$1",[pin])).rows[0].status,"in_progress")
-    await expectFail("update public.pins set status='verified' where id=$1",[pin],/Every checklist item/)
+    assert.equal((await db.query("select status from public.pins where id=$1",[pin])).rows[0].status,"for_review")
+    await expectFail("update public.pins set status='verified' where id=$1",[pin],/Every checklist item|still open|Awaiting Engineer/)
     await as("revFore")
     await expectFail("update public.pin_checklist_items set remark='Changed after acceptance' where id=$1",[steps[0]],/Reopen/)
-    second=(await db.query("select public.submit_checklist_qa($1,$2::uuid[]) id",[pin,[steps[1]]])).rows[0].id
   })
   await test("Completion: accepting the last passed item completes work; reopening one item returns the overall work to progress",async()=>{
     await finish(second)
