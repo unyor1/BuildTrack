@@ -12,7 +12,6 @@
 .valencia-hero { min-height: min(840px, calc(100svh - 76px)); position: relative; isolation: isolate; display: flex; align-items: center; overflow: hidden; background: #211426; color: white; }
 .valencia-hero__photo { position: absolute; z-index: -4; inset: 0 0 0 auto; width: 76%; height: 100%; object-fit: cover; object-position: 58% 57%; }
 .valencia-hero__wash { position: absolute; z-index: -3; inset: 0; background: linear-gradient(90deg,#25122b 0%,rgba(37,18,43,.97) 20%,rgba(37,18,43,.79) 40%,rgba(37,18,43,.06) 78%),linear-gradient(0deg,rgba(22,13,27,.85),transparent 40%); }
-.valencia-hero__angle { position: absolute; z-index: -2; inset: 0; background: linear-gradient(120deg,rgba(158,31,147,.22),rgba(241,139,0,.09)); clip-path: polygon(56% 0,65% 0,44% 55%,63% 100%,55% 100%,35% 55%); }
 .valencia-hero::after { content: ""; position: absolute; left: 0; bottom: 0; width: 36%; height: 4px; background: linear-gradient(90deg,#9e1f93,#f18b00); }
 .valencia-hero__content { position: relative; width: min(860px,68%); padding: 100px 0 110px clamp(24px,6vw,112px); }
 .valencia-hero__content .valencia-eyebrow { display: flex; align-items: center; gap: 10px; font-size: 10px; }
@@ -24,7 +23,7 @@
 .valencia-actions { display: flex; flex-wrap: wrap; gap: 12px; }
 .valencia-actions .button { min-height: 49px; font-size: 11px; text-transform: none; letter-spacing: .01em; }
 .valencia-actions .button--gold { color: #231326; }
-.valencia-hero__identity { position: absolute; right: 5%; top: 35px; width: clamp(170px,20vw,300px); border-radius: 4px 30px 4px 30px; background: rgba(255,251,242,.79); padding: 12px 15px; box-shadow: 0 12px 60px -25px #0008; backdrop-filter: blur(6px); }
+.valencia-hero__identity { position: absolute; left: 68%; top: 58%; width: clamp(320px,34vw,540px); transform: translate(-50%,-50%); }
 .valencia-hero__identity img { display: block; width: 100%; height: auto; }
 .valencia-hero__caption { position: absolute; left: clamp(24px,6vw,112px); right: 5%; bottom: 27px; display: flex; align-items: center; gap: 10px; color: #f1e5f0; font-size: 10px; letter-spacing: .04em; }
 .valencia-hero__caption > span:last-child { margin-left: auto; opacity: .65; }
@@ -151,7 +150,7 @@
   .valencia-hero { min-height: 690px; }
   .valencia-hero__content { width: 74%; }
   .valencia-hero h1 { font-size: 59px; }
-  .valencia-hero__identity { width: 210px; right: 4%; top: 30px; }
+  .valencia-hero__identity { left: 78%; width: clamp(240px,30vw,340px); }
   .valencia-service-grid, .valencia-process-grid { grid-template-columns: 1fr 1fr; }
   .valencia-about__visual > img { height: 440px; }
   .valencia-about__label { min-width: 200px; padding: 20px; right: 0; }
@@ -164,10 +163,9 @@
   .valencia-hero { min-height: 720px; align-items: flex-end; }
   .valencia-hero__photo { width: 100%; object-position: 63% 50%; }
   .valencia-hero__wash { background: linear-gradient(0deg,#25122bf2 0%,#25122be0 48%,#25122b30 90%); }
-  .valencia-hero__angle { clip-path: polygon(95% 0,100% 0,66% 48%,100% 100%,88% 100%,50% 48%); }
-  .valencia-hero__content { width: 100%; padding: 230px 24px 90px; }
+  .valencia-hero__content { width: 100%; padding: 290px 24px 90px; }
   .valencia-hero h1 { font-size: clamp(42px,8.3vw,60px); }
-  .valencia-hero__identity { top: 20px; width: 170px; padding: 8px 12px; }
+  .valencia-hero__identity { left: 50%; top: 20px; width: clamp(240px,68vw,330px); transform: translateX(-50%); }
   .valencia-hero__intro { font-size: 13px; max-width: 390px; }
   .valencia-hero__caption { font-size: 9px; }
   .valencia-hero__caption > span:last-child { display: none; }

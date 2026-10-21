@@ -1,6 +1,6 @@
 # BuildTrack development handover
 
-Updated: 2026-10-21.
+Updated: 2026-10-22.
 
 Read this alongside `AGENTS.md`, `README.md` and the task-specific audit in `docs/audits/`. This file records current project decisions; it is not an application entrypoint or a database migration. Check the implementation and tests before treating an older document as current behavior. In particular, older handover text mentioning a required Ready tick or a separate Accept action is outdated.
 
@@ -64,6 +64,12 @@ Relevant files: `src/pages/Client/`, `src/components/client/PinDailyReports.tsx`
 - Preserve the original photo and save validated text, lines, arrows, shapes and freehand annotations as a separate overlay. Do not flatten over or replace the original.
 - Layout follows the blueprint editor. `PhotoEditorToolbar.tsx` is one compact icon toolbar with tooltips: (slideshow controls) | Select, Pan | Text, Shapes dropdown (Line, Arrow, Rectangle, Ellipse, Freehand) | Undo, Redo | View original | zoom − % + Fit Fill | fullscreen. The active tool is filled in brand colour. `MarkupProperties` (colour swatches + custom colour, line width or text size S/M/L/XL, text, delete) shows only while a drawing tool is active or a mark is selected. Changes to a selected mark apply at once; a slider drag or typing run is one undo step, each colour or size pick is its own. No pins, tape or other blueprint-only actions.
 - Shortcuts: V select, H pan, T text, L line, A arrow, R rectangle, E ellipse, D freehand, Del delete, Ctrl+Z / Ctrl+Shift+Z (or Ctrl+Y), Page Up / Page Down between photos. They are ignored while typing in a field.
+- Select, move, rotate (like the blueprint editor):
+  - After placing text or finishing a shape, the tool returns to Select and the new mark stays selected.
+  - Every mark has a wide invisible grab area (a band around thin outlines, a box around text), so it is easy to pick up.
+  - A selected mark shows a dashed frame, turned with the mark, and a round rotate handle above it. Drag the mark to move it; drag the handle to rotate (Shift snaps to 15°).
+  - The properties bar has Rotate left / right 15° and a degrees field; `[` and `]` rotate by 15°; arrow keys nudge 0.5% (Shift 5%). A handle drag, a typed angle or a run of arrow presses is one undo step.
+  - Rotation is the optional `rotation` key (degrees, around the mark's own centre from `markupBox`, stored -180..180, dropped at 0), allowed by `valid_issue_markup` since `20261021151557`. Every viewer and thumbnail draws it through `MarkupLayer`.
 - Several photos open as a manual slideshow: "Image n of N" with Previous / Next (no wrap-around, never automatic) and a collapsible numbered thumbnail strip (`PhotoSlides.tsx`, like the sheet sidebar; a row above the photo on phones) with the current photo highlighted and an "edited" note. Each photo keeps its own markup, caption and undo / redo history (`src/lib/photoEditorModel.ts`, pure and tested). Fullscreen and the chosen tool stay when moving between photos. A single photo shows none of these controls.
 - Unsaved work is protected: closing the editor with changes asks (`useConfirm`); the picker asks before removing a photo that has markup or an edited caption; Escape leaves fullscreen first.
 - `src/lib/canvasView.ts` shares the blueprint sheet's fit/zoom mathematics with `src/components/editor/StageCanvas.tsx`. Zoom limits are 5%-1000%, multiplicative 1.3x buttons. Every photo opens with **Fit** (whole image, padding, never cropped or stretched). **Fill** covers the canvas only when chosen and stays chosen for the next photo; manual zoom/pan stays stable across fullscreen changes.
@@ -109,6 +115,9 @@ Relevant files: `src/pages/Client/`, `src/components/client/PinDailyReports.tsx`
 - Sources: the Home, About Us, Services, Projects and Contact pages at `https://valenciaconstructionservices.mystrikingly.com/`, checked 2026-10-21. Keep company facts separate from private project records and do not invent project completion dates, statistics, staff, certifications or testimonials.
 - `src/pages/Public/ValenciaIntroduction.tsx`, `valenciaContent.ts` and scoped `valencia.css` reuse the public Header and its brand colors. `/valencia` is rendered as static public content; workspace routes retain their existing RouteGuard.
 - `src/assets/valencia/introduction/` holds local source photos, an enhanced interior hero and the transparent logo. Preserve source images and do not flatten the logo's alpha channel.
+- Hero refinement (2026-10-22): retain the left headline, actions, colors and readability gradient. Overlay the transparent logo directly over the interior photo at the user's yellow-circled right-center area (desktop center at 68% across / 58% down). Keep it clear of tablet copy and above mobile copy. This supersedes the earlier top-center placement. Do not restore the white/glass logo card or the red less-than/chevron decoration.
+- The enlarged hero logo uses `clamp(320px,34vw,540px)` on desktop, with smaller tablet/mobile bounds. Preserve its marked center when resizing; mobile copy reserves space below the larger logo.
+- The Valencia company header hides Log in and Register using `Header`'s opt-in `showAuthActions={false}`. Keep the main landing page's sign-in controls and the standalone attendance branding-only header unchanged.
 - Project filters and gallery slides are manual. Keep renderings labelled as perspectives, not finished construction; source-listed ongoing statuses are dated, not live database statuses.
 - The inquiry form prepares a `mailto:` message. It does not store or send inquiries itself; keep this clear to visitors. The address-map link uses the published Taytay office address, not the original site's generic map. No verified company social profile was available.
 - Run `pnpm test:valencia` after changes; it is included in `pnpm check`. See `docs/audits/2026-10-21-valencia-introduction.md` for sources, asset prompts and verification limitations.
@@ -122,6 +131,7 @@ Relevant files: `src/pages/Client/`, `src/components/client/PinDailyReports.tsx`
 - `docs/audits/2026-10-21-client-portal-connections.md`
 - `docs/audits/2026-10-21-qa-photo-markup.md`
 - `docs/audits/2026-10-21-photo-editor-zoom-fullscreen.md`
+- `docs/audits/2026-10-22-photo-markup-select-move-rotate.md`
 - `docs/audits/2026-10-21-photo-editor-toolbar-slideshow.md` (supersedes the Fill-first default and viewport heights above)
 
 These audits describe individual task runs. Historical statements such as "no push was made" apply to that task, not necessarily to the current repository state. Use Git history for current commit/push status.

@@ -48,7 +48,7 @@ export default function ValenciaIntroduction({ navigate }: { navigate: (page: Pa
   return (
     <div className="landing valencia-page">
       <a className="valencia-skip" href="#valencia-main">Skip to company introduction</a>
-      <Header navigate={navigate} navigation={companySections} />
+      <Header navigate={navigate} navigation={companySections} showAuthActions={false} />
       <nav className="valencia-mobile-nav" aria-label="Company sections">
         {companySections.map(link => <a key={link.href} href={link.href}>{link.label}</a>)}
       </nav>
@@ -56,7 +56,6 @@ export default function ValenciaIntroduction({ navigate }: { navigate: (page: Pa
         <section className="valencia-hero" aria-labelledby="valencia-title">
           <img className="valencia-hero__photo" src={company.interior} alt="Light-filled Southlinks interior with full-height windows and sculptural pendant lights" fetchPriority="high" width={1448} height={1086} />
           <div className="valencia-hero__wash" aria-hidden="true" />
-          <div className="valencia-hero__angle" aria-hidden="true" />
           <div className="valencia-hero__identity"><img src={company.logo} alt="Valencia Construction Services logo" width={1470} height={1070} /></div>
           <div className="valencia-hero__content">
             <p className="valencia-eyebrow valencia-eyebrow--light"><span /> Spaces with purpose. Work with care.</p>

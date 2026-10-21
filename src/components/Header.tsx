@@ -4,12 +4,14 @@ import Brand from "./Brand"
 type HeaderProps = {
   navigate: (page: Page) => void
   brandingOnly?: boolean
+  showAuthActions?: boolean
   navigation?: { label: string; href: string }[]
 }
 
 export default function Header({
   navigate,
   brandingOnly = false,
+  showAuthActions = true,
   navigation,
 }: HeaderProps) {
   return (
@@ -36,7 +38,7 @@ export default function Header({
               { label: "Contact", href: "/#contact" },
             ]).map(link => <a key={link.href} href={link.href}>{link.label}</a>)}
           </nav>
-          <div className="header-actions">
+          {showAuthActions ? <div className="header-actions">
             <button
               className="button button--outline-light"
               onClick={() => navigate("login")}
@@ -49,7 +51,7 @@ export default function Header({
             >
               Register
             </button>
-          </div>
+          </div> : null}
         </>
       )}
     </header>

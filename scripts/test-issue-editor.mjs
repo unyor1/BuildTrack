@@ -287,7 +287,7 @@ assert.ok(!viewerHtml.includes("data-grab"),"Read-only views get no grab areas")
 const editableHtml=renderToStaticMarkup(createElement("svg",null,createElement(MarkupLayer,{items:[turned,{...turned,id:"label",kind:"text",text:"Gap"}],height:500,onSelect(){}})))
 assert.match(editableHtml,/data-grab="true" stroke="transparent" stroke-width="24"/,"Thin outlines get a wide invisible grab band")
 assert.match(editableHtml,/<rect data-grab="true" x="[^"]+" y="[^"]+" width="[^"]+" height="[^"]+" fill="transparent"/,"Text gets a grab box around the whole text")
-console.log("Photo editor blueprint-parity toolbar (tools, shapes dropdown, properties, shortcuts), wheel/cursor zoom, button scale/limits, drag/Space/middle/pinch pan, touch drawing cancellation, Fit-first/Fill/fullscreen, markup preservation and save passed")
+console.log("Photo editor blueprint-parity toolbar (tools, shapes dropdown, properties, shortcuts), select-after-create, rotate handle/keys/degrees, arrow nudge, grab areas, wheel/cursor zoom, button scale/limits, drag/Space/middle/pinch pan, touch drawing cancellation, Fit-first/Fill/fullscreen, markup preservation and save passed")
 
 // Several photos: a manual slideshow. Every photo keeps its own markup, caption and undo history; Save returns only changes.
 reset({photos:[photo("a","First"),photo("b","Second"),{...photo("c","Third"),annotations:[{id:"kept",kind:"rectangle",x:10,y:10,x2:30,y2:30,color:"#2563eb",stroke:4,fontSize:30,text:"",points:[]}]}],onClose:()=>closed++,onSave:async changes=>{saved=changes}})
