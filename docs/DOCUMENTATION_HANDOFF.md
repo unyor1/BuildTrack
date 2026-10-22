@@ -60,6 +60,22 @@ Decisions waiting on the user or advisers
 - Chapter 1 lists a Project Viewing and Inquiry module and Admin, User, Engineer and Foreman dashboards. The program has a landing page and also a Client portal. Chapter 1 and the build should be made consistent.
 - Chapter 3 uses Arial 12 by request; Chapters 1 and 2 use Times New Roman 12.
 
+### Update: Chapter 3 figures, 2026-10-22
+
+Figures 1, 2, 3, 4, 7 and 8 are now inserted and visually checked in the Google Doc. They cover the WBS, schedule, QA flowchart, context diagram and physical/logical layouts. Hardware remains proposed and unconnected. Figure 5 (detailed DFD), Figure 6 (verified circuit) and Figures 9 to 16 (real screenshots) remain open. See docs/audits/2026-10-22-chapter-3-figures.md. Other October 22 audits supersede the October 21 methodology/format status above; do not treat the older pending list as current.
+
+### Update: Prepared evaluation instrument, 2026-10-22
+
+The Google Doc now has an EVALUATION QUESTIONNAIRE tab (t.ekvdofjvvaa4), linked from Chapter 3 > Evaluation Procedure > Instrument and Evidence. Appendix A contains 25 original BuildTrack statements under the five selected ISO/IEC 25010:2023 characteristics; Appendix B contains the separate technical/security evidence sheet. These are prepared drafts for adviser review, not validated instruments or collected results. See docs/audits/2026-10-22-evaluation-questionnaire.md and docs/paper/buildtrack-evaluation-questionnaire.md.
+
+### Update: Chapter 3 spacing and planning tabs, 2026-10-22
+
+Chapter 3 page flow was corrected and Figures 1/3 compacted without removing manuscript text. The current export has 40 Chapter 3 pages, down from 44. The existing workbook now includes WBS (700000004, A1:F32) and Gantt Chart (700000005, A1:P23) tabs. Recorded and planned activity are separated; hardware remains unconnected and the defense date remains unconfirmed. Existing reports and original timeline were retained. See docs/audits/2026-10-22-chapter-3-spacing-and-planning-tabs.md.
+
+### Update: Proposed local server guide, 2026-10-23
+
+The proposed Windows laptop / VMware / Ubuntu / hotspot deployment is documented in docs/BUILDTRACK_LOCAL_SERVER_GUIDE.md. It is not yet implemented or tested. It requires an isolated local backend, accounts/files/functions, trusted HTTPS and actual internet-disconnected verification; cloud/local synchronization remains future work. The user authorized a documentation-only Git commit/push. See docs/paper/README.md for versioned sources versus local review artifacts.
+
 ## 5. Working notes learned so far
 
 - Google Docs: the paper has many tabs and reading the whole document returns a very large result. Read one tab at a time. Insert text first, then apply styles in a second call using character offsets (all text was plain ASCII so offsets are exact).
