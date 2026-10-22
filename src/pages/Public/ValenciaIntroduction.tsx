@@ -4,7 +4,8 @@ import Header from "../../components/Header"
 import PublicFooter from "../../components/PublicFooter"
 import Icon from "../../components/Icons"
 import Modal from "../../components/Modal"
-import { handlePublicNavigation, usePublicHashScroll } from "../../lib/publicNavigation"
+import { usePublicHashScroll } from "../../lib/publicNavigation"
+import ValenciaMobileNavigation from "./ValenciaMobileNavigation"
 import { companyHeaderNavigation, companyInquiryMailto, valenciaCompany as company, valenciaProcess, valenciaProjects, valenciaServices } from "./valenciaContent"
 import "./valencia.css"
 
@@ -50,10 +51,7 @@ export default function ValenciaIntroduction({ navigate }: { navigate: (page: Pa
   return (
     <div className="landing valencia-page">
       <a className="valencia-skip" href="#valencia-main">Skip to company introduction</a>
-      <Header navigate={navigate} navigation={companyHeaderNavigation} showAuthActions={false} brandPage="valencia" />
-      <nav className="valencia-mobile-nav" aria-label="Company sections">
-        {companyHeaderNavigation.map(link => <a key={link.href} href={link.href} onClick={event => handlePublicNavigation(event, link.href, navigate)}>{link.label}</a>)}
-      </nav>
+      <Header navigate={navigate} navigation={companyHeaderNavigation} showAuthActions={false} brandPage="valencia" mobileMenu={<ValenciaMobileNavigation navigate={navigate} />} />
       <main id="valencia-main">
         <section className="valencia-hero" aria-labelledby="valencia-title">
           <img className="valencia-hero__photo" src={company.interior} alt="Light-filled Southlinks interior with full-height windows and sculptural pendant lights" fetchPriority="high" width={1448} height={1086} />
@@ -115,10 +113,9 @@ export default function ValenciaIntroduction({ navigate }: { navigate: (page: Pa
                 <img src={item.photos[0].src} alt={item.photos[0].caption} loading="lazy" width={1200} height={800} />
                 <span className="valencia-project__tag">{item.category}</span><span className="valencia-project__open" aria-hidden="true">↗</span>
               </button>
-              <div className="valencia-project__body"><h3><button type="button" onClick={() => openProject(item.id)}>{item.name}</button></h3><p>{item.description}</p>{item.sourceStatus ? <small><span className="valencia-dot" />{item.sourceStatus}</small> : null}</div>
+              <div className="valencia-project__body"><h3><button type="button" onClick={() => openProject(item.id)}>{item.name}</button></h3><p>{item.description}</p></div>
             </article>)}
           </div>
-          <p className="valencia-source-note">Portfolio and status descriptions are from the <a href={`${company.source}3`} target="_blank" rel="noopener noreferrer">company website <Arrow /></a>, checked October 21, 2026. Perspectives are labelled separately from site photographs.</p>
         </section>
 
         <section className="valencia-section valencia-process" id="valencia-process" aria-labelledby="valencia-process-title">
@@ -163,7 +160,7 @@ export default function ValenciaIntroduction({ navigate }: { navigate: (page: Pa
             <span aria-live="polite">Image {slide + 1} of {project.photos.length}</span>{project.photos.length > 1 ? <button type="button" onClick={() => changeSlide(1)} aria-label="Next project photo">Next →</button> : <span />}</div>
           <p className="valencia-gallery__caption">{project.photos[slide].caption}</p>
           {project.photos.length > 1 ? <div className="valencia-gallery__thumbs" role="group" aria-label="Choose project photo">{project.photos.map((photo, index) => <button type="button" key={photo.src} aria-label={`Show photo ${index + 1}: ${photo.caption}`} aria-pressed={slide === index} onClick={() => setSlide(index)}><img src={photo.src} alt="" /></button>)}</div> : null}
-          <p>{project.description}</p>{project.sourceStatus ? <p className="valencia-source-note">{project.sourceStatus} · checked October 21, 2026.</p> : null}
+          <p>{project.description}</p>
         </div>
       </Modal> : null}
     </div>

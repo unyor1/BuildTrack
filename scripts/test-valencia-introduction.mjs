@@ -56,7 +56,7 @@ globalThis.document = { title: "BuildTrack", querySelector: () => description }
 const historyCalls = []
 const updateLocation = path => {
   const target = new URL(path, "https://buildtrack.test")
-  Object.assign(globalThis.window.location, { href: target.href, pathname: target.pathname, search: target.search, hash: target.hash })
+  Object.assign(globalThis.window.location, { href: target.href, origin: target.origin, pathname: target.pathname, search: target.search, hash: target.hash })
 }
 globalThis.window = { location: { href: "", pathname: "/valencia", search: "", hash: "" }, dispatchEvent() {}, history: {
   replaceState(_state, _title, path) { historyCalls.push({ method: "replace", path }); updateLocation(path) },
@@ -101,7 +101,10 @@ try {
   assert.deepEqual(header.props.navigation, content.companyHeaderNavigation)
   assert.equal(header.props.brandPage, "valencia", "Company logo returns to its own introduction")
   assert.deepEqual(content.companyHeaderNavigation[0], { label: "BuildTrack", href: "/buildtrack" })
-  assert.ok(all(tree).some(node => node.props?.href === "/buildtrack" && text(node) === "BuildTrack"), "Mobile company header also links to BuildTrack")
+  assert.equal(header.props.mobileMenu.type.name, "ValenciaMobileNavigation", "Mobile navigation is mounted inside the header, not a separate horizontal link strip")
+  assert.equal(header.props.mobileMenu.props.navigate, props.navigate)
+  assert.ok(!all(tree).some(node => node.props?.className === "valencia-mobile-nav"))
+  assert.ok(!/Listed as ongoing|Portfolio and status descriptions|checked October/.test(text(tree)), "Remove source-website status notes and the portfolio footnote")
   const proprietor = find(node => node.props?.className === "valencia-proprietor")
   const portrait = all(proprietor).find(node => node.type === "img")
   assert.equal(portrait.props.src, content.valenciaCompany.proprietorPhoto)
@@ -148,7 +151,7 @@ try {
   render(Page, props)
   assert.match(text(tree), /Image 1 of 1/)
   assert.ok(!all(tree).some(node => node.props?.["aria-label"] === "Next project photo"))
-  assert.match(text(tree), /Listed as ongoing on the source website/)
+  assert.ok(!/Listed as ongoing|checked October/.test(text(tree)), "The removed status text must not reappear in project galleries")
   find(node => node.type?.name === "Modal").props.onClose()
   render(Page, props)
 
@@ -170,6 +173,60 @@ try {
   assert.equal(document.title, "BuildTrack")
   assert.equal(description.content, "Original description")
 
+  slots = []; effects = []; pending = []
+  const { module: { handlePublicNavigation } } = await compile("../src/lib/publicNavigation.ts", { react })
+  globalThis.__valenciaDeps.handlePublicNavigation = handlePublicNavigation
+  const { module: { default: MobileNavigation } } = await compile("../src/pages/Public/ValenciaMobileNavigation.tsx", {
+    react,
+    "./valenciaContent": url("export const companyHeaderNavigation=globalThis.__valenciaContent.companyHeaderNavigation"),
+  })
+  const mediaListeners = new Set(), mobileCalls = []
+  const desktop = { matches: false, addEventListener(_event, callback) { mediaListeners.add(callback) }, removeEventListener(_event, callback) { mediaListeners.delete(callback) } }
+  window.matchMedia = query => { assert.equal(query, "(min-width: 1101px)"); return desktop }
+  const mobileProps = { navigate: (page, hash) => mobileCalls.push({ page, hash }) }
+  const menuButton = () => find(node => node.props?.["aria-label"] === "Open navigation menu")
+  const menu = () => find(node => node.type?.name === "Modal")
+  const click = extra => ({ button: 0, defaultPrevented: false, currentTarget: { getAttribute() { return null }, hasAttribute() { return false } }, preventDefault() { this.defaultPrevented = true }, ...extra })
+  const showMenu = () => { menuButton().props.onClick(); render(MobileNavigation, mobileProps) }
+  updateLocation("/valencia")
+  render(MobileNavigation, mobileProps)
+  assert.equal(menuButton().props["aria-expanded"], false)
+  assert.equal(menuButton().props["aria-haspopup"], "dialog")
+  assert.equal(menuButton().props["aria-controls"], "valencia-mobile-navigation")
+  assert.ok(!all(tree).some(node => node.type?.name === "Modal"), "Closed navigation does not leave hidden focusable links or an overlay")
+  for (const link of content.companyHeaderNavigation) {
+    showMenu()
+    assert.equal(menuButton().props["aria-expanded"], true)
+    assert.equal(menu().props.placement, "right")
+    assert.equal(find(node => node.type === "nav").props.id, "valencia-mobile-navigation")
+    assert.deepEqual(all(tree).filter(node => node.type === "a").map(node => node.props.href), content.companyHeaderNavigation.map(item => item.href))
+    const anchor = find(node => node.type === "a" && node.props.href === link.href), event = click()
+    anchor.props.onClick(event)
+    assert.ok(event.defaultPrevented)
+    const destination = new URL(link.href, window.location.href)
+    assert.deepEqual(mobileCalls.at(-1), { page: destination.pathname === "/valencia" ? "valencia" : "home", hash: destination.hash })
+    render(MobileNavigation, mobileProps)
+    assert.equal(menuButton().props["aria-expanded"], false, "Ordinary section/BuildTrack navigation closes the drawer")
+    assert.equal(mediaListeners.size, 0, "Closing removes the responsive listener")
+  }
+  showMenu()
+  const modified = click({ ctrlKey: true }), callCount = mobileCalls.length
+  find(node => node.type === "a").props.onClick(modified)
+  render(MobileNavigation, mobileProps)
+  assert.ok(!modified.defaultPrevented)
+  assert.equal(mobileCalls.length, callCount)
+  assert.equal(menuButton().props["aria-expanded"], true, "Modified/new-tab links retain native behavior")
+  menu().props.onClose(); render(MobileNavigation, mobileProps)
+  assert.equal(menuButton().props["aria-expanded"], false, "Shared dialog close action closes the menu")
+  showMenu()
+  desktop.matches = true; mediaListeners.forEach(callback => callback()); render(MobileNavigation, mobileProps)
+  assert.equal(menuButton().props["aria-expanded"], false, "Resizing to desktop dismisses an open mobile drawer")
+  assert.equal(mediaListeners.size, 0)
+  desktop.matches = false; showMenu()
+  effects.forEach(effect => effect?.cleanup?.())
+  assert.equal(mediaListeners.size, 0, "Unmounting removes listeners")
+  slots = []; effects = []; pending = []
+
   const { module: { default: LandingPage } } = await compile("../src/pages/Public/LandingPage.tsx")
   tree = LandingPage(props)
   assert.equal(find(node => node.type?.name === "PublicFooter").props.navigate, props.navigate, "BuildTrack reuses the same footer rather than a duplicated layout")
@@ -181,14 +238,16 @@ try {
   assert.ok(all(tree).some(node => node.type === "button" && text(node) === "Log in"), "Main landing header retains login")
   assert.ok(all(tree).some(node => node.type === "button" && text(node) === "Register"), "Main landing header retains registration")
   assert.ok(all(tree).some(node => node.props?.href === "/buildtrack#features"), "Landing links use the new explicit route")
-  tree = Header({ navigate: page => { navigated = page }, navigation: content.companyHeaderNavigation, showAuthActions: false, brandPage: "valencia" })
+  tree = Header({ navigate: page => { navigated = page }, navigation: content.companyHeaderNavigation, showAuthActions: false, brandPage: "valencia", mobileMenu: header.props.mobileMenu })
+  assert.ok(all(tree).some(node => node.type?.name === "ValenciaMobileNavigation"), "Actual header includes the opt-in mobile menu")
   assert.ok(!all(tree).some(node => node.props?.className === "header-actions"), "No hidden authentication button container")
   assert.ok(!all(tree).some(node => node.type === "button" && /^(Log in|Register)$/.test(text(node))))
   assert.deepEqual(all(tree).filter(node => node.type === "a").map(node => node.props.href), content.companyHeaderNavigation.map(link => link.href), "Company navigation and BuildTrack link remain visible")
   find(node => node.props?.className === "brand-button").props.onClick()
   assert.equal(navigated, "valencia")
-  tree = Header({ navigate() {}, brandingOnly: true })
+  tree = Header({ navigate() {}, brandingOnly: true, mobileMenu: header.props.mobileMenu })
   assert.ok(!all(tree).some(node => node.type === "nav" || node.type === "button"), "Standalone attendance header must remain branding-only")
+  assert.ok(!all(tree).some(node => node.type?.name === "ValenciaMobileNavigation"))
 
   const { module: { default: App } } = await compile("../src/App.tsx", { react })
   updateLocation("/?campaign=company")
@@ -233,6 +292,9 @@ try {
   assert.match(css, /max-width: 720px/)
   assert.match(css, /prefers-reduced-motion/)
   assert.match(css, /focus-visible/)
+  assert.match(css, /\.valencia-menu-toggle \{ display: none;/, "Hamburger is hidden on desktop")
+  assert.match(css, /@media \(max-width: 1100px\) \{\s*\.valencia-menu-toggle \{ display: inline-flex; \}/, "Hamburger appears at the same breakpoint as the desktop links disappear")
+  assert.ok(!/valencia-mobile-nav|valencia-source-note/.test(css), "No obsolete mobile link bar or removed note styles remain")
   assert.ok(!css.includes("valencia-hero__angle"), "No desktop or mobile chevron styling may remain")
   const identityRules = [...css.matchAll(/\.valencia-hero__identity\s*\{([^}]+)\}/g)].map(match => match[1])
   assert.equal(identityRules.length, 3, "Desktop, tablet and mobile logo layouts must be defined")
@@ -248,7 +310,7 @@ try {
   assert.match(identityRules[2], /translateX\(-50%\)/, "Mobile resets vertical translation so the logo is not clipped")
   assert.match(identityRules[2], /width:\s*clamp\(240px,68vw,330px\)/)
   assert.match(css, /\.valencia-hero__content\s*\{\s*width:\s*100%;\s*padding:\s*290px 24px 90px/, "Mobile reserves enough space below the enlarged logo")
-  console.log("Valencia introduction: local/transparent assets, complete source sections, public/private routing, unchanged branding-only header, project filters/slideshow/keyboard/labels, honest encoded email inquiry, real address links and metadata cleanup passed")
+  console.log("Valencia introduction: local/transparent assets, source-note removal, mobile hamburger/sidebar links/close/resizing/cleanup, public/private routing, unchanged branding-only header, project filters/slideshow/keyboard/perspective labels, honest encoded email inquiry, address links and metadata cleanup passed")
 } finally {
   globalThis.window = oldWindow
   globalThis.document = oldDocument

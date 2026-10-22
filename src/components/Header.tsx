@@ -1,4 +1,5 @@
 import type { Page } from "../App"
+import type { ReactNode } from "react"
 import Brand from "./Brand"
 import { handlePublicNavigation } from "../lib/publicNavigation"
 
@@ -8,6 +9,7 @@ type HeaderProps = {
   showAuthActions?: boolean
   brandPage?: "home" | "valencia"
   navigation?: { label: string; href: string }[]
+  mobileMenu?: ReactNode
 }
 
 export default function Header({
@@ -16,6 +18,7 @@ export default function Header({
   showAuthActions = true,
   brandPage = "home",
   navigation,
+  mobileMenu,
 }: HeaderProps) {
   return (
     <header className="site-header">
@@ -55,6 +58,7 @@ export default function Header({
               Register
             </button>
           </div> : null}
+          {mobileMenu}
         </>
       )}
     </header>

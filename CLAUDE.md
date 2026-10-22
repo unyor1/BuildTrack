@@ -22,6 +22,7 @@ React 19, TypeScript, Vite 8, Tailwind v4, `@supabase/supabase-js`. Custom `push
 
 ## Layout
 - Public marketing pages share `components/PublicFooter.tsx`. Valencia uses `page="valencia"`: landing-page layout/contact details, white/light-gray text instead of yellow, company section anchors, no Stay connected block. Preserve the existing SPA navigation and Vercel fallback. See `docs/audits/2026-10-22-shared-public-footer.md`.
+- Valencia mobile navigation (<=1100px) is an in-header hamburger opening `pages/Public/ValenciaMobileNavigation.tsx`, a right-side `Modal` drawer. Keep its focus/scroll/Escape protections, section/BuildTrack links and close-on-desktop behavior. Public source-status/date footnotes were removed by request; perspective captions and internal provenance remain. See `docs/audits/2026-10-22-valencia-mobile-navigation.md`.
 - `src/lib/supabase.ts` client | `src/lib/auth.tsx` AuthProvider + `useAuth()` (profile, can(), signOut, impersonation)
 - `src/lib/admin.ts` activity feed (`get_activity` RPC) + user stats hooks | `src/lib/projects.ts` projects/team hooks
 - UI foundation: `components/Modal.tsx` (the one dialog: sizes, focus trap, Esc), `components/ui/Skeleton.tsx` (every loading state uses skeletons, never bare "Loading..." text), `lib/toast.tsx` (`useToast()` for every success/error), `lib/confirm.tsx` (`useConfirm()`, never `window.confirm`).

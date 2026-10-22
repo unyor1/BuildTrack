@@ -113,6 +113,7 @@ Relevant files: `src/pages/Client/`, `src/components/client/PinDailyReports.tsx`
 
 - Opening `/` replaces the URL with `/valencia`. The separate BuildTrack landing page is at `/buildtrack`; internal `navigate("home")` must use that path. Preserve both pages and protected workspace/deep-link routes. Legacy explicit `/#about`, `/#services`, `/#features` and `/#contact` bookmarks redirect to their corresponding `/buildtrack` sections.
 - The Valencia desktop/mobile header includes a **BuildTrack** link to `/buildtrack`; its brand logo returns to `/valencia`. The BuildTrack header, About section and footer link back to Valencia. Landing section links must use `/buildtrack#...`, not the new opening `/` URL.
+- At widths of 1100px and below, Valencia uses an in-header hamburger and `ValenciaMobileNavigation.tsx` right-side drawer instead of a horizontal navigation strip. It reuses `Modal` with `placement="right"` for focus trapping, Escape/backdrop closing and scroll locking. Section/BuildTrack clicks close it; modified links retain native behavior. Desktop resizing closes the drawer. Drawer focus restoration must not scroll away from the selected section. Desktop links, main landing authentication and standalone attendance stay unchanged.
 - Vercel requires the root `vercel.json` SPA rewrite to `/index.html` for direct visits/refreshes of `/valencia`, `/buildtrack`, login and workspace URLs. Do not remove it or bypass RouteGuard to address a hosting 404. Public header/mobile/cross-page links use `handlePublicNavigation` for normal same-tab clicks; preserve external, modified/new-tab and download behavior. `usePublicHashScroll` scrolls sections after lazy page mounting and on hash/Back/Forward changes; keep the sticky-header offset.
 - Sources: the Home, About Us, Services, Projects and Contact pages at `https://valenciaconstructionservices.mystrikingly.com/`, checked 2026-10-21. Keep company facts separate from private project records and do not invent project completion dates, statistics, staff, certifications or testimonials.
 - `src/pages/Public/ValenciaIntroduction.tsx`, `valenciaContent.ts` and scoped `valencia.css` reuse the public Header and its brand colors. `/valencia` is rendered as static public content; workspace routes retain their existing RouteGuard.
@@ -122,7 +123,7 @@ Relevant files: `src/pages/Client/`, `src/components/client/PinDailyReports.tsx`
 - The enlarged hero logo uses `clamp(320px,34vw,540px)` on desktop, with smaller tablet/mobile bounds. Preserve its marked center when resizing; mobile copy reserves space below the larger logo.
 - The Valencia company header hides Log in and Register using `Header`'s opt-in `showAuthActions={false}`. Keep the main landing page's sign-in controls and the standalone attendance branding-only header unchanged.
 - Both public pages use `src/components/PublicFooter.tsx` for the landing footer layout, contact details and responsive columns. Valencia passes `page="valencia"` for white (not yellow) brand/headings/hover text and its own About/Services/Contact anchors; Platform Features links to `/buildtrack#features`. Do not restore the removed Stay connected/company-site promotion or duplicate the footer markup.
-- Project filters and gallery slides are manual. Keep renderings labelled as perspectives, not finished construction; source-listed ongoing statuses are dated, not live database statuses.
+- Project filters and gallery slides are manual. Keep renderings labelled as perspectives, not finished construction. Source-website ongoing-status lines, the portfolio-source/date footnote and repeated gallery status disclosures are removed from the public page by request; source provenance remains in content/audits and is not a live database status.
 - The inquiry form prepares a `mailto:` message. It does not store or send inquiries itself; keep this clear to visitors. The address-map link uses the published Taytay office address, not the original site's generic map. No verified company social profile was available.
 - Run `pnpm test:valencia` after changes; it is included in `pnpm check`. See `docs/audits/2026-10-21-valencia-introduction.md` for sources, asset prompts and verification limitations.
 
@@ -131,6 +132,7 @@ Relevant files: `src/pages/Client/`, `src/components/client/PinDailyReports.tsx`
 - `docs/audits/2026-10-22-valencia-opening-and-proprietor.md`
 - `docs/audits/2026-10-22-deployed-public-navigation.md`
 - `docs/audits/2026-10-22-shared-public-footer.md`
+- `docs/audits/2026-10-22-valencia-mobile-navigation.md`
 
 - `docs/audits/2026-10-21-work-item-evidence.md`
 - `docs/audits/2026-10-21-manual-checklist-completion.md`

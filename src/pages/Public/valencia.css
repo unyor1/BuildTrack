@@ -5,7 +5,8 @@
 .valencia-page p { line-height: 1.8; }
 .valencia-skip { position: fixed; left: 16px; top: -100px; z-index: 1000; padding: 12px 18px; background: white; color: #68135f; border-radius: 8px; }
 .valencia-skip:focus { top: 10px; }
-.valencia-mobile-nav { display: none; }
+.valencia-menu-toggle { display: none; align-items: center; justify-content: center; width: 44px; height: 44px; flex-shrink: 0; margin-left: auto; padding: 0; border: 1px solid #ffffff50; border-radius: 10px; background: transparent; color: inherit; }
+.valencia-menu-toggle:hover { background: #ffffff1f; }
 .valencia-sr { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .valencia-eyebrow { display: block; color: #9e1f93; font-size: 11px; font-weight: 800; letter-spacing: .17em; text-transform: uppercase; margin: 0 0 20px; }
 .valencia-eyebrow--light { color: #edc7e9; }
@@ -81,9 +82,6 @@
 .valencia-project__body h3 { font-size: 20px; letter-spacing: -.035em; margin-bottom: 10px; }
 .valencia-project__body h3 button { border: 0; padding: 0; background: none; text-align: left; }
 .valencia-project__body p { font-size: 12px; color: #706773; max-width: 510px; margin-bottom: 10px; }
-.valencia-project__body small { display: flex; align-items: center; gap: 7px; font-size: 10px; color: #6c5d6d; }
-.valencia-source-note { font-size: 10px; color: #7a6b7b; margin: 28px 0 0; }
-.valencia-source-note a { text-decoration: underline; text-underline-offset: 3px; }
 .valencia-process { background: linear-gradient(120deg,#211426,#3d1b41); max-width: none; color: white; }
 .valencia-process h2 { color: white; }
 .valencia-process h2 em { color: #ffce81; }
@@ -135,8 +133,7 @@
 .valencia-gallery__thumbs img { display: block; height: 57px; width: 85px; object-fit: cover; border-radius: 3px; }
 @media (min-width: 1800px) { .valencia-services, .valencia-process { padding-inline: max(112px,calc((100vw - 1580px)/2)); } }
 @media (max-width: 1100px) {
-  .valencia-mobile-nav { display: flex; justify-content: center; gap: 30px; padding: 15px 22px; background: #faf8f5; color: #68135f; border-bottom: 1px solid #e6dce5; font-size: 11px; font-weight: 800; overflow-x: auto; }
-  .valencia-mobile-nav a { white-space: nowrap; }
+  .valencia-menu-toggle { display: inline-flex; }
   .valencia-hero { min-height: 690px; }
   .valencia-hero__content { width: 74%; }
   .valencia-hero h1 { font-size: 59px; }
@@ -148,7 +145,6 @@
 }
 @media (max-width: 720px) {
   .valencia-page .site-header { min-height: 76px; height: auto; }
-  .valencia-mobile-nav { justify-content: flex-start; gap: 22px; }
   .valencia-hero { min-height: 720px; align-items: flex-end; }
   .valencia-hero__photo { width: 100%; object-position: 63% 50%; }
   .valencia-hero__wash { background: linear-gradient(0deg,#25122bf2 0%,#25122be0 48%,#25122b30 90%); }

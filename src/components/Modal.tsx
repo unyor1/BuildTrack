@@ -27,6 +27,7 @@ export default function Modal({
   closeOnBackdrop = true,
   hideClose = false,
   fullscreen = false,
+  placement = "center",
   onEscape,
 }: {
   title: string
@@ -38,6 +39,7 @@ export default function Modal({
   closeOnBackdrop?: boolean
   hideClose?: boolean
   fullscreen?: boolean
+  placement?: "center" | "right"
   onEscape?: () => void
 }) {
   const titleId = useId()
@@ -87,13 +89,14 @@ export default function Modal({
       document.removeEventListener("keydown", onKey, true)
       openDialogs--
       if (openDialogs === 0) document.body.style.overflow = savedOverflow
-      previous?.focus?.()
+      if (placement === "right") previous?.focus?.({ preventScroll: true })
+      else previous?.focus?.()
     }
   }, [])
 
   return createPortal(
     <div
-      className={`bt-dialog-backdrop fixed inset-0 z-[900] flex items-end justify-center bg-black/55 p-0 backdrop-blur-[2px] sm:items-center ${fullscreen ? "" : "sm:p-4"}`}
+      className={`bt-dialog-backdrop fixed inset-0 z-[900] flex bg-black/55 backdrop-blur-[2px] ${placement === "right" && !fullscreen ? "items-stretch justify-end p-0" : `items-end justify-center p-0 sm:items-center ${fullscreen ? "" : "sm:p-4"}`}`}
       onMouseDown={(event) => {
         if (closeOnBackdrop && event.target === event.currentTarget) onClose()
       }}
@@ -106,7 +109,7 @@ export default function Modal({
         aria-labelledby={titleId}
         aria-describedby={description ? descriptionId : undefined}
         tabIndex={-1}
-        className={`bt-dialog flex w-full flex-col overflow-hidden bg-surface text-fg shadow-2xl outline-none ${fullscreen ? "h-[100dvh] max-h-[100dvh] max-w-none rounded-none" : `max-h-[92vh] rounded-t-2xl sm:rounded-2xl ${widths[size]}`}`}
+        className={`bt-dialog flex w-full flex-col overflow-hidden bg-surface text-fg shadow-2xl outline-none ${fullscreen ? "h-[100dvh] max-h-[100dvh] max-w-none rounded-none" : placement === "right" ? "h-[100dvh] max-h-[100dvh] max-w-[min(88vw,24rem)] rounded-none" : `max-h-[92vh] rounded-t-2xl sm:rounded-2xl ${widths[size]}`}`}
       >
         <header className="flex shrink-0 items-start justify-between gap-4 border-b border-line px-6 py-4">
           <div className="min-w-0">

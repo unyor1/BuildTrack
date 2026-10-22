@@ -359,7 +359,28 @@ assert.match(get(node=>node.props?.role === "dialog").props.className,/max-w-lg/
 keyboard({key:"Escape",stopPropagation(){},preventDefault(){}});assert.equal(modalClosed,1,"Normal modal Escape retains its original close action")
 for(const value of values)value?.cleanup?.();values=[];queued=[]
 assert.equal(document.body.style.overflow,"auto");assert.equal(restored,1)
-console.log("Shared modal fullscreen/default sizing, current Escape handler, scroll lock and focus restoration passed")
+let focusOptions,focused=""
+const firstLink={focus(){focused="first"}},lastLink={focus(){focused="last"}}
+fakePanel.querySelectorAll=()=>[firstLink,lastLink]
+document.activeElement={focus(options){restored++;focusOptions=options}}
+renderModal({title:"Valencia navigation",children:"Links",placement:"right",onClose:()=>modalClosed++})
+assert.equal(get(node=>node.props?.role === "dialog").props["aria-modal"],"true")
+assert.match(tree.props.className,/items-stretch justify-end p-0/)
+assert.match(get(node=>node.props?.role === "dialog").props.className,/h-\[100dvh\].*max-w-\[min\(88vw,24rem\)\]/)
+assert.equal(document.body.style.overflow,"hidden")
+assert.equal(focused,"first","Opening focuses the first drawer control")
+document.activeElement=lastLink
+keyboard({key:"Tab",preventDefault(){}});assert.equal(focused,"first","Tab wraps within the drawer")
+document.activeElement=firstLink
+keyboard({key:"Tab",shiftKey:true,preventDefault(){}});assert.equal(focused,"last","Shift+Tab wraps within the drawer")
+keyboard({key:"Escape",stopPropagation(){},preventDefault(){}});assert.equal(modalClosed,2)
+const backdrop={}
+tree.props.onMouseDown({target:{},currentTarget:backdrop});assert.equal(modalClosed,2,"Inside clicks do not dismiss the drawer")
+tree.props.onMouseDown({target:backdrop,currentTarget:backdrop});assert.equal(modalClosed,3,"Backdrop click dismisses the drawer")
+for(const value of values)value?.cleanup?.();values=[];queued=[]
+assert.equal(document.body.style.overflow,"auto");assert.equal(restored,2)
+assert.deepEqual(focusOptions,{preventScroll:true},"Closing the drawer restores focus without jumping away from the chosen section")
+console.log("Shared modal fullscreen/default and sidebar sizing, current Escape handler, backdrop close, focus trap, scroll lock and scroll-preserving drawer focus restoration passed")
 
 // Exercise the actual Log issue form's pin/checklist controls and submitted payload, without network access.
 let logCalls=[],retryCalls=0
