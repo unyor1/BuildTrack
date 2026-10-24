@@ -11,6 +11,7 @@ import type { EngineerNavigate, EngineerPageKey } from "./types"
 const labels: Record<EngineerPageKey, { label: string; icon: AdminIconName }> = {
   projects: { label: "My projects", icon: "building" },
   dashboard: { label: "Project dashboard", icon: "grid" },
+  calendar: { label: "Project Calendar", icon: "calendar" },
   "project-blueprint": { label: "Blueprints", icon: "blueprint" },
   annotation: { label: "Plan Editor", icon: "pin" },
   verification: { label: "Review Inbox", icon: "inbox" },
@@ -45,7 +46,7 @@ export default function EngineerShell({
       persona="engineer"
       workspace="Engineering office"
       groups={inProject ? [
-        { label: "Project", items: [item("dashboard")] },
+        { label: "Project", items: [item("dashboard"), item("calendar")] },
         { label: "Plans", items: [item("project-blueprint")] },
         { label: "Field & quality", items: [item("verification"), item("qa"), item("checklists"), item("report-issue"), item("progress")] },
         { label: "Team & reports", items: [item("assignments"), item("reports")] },

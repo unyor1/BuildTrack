@@ -18,6 +18,9 @@ import type { QaWorkspace } from "../../lib/qaWorkspace"
 import { useToast } from "../../lib/toast"
 import { useQaSubmissionIndex } from "../../lib/qaAttempts"
 import { checklistGroups, checklistNames } from "../../lib/qaChecklistModel"
+import { allDates, inRange, isFiltered, type DateRange } from "../../lib/dateRangeModel"
+import { qaOverviewSummary } from "../../lib/qaOverviewModel"
+import { useQaOverviewItems } from "../../lib/qaOverview"
 
 export type QaMode = "engineer" | "foreman"
 const day = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString("en-PH", { timeZone: "Asia/Manila", day: "numeric", month: "short" }) : "-")
@@ -38,13 +41,17 @@ function Table({ head, children, label }: { head: string[]; children: React.Reac
 const rowButton = "inline-flex min-h-6 items-center text-left font-bold text-brand-text underline-offset-2 hover:underline focus-visible:outline-2"
 
 // ---------------------------------------------------------------- Overview
-export function OverviewPanel({ ws, mode, onOpenInspection, onOpenDefect, onGo }: { ws: QaWorkspace; mode: QaMode; onOpenInspection: (id: string) => void; onOpenDefect: (id: string) => void; onGo: (tab: "inspections" | "defects") => void }) {
+export function OverviewPanel({ ws, mode, dates = allDates, onOpenInspection, onOpenDefect, onGo }: { ws: QaWorkspace; mode: QaMode; dates?: DateRange; onOpenInspection: (id: string) => void; onOpenDefect: (id: string) => void; onGo: (tab: "inspections" | "defects") => void }) {
   const { profile } = useAuth()
   const toast = useToast()
-  const s = ws.summary
+  const filtered = isFiltered(dates)
+  const items = useQaOverviewItems(filtered ? ws.projectId : null)
+  const inspections = useMemo(() => ws.inspections.filter(row => inRange(row.requested_at, dates)), [ws.inspections, dates])
+  const defects = useMemo(() => ws.defects.filter(row => inRange(row.raised_at, dates)), [ws.defects, dates])
+  const s = useMemo(() => filtered ? qaOverviewSummary(inspections, defects, items.items, ws.today, ws.summary?.staff) : ws.summary, [filtered, inspections, defects, items.items, ws.today, ws.summary])
   const attention = useMemo(() => {
     const rows: Array<{ key: string; tone: string; text: string; sub: string; open: () => void }> = []
-    for (const defect of ws.defects) {
+    for (const defect of defects) {
       if (defect.status === "closed") continue
       const due = dueState(defect, ws.today)
       const mine = defect.assigned_to === profile?.id
@@ -52,27 +59,29 @@ export function OverviewPanel({ ws, mode, onOpenInspection, onOpenDefect, onGo }
       else if (due.state === "overdue" && (mode === "engineer" || mine)) rows.push({ key: defect.id, tone: "bg-red-600", text: `${refNumber("ncr", defect.number)} is ${dueText(defect, ws.today).toLowerCase()}`, sub: defect.title, open: () => onOpenDefect(defect.id) })
       else if (mode === "foreman" && mine && (defect.status === "open" || defect.status === "in_progress")) rows.push({ key: defect.id, tone: due.state === "due_soon" ? "bg-amber-500" : "bg-fg-muted", text: `${refNumber("ncr", defect.number)} needs your action (${dueText(defect, ws.today).toLowerCase()})`, sub: defect.title, open: () => onOpenDefect(defect.id) })
     }
-    if (mode === "engineer") for (const inspection of ws.inspections) if (inspection.status === "requested") rows.push({ key: inspection.id, tone: "bg-amber-500", text: `${refNumber("ir", inspection.number)} is waiting to be inspected`, sub: inspection.title, open: () => onOpenInspection(inspection.id) })
+    if (mode === "engineer") for (const inspection of inspections) if (inspection.status === "requested") rows.push({ key: inspection.id, tone: "bg-amber-500", text: `${refNumber("ir", inspection.number)} is waiting to be inspected`, sub: inspection.title, open: () => onOpenInspection(inspection.id) })
     return rows.slice(0, 8)
-  }, [ws.defects, ws.inspections, ws.today, mode, profile?.id, onOpenDefect, onOpenInspection])
+  }, [defects, inspections, ws.today, mode, profile?.id, onOpenDefect, onOpenInspection])
 
   const print = () => {
     if (!s || !ws.project) return
     const stamp = new Date().toLocaleDateString("en-PH", { timeZone: "Asia/Manila", day: "numeric", month: "long", year: "numeric" })
-    if (!printHtml(qaSummaryHtml({ summary: s, defects: ws.defects, project: ws.project, nameOf: ws.nameOf, today: ws.today, asOf: stamp }))) toast.error("Could not open the print dialog")
+    if (!printHtml(qaSummaryHtml({ summary: s, defects, project: ws.project, nameOf: ws.nameOf, today: ws.today, asOf: stamp, dates }))) toast.error("Could not open the print dialog")
   }
 
-  if (ws.summaryLoading && !s) return <><SkeletonKpis count={6} /><SkeletonList rows={3} label="Loading the quality summary" /></>
+  if (filtered && (items.error || ws.error)) return <p role="alert" className="rounded-lg bg-danger-soft px-4 py-2 text-sm text-danger-fg">{items.error || ws.error}<button type="button" className="ml-2 font-bold underline" onClick={() => { void items.reload(); void ws.reloadAll() }}>Retry</button></p>
+  if (filtered ? ws.loading || items.loading : ws.summaryLoading && !s) return <><SkeletonKpis count={6} /><SkeletonList rows={3} label="Loading the quality summary" /></>
   if (!s) return <p role="alert" className="rounded-lg bg-danger-soft px-4 py-2 text-sm text-danger-fg">Could not load the quality summary.</p>
   const finished = s.inspections.passed + s.inspections.conditional + s.inspections.failed
-  const openInspections = ws.inspections.filter(i => i.status === "requested" || i.status === "in_progress")
+  const openInspections = inspections.filter(i => i.status === "requested" || i.status === "in_progress")
   const overdueInspections = openInspections.filter(i => i.target_at && Date.parse(i.target_at) < Date.now()).length
   const oldestInspection = openInspections.length ? Math.max(...openInspections.map(i => Math.floor((Date.now() - Date.parse(i.requested_at)) / 3600000))) : 0
-  const openNcrs = ws.defects.filter(d => d.status !== "closed")
+  const openNcrs = defects.filter(d => d.status !== "closed")
   const averageNcrAge = openNcrs.length ? Math.round(openNcrs.reduce((n, d) => n + (Date.now() - Date.parse(d.raised_at)) / 86400000, 0) / openNcrs.length) : 0
 
   return (
     <div className="space-y-5">
+      {filtered && inspections.length === 0 && defects.length === 0 ? <EmptyState title="No QA records in these dates">No inspections were requested and no NCRs were raised in this period. Choose another period or clear the dates.</EmptyState> : null}
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
         <StatCard label="First-time pass rate" value={pct(s.inspections.first_pass_rate)} note={finished ? `${finished} inspection${finished === 1 ? "" : "s"} completed` : "No completed inspection yet"} tone={s.inspections.first_pass_rate === null ? "brand" : s.inspections.first_pass_rate >= ws.threshold ? "green" : "red"} />
         <StatCard label="Waiting for inspection" value={s.inspections.requested + s.inspections.in_progress} note={`${s.inspections.in_progress} in progress`} tone="amber" onClick={() => onGo("inspections")} />
@@ -82,17 +91,17 @@ export function OverviewPanel({ ws, mode, onOpenInspection, onOpenDefect, onGo }
         <StatCard label="Defects per 100 checks" value={s.items.defects_per_100_items === null ? "-" : s.items.defects_per_100_items} note={`${s.items.failed} of ${s.items.checked} items failed`} tone="brand" />
       </div>
 
-      {mode === "engineer" ? <DefectTrends defects={ws.defects} today={ws.today} /> : null}
+      {mode === "engineer" ? <DefectTrends defects={defects} today={ws.today} dates={dates} /> : null}
       <div className="grid gap-3 sm:grid-cols-3">
         <StatCard label="Overdue inspections" value={overdueInspections} note={`Oldest open request: ${oldestInspection} hours`} tone={overdueInspections ? "red" : "green"} onClick={() => onGo("inspections")} />
-        <StatCard label="Re-inspections" value={ws.inspections.filter(i => i.reinspection_of).length} note="Linked follow-up inspection requests" tone="brand" />
+        <StatCard label="Re-inspections" value={inspections.filter(i => i.reinspection_of).length} note="Linked follow-up inspection requests" tone="brand" />
         <StatCard label="Average open NCR age" value={`${averageNcrAge} days`} note={`${openNcrs.length} unresolved NCRs`} tone={averageNcrAge > 7 ? "amber" : "brand"} onClick={() => onGo("defects")} />
       </div>
 
       <div className="grid gap-5 xl:grid-cols-2">
         <section aria-label="Needs attention" className="rounded-xl border border-line bg-surface p-4">
           <h2 className="mb-2 text-sm font-extrabold">Needs attention</h2>
-          {attention.length === 0 ? <p className="text-sm text-fg-muted">Nothing is waiting on you.</p> : (
+          {attention.length === 0 ? <p className="text-sm text-fg-muted">{filtered ? "Nothing in these dates is waiting on you." : "Nothing is waiting on you."}</p> : (
             <ul className="space-y-1.5">
               {attention.map((row) => (
                 <li key={row.key}>
@@ -108,7 +117,7 @@ export function OverviewPanel({ ws, mode, onOpenInspection, onOpenDefect, onGo }
 
         <section aria-label="Recent inspections" className="rounded-xl border border-line bg-surface p-4">
           <h2 className="mb-2 text-sm font-extrabold">Recent inspections</h2>
-          {s.recent.length === 0 ? <p className="text-sm text-fg-muted">No inspection has been requested yet.</p> : (
+          {s.recent.length === 0 ? <p className="text-sm text-fg-muted">{filtered ? "No inspections were requested in these dates." : "No inspection has been requested yet."}</p> : (
             <ul className="space-y-1.5">
               {s.recent.map((row) => (
                 <li key={row.id}>
@@ -127,7 +136,7 @@ export function OverviewPanel({ ws, mode, onOpenInspection, onOpenDefect, onGo }
 
       <section aria-label="Quality by trade" className="rounded-xl border border-line bg-surface p-4">
         <div className="mb-3 flex items-center justify-between"><h2 className="text-sm font-extrabold">Quality by trade</h2><button type="button" className={buttonSecondary + " !py-1 !text-xs"} onClick={print}>Print summary</button></div>
-        {s.by_trade.length === 0 ? <p className="text-sm text-fg-muted">Appears after the first inspection.</p> : (
+        {s.by_trade.length === 0 ? <p className="text-sm text-fg-muted">{filtered ? "No quality records in these dates." : "Appears after the first inspection."}</p> : (
           <ul className="space-y-3">
             {s.by_trade.map((row) => (
               <li key={row.trade} className="grid items-center gap-2 sm:grid-cols-[11rem_1fr_9rem]">
@@ -146,7 +155,8 @@ export function OverviewPanel({ ws, mode, onOpenInspection, onOpenDefect, onGo }
 // ---------------------------------------------------------------- Inspections
 export type InspectionKind = "work" | "stage"
 // Work item QA = requested from a work item (FLOOR, WALL…); stage / hold point = a separate inspection of a stage. Never interchangeable.
-export function InspectionsPanel({ ws, onOpen, onNew, canRequest, kind: fixedKind }: { ws: QaWorkspace; onOpen: (id: string) => void; onNew: () => void; canRequest: boolean; kind?: InspectionKind }) {
+// `dates` (QA register calendar filter) keeps inspections requested on those Manila days; search, filters and CSV follow it.
+export function InspectionsPanel({ ws, onOpen, onNew, canRequest, kind: fixedKind, dates = allDates }: { ws: QaWorkspace; onOpen: (id: string) => void; onNew: () => void; canRequest: boolean; kind?: InspectionKind; dates?: DateRange }) {
   const submissionIndex=useQaSubmissionIndex(ws.projectId)
   const groups=useMemo(()=>checklistGroups(submissionIndex.rows),[submissionIndex.rows])
   const [checklist,setChecklist]=useState("")
@@ -160,8 +170,8 @@ export function InspectionsPanel({ ws, onOpen, onNew, canRequest, kind: fixedKin
   const kindOf = (id: string): InspectionKind => (namesByInspection.has(id) ? "work" : "stage")
   const list = useMemo(() => {
     const text = query.trim().toLowerCase()
-    return ws.inspections.filter((row) => (kindFilter === "all" || kindOf(row.id) === kindFilter) && (!checklist || matchedIds.has(row.id)) && (status === "all" || (status === "open" ? row.status === "requested" || row.status === "in_progress" : row.status === status)) && (trade === "all" || row.trade === trade) && (!text || `${refNumber("ir", row.number)} ${row.title} ${row.location ?? ""} ${(namesByInspection.get(row.id) ?? []).join(" ")}`.toLowerCase().includes(text)))
-  }, [ws.inspections, status, trade, query,checklist,matchedIds,namesByInspection,kindFilter]) // eslint-disable-line react-hooks/exhaustive-deps
+    return ws.inspections.filter((row) => inRange(row.requested_at, dates) && (kindFilter === "all" || kindOf(row.id) === kindFilter) && (!checklist || matchedIds.has(row.id)) && (status === "all" || (status === "open" ? row.status === "requested" || row.status === "in_progress" : row.status === status)) && (trade === "all" || row.trade === trade) && (!text || `${refNumber("ir", row.number)} ${row.title} ${row.location ?? ""} ${(namesByInspection.get(row.id) ?? []).join(" ")}`.toLowerCase().includes(text)))
+  }, [ws.inspections, status, trade, query,checklist,matchedIds,namesByInspection,kindFilter,dates]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const exportCsv = () => downloadCsv(`inspections-${ws.project?.code ?? "project"}-${ws.today}.csv`, toCsv(["IR", "Type", "Title", "Work item(s)", "Trade", "Location", "Status", "Score %", "Pass mark %", "Requested by", "Requested", "Inspector", "Completed"], list.map((row) => [refNumber("ir", row.number), kindOf(row.id) === "work" ? "Work item QA" : "Stage / hold point", row.title, (namesByInspection.get(row.id) ?? []).join(" / "), tradeLabels[row.trade], row.location ?? "", inspectionStatusLabels[row.status], row.score ?? "", row.threshold ?? "", ws.nameOf(row.requested_by), row.requested_at.slice(0, 10), ws.nameOf(row.inspector_id), row.completed_at?.slice(0, 10) ?? ""]))) // eslint-disable-line
 
@@ -184,7 +194,7 @@ export function InspectionsPanel({ ws, onOpen, onNew, canRequest, kind: fixedKin
       {submissionIndex.error ? <p role="alert" className="text-sm text-danger-fg">{submissionIndex.error}<button type="button" className="ml-2 font-bold underline" onClick={()=>void submissionIndex.reload()}>Retry</button></p> : null}
       {ws.loading || submissionIndex.loading ? <SkeletonList rows={5} label="Loading inspections" /> : ws.inspections.length === 0 ? (
         <EmptyState title="No inspections yet" action={canRequest && fixedKind !== "work" ? <button type="button" className={buttonPrimary} onClick={onNew}>Request stage / hold-point inspection</button> : undefined}>Work items are submitted from the work item itself. Stage and hold-point inspections are requested here and recorded by the Engineer against their criteria.</EmptyState>
-      ) : list.length === 0 ? <EmptyState title="Nothing matches">Change the filters or the search.</EmptyState> : (
+      ) : list.length === 0 ? <EmptyState title="Nothing matches">{isFiltered(dates) ? "Change the dates, the filters or the search." : "Change the filters or the search."}</EmptyState> : (
         <Table label="Inspections" head={["IR", "Inspection", "Trade", "Status", "Score", "Requested", "Target / owner", "Inspector"]}>
           {list.map((row: Inspection) => (
             <tr key={row.id} className="hover:bg-surface-muted/60">
@@ -205,7 +215,8 @@ export function InspectionsPanel({ ws, onOpen, onNew, canRequest, kind: fixedKin
 }
 
 // ---------------------------------------------------------------- Defects (NCR register)
-export function DefectsPanel({ ws, mode, onOpen, onNew, scope }: { ws: QaWorkspace; mode: QaMode; onOpen: (id: string) => void; onNew: (() => void) | null; scope?: (defect: Defect) => boolean }) {
+// `dates` (QA register calendar filter) keeps NCRs raised on those Manila days; search, filters and CSV follow it.
+export function DefectsPanel({ ws, mode, onOpen, onNew, scope, dates = allDates }: { ws: QaWorkspace; mode: QaMode; onOpen: (id: string) => void; onNew: (() => void) | null; scope?: (defect: Defect) => boolean; dates?: DateRange }) {
   const { profile } = useAuth()
   const [status, setStatus] = useState<"all" | "open_all" | "late" | DefectStatus>(mode === "foreman" ? "open_all" : "all")
   const [severity, setSeverity] = useState<"all" | "critical" | "major" | "minor">("all")
@@ -216,13 +227,14 @@ export function DefectsPanel({ ws, mode, onOpen, onNew, scope }: { ws: QaWorkspa
     const text = query.trim().toLowerCase()
     return ws.defects.filter((row) => {
       if (scope && !scope(row)) return false
+      if (!inRange(row.raised_at, dates)) return false
       if (status === "open_all" ? row.status === "closed" : status === "late" ? dueState(row, ws.today).state !== "overdue" : status !== "all" && row.status !== status) return false
       if (severity !== "all" && row.severity !== severity) return false
       if (trade !== "all" && row.trade !== trade) return false
       if (mine && row.assigned_to !== profile?.id) return false
       return !text || `${refNumber("ncr", row.number)} ${row.title} ${row.description ?? ""} ${row.reference ?? ""}`.toLowerCase().includes(text)
     })
-  }, [ws.defects, ws.today, status, severity, trade, mine, query, profile?.id, scope])
+  }, [ws.defects, ws.today, status, severity, trade, mine, query, profile?.id, scope, dates])
 
   const exportCsv = () =>
     downloadCsv(`ncr-register-${ws.project?.code ?? "project"}-${ws.today}.csv`, toCsv(["NCR", "Title", "Class", "Category", "Trade", "Standard", "Status", "Responsible", "Raised", "Due", "Closed", "Root cause", "Corrective action", "Preventive action", "Closing note"], list.map((row) => [refNumber("ncr", row.number), row.title, qaSeverityLabels[row.severity], row.category, tradeLabels[row.trade], row.reference ?? "", defectStatusLabels[row.status], ws.nameOf(row.assigned_to), row.raised_at.slice(0, 10), row.due_date ?? "", row.closed_at?.slice(0, 10) ?? "", row.root_cause ?? "", row.corrective_action ?? "", row.closing_note ?? ""])))
@@ -245,7 +257,7 @@ export function DefectsPanel({ ws, mode, onOpen, onNew, scope }: { ws: QaWorkspa
       </div>
       {ws.loading ? <SkeletonList rows={5} label="Loading defects" /> : ws.defects.length === 0 ? (
         <EmptyState title="No non-conformances">When an inspection item fails, an NCR is raised automatically and assigned to the foreman. You can also raise one by hand.</EmptyState>
-      ) : list.length === 0 ? <EmptyState title="Nothing matches">Change the filters or the search.</EmptyState> : (
+      ) : list.length === 0 ? <EmptyState title="Nothing matches">{isFiltered(dates) ? "Change the dates, the filters or the search." : "Change the filters or the search."}</EmptyState> : (
         <Table label="Non-conformance register" head={["NCR", "Defect", "Class", "Status", "Responsible", "Deadline"]}>
           {list.map((row: Defect) => {
             const due = dueState(row, ws.today)

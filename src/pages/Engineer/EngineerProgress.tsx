@@ -1,4 +1,4 @@
-import { useMemo } from "react"
+import { useMemo, useState } from "react"
 import SCurveChart from "../../components/SCurveChart"
 import ProjectContextBar from "../../components/ProjectContextBar"
 import { EmptyState, Meter, PageHead, StatCard, buttonSecondary } from "../../components/ui/PageParts"
@@ -10,6 +10,8 @@ import { disciplineLabels, getSelectedProjectId } from "../../lib/projects"
 import { useProjectWork } from "../../lib/projectWork"
 import type { EngineerPageProps } from "./types"
 import { zonePlanPath } from "../../lib/issueMarkup"
+import DateRangeFilter from "../../components/ui/DateRangeFilter"
+import { inRange, isFiltered, rangeSearch, rangeText, readRange, schedulePresets, type DateRange } from "../../lib/dateRangeModel"
 
 export function StackedBar({ totals }: { totals: Totals }) {
   if (!totals.total) return <div className="h-2.5 rounded-full bg-surface-muted" aria-label="No pins yet" />
@@ -33,37 +35,49 @@ export function StatusLegend() {
 }
 
 // Where the project stands: share verified overall, per sheet (floor / zone) and per discipline, against the schedule.
+// The calendar filter narrows everything to the work due on those days (?from=&to=); the S-curve stays whole-project.
 export default function EngineerProgress({ onNavigate }: EngineerPageProps) {
   const projectId = getSelectedProjectId()
   const work = useProjectWork(projectId)
-  const totals = useMemo(() => summarize(work.pins, work.today), [work.pins, work.today])
-  const zones = useMemo(() => byZone(work.blueprints, work.pins, work.today), [work.blueprints, work.pins, work.today])
+  const [range, setRange] = useState<DateRange>(() => readRange(window.location.search))
+  const filtered = isFiltered(range)
+  const changeRange = (next: DateRange) => {
+    setRange(next)
+    window.history.replaceState(window.history.state, "", `${window.location.pathname}${rangeSearch(window.location.search, next)}${window.location.hash}`)
+  }
+  const workPins = useMemo(() => work.pins.filter((pin) => pin.category !== "note"), [work.pins])
+  const pins = useMemo(() => (filtered ? work.pins.filter((pin) => inRange(pin.due_date, range)) : work.pins), [work.pins, range, filtered])
+  const undated = filtered ? workPins.filter((pin) => !pin.due_date).length : 0
+  const verifiedInRange = filtered ? workPins.filter((pin) => pin.status === "verified" && inRange(pin.verified_at, range)).length : 0
+  const totals = useMemo(() => summarize(pins, work.today), [pins, work.today])
+  const allZones = useMemo(() => byZone(work.blueprints, pins, work.today), [work.blueprints, pins, work.today])
+  const zones = filtered ? allZones.filter((zone) => zone.totals.total > 0) : allZones
   const elapsed = work.project ? scheduleElapsed(work.project.start_date, work.project.end_date, work.today) : null
   const gap = elapsed === null ? null : totals.percentVerified - elapsed
 
   const disciplines = useMemo(() => {
     const groups = new Map<string, Pin[]>()
-    for (const pin of work.pins) {
+    for (const pin of pins) {
       const sheet = work.blueprints.find((bp) => bp.id === pin.blueprint_id)
       const key = pin.discipline ?? sheet?.discipline ?? "none"
       groups.set(key, [...(groups.get(key) ?? []), pin])
     }
     return [...groups.entries()].map(([key, pins]) => ({ key, label: key === "none" ? "Not set" : disciplineLabels[key as keyof typeof disciplineLabels], totals: summarize(pins, work.today) })).filter((row) => row.totals.total > 0)
-  }, [work.pins, work.blueprints, work.today])
+  }, [pins, work.blueprints, work.today])
 
   const deadlines = useMemo(
     () =>
-      work.pins
+      pins
         .filter((pin) => isOverdue(pin, work.today) || isDueSoon(pin, work.today, 7))
         .sort((a, b) => (a.due_date ?? "").localeCompare(b.due_date ?? ""))
         .slice(0, 8),
-    [work.pins, work.today],
+    [pins, work.today],
   )
 
   const exportCsv = () => {
     const header = ["Sheet", "Level", "Discipline", "Work pins", "Verified", "For review", "In progress", "Not started", "Issues", "Overdue", "% verified"]
     const rows = zones.map((zone) => [zone.title, zone.level ?? "", zone.discipline ? disciplineLabels[zone.discipline as keyof typeof disciplineLabels] : "", zone.totals.total, zone.totals.verified, zone.totals.for_review, zone.totals.in_progress, zone.totals.not_started, zone.totals.issue, zone.totals.overdue, zone.totals.percentVerified])
-    downloadCsv(`progress-${work.project?.code ?? "project"}-${work.today}.csv`, toCsv(header, rows))
+    downloadCsv(`progress-${work.project?.code ?? "project"}-${work.today}${filtered ? `-due-${range.from || "start"}-to-${range.to || "end"}` : ""}.csv`, toCsv(header, rows))
   }
 
   return (
@@ -76,12 +90,21 @@ export default function EngineerProgress({ onNavigate }: EngineerPageProps) {
         actions={<><button type="button" className={buttonSecondary} onClick={()=>void work.reload()} disabled={work.loading}>Refresh database data</button><button type="button" className={buttonSecondary} onClick={exportCsv} disabled={!zones.length || Boolean(work.error)}>Export CSV</button></>}
       />
 
+      {projectId && !work.error ? (
+        <div className="mb-4 space-y-2 rounded-2xl border border-line bg-surface p-3 shadow-sm">
+          <DateRangeFilter label="Due date" range={range} presets={schedulePresets} today={work.today} onChange={changeRange} />
+          <p className="text-xs text-fg-muted">{filtered ? <><span className="font-bold text-fg">Work due {rangeText(range)}</span> · {verifiedInRange} work pin{verifiedInRange === 1 ? "" : "s"} verified on these dates{undated ? ` · ${undated} work pin${undated === 1 ? " has" : "s have"} no due date and ${undated === 1 ? "is" : "are"} left out` : ""}. The S-curve stays whole-project.</> : "Showing all work. Choose dates to see the progress of the work due in that period, by zone and discipline."}</p>
+        </div>
+      ) : null}
+
       {!projectId ? null : work.loading ? (
         <SkeletonCardGrid count={3} />
       ) : work.error ? (
         <p role="alert" className="rounded-lg bg-danger-soft p-4 text-sm text-danger-fg">{work.error} <button type="button" className="underline" onClick={()=>void work.reload()}>Retry</button></p>
-      ) : totals.total === 0 ? (
+      ) : workPins.length === 0 ? (
         <EmptyState title="No work pins yet">Add pins on the plan to track work here. Notes do not count as work.</EmptyState>
+      ) : totals.total === 0 ? (
+        <EmptyState title="No work due on these dates" action={<button type="button" className={buttonSecondary} onClick={() => changeRange({ from: "", to: "" })}>Show all dates</button>}>Nothing is due {rangeText(range)}. Choose other dates, or show all work.</EmptyState>
       ) : (
         <>
           <div className="mb-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -93,7 +116,7 @@ export default function EngineerProgress({ onNavigate }: EngineerPageProps) {
 
           <section className="mb-6 rounded-2xl border border-line bg-surface p-5 shadow-sm">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className="text-base font-extrabold">Whole project</h2>
+              <h2 className="text-base font-extrabold">{filtered ? `Work due ${rangeText(range)}` : "Whole project"}</h2>
               {gap !== null ? (
                 <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${gap >= 0 ? "bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200" : gap > -15 ? "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200" : "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200"}`}>
                   {gap >= 0 ? `On or ahead of schedule (+${gap} pts)` : `${Math.abs(gap)} pts behind schedule`}
@@ -112,12 +135,13 @@ export default function EngineerProgress({ onNavigate }: EngineerPageProps) {
 
           <section className="mb-6 rounded-2xl border border-line bg-surface p-5 shadow-sm" aria-labelledby="s-curve-title">
             <h2 id="s-curve-title" className="text-base font-extrabold">Planned vs verified (S-curve)</h2>
-            <p className="mb-3 text-xs text-fg-muted">Planned follows the due dates on the pins; verified follows your verifications. A widening gap is the early warning.</p>
+            <p className="mb-3 text-xs text-fg-muted">Planned follows the due dates on the pins; verified follows your verifications. A widening gap is the early warning.{filtered ? " Always the whole project, whatever dates are chosen above." : ""}</p>
             <SCurveChart pins={work.pins} start={work.project?.start_date ?? null} end={work.project?.end_date ?? null} today={work.today} />
           </section>
 
           <section className="mb-6">
             <h2 className="mb-2 border-l-4 border-accent pl-3 text-base font-extrabold text-brand-strong">Sheets and zones</h2>
+            {filtered && allZones.length > zones.length ? <p className="mb-2 text-xs text-fg-muted">{allZones.length - zones.length} sheet{allZones.length - zones.length === 1 ? " has" : "s have"} no work due on these dates.</p> : null}
             <div className="grid gap-3 md:grid-cols-2">
               {zones.map((zone) => (
                 <article key={zone.blueprintId} className="rounded-xl border border-line bg-surface p-4">
@@ -157,7 +181,7 @@ export default function EngineerProgress({ onNavigate }: EngineerPageProps) {
             <section>
               <h2 className="mb-2 border-l-4 border-accent pl-3 text-base font-extrabold text-brand-strong">Deadlines</h2>
               {deadlines.length === 0 ? (
-                <p className="rounded-xl border border-dashed border-line bg-surface p-5 text-center text-sm text-fg-muted">Nothing is late or due in the next 7 days.</p>
+                <p className="rounded-xl border border-dashed border-line bg-surface p-5 text-center text-sm text-fg-muted">{filtered ? "None of the work due on these dates is late or due in the next 7 days." : "Nothing is late or due in the next 7 days."}</p>
               ) : (
                 <ul className="divide-y divide-line rounded-xl border border-line bg-surface">
                   {deadlines.map((pin) => {

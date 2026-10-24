@@ -4,6 +4,9 @@ One document per SQL file in `supabase/`. Same sections every time so changes ar
 
 | Doc | SQL file | Status |
 |---|---|---|
+| [20261023075625_away_photo_message](20261023075625_away_photo_message.md) | `supabase/migrations/20261023075625_away_photo_message.sql` | Applied; `submit_checklist_qa` message no longer excludes away photos |
+| [20261023075351_away_photo_counts](20261023075351_away_photo_counts.md) | `supabase/migrations/20261023075351_away_photo_counts.sql` | Applied; away-from-site photos count as evidence, only untrusted times excluded |
+| [20261023073942_pin_photo_markup](20261023073942_pin_photo_markup.md) | `supabase/migrations/20261023073942_pin_photo_markup.sql` | Applied; markup overlay on work item / correction photos |
 | [20261021151557_markup_rotation](20261021151557_markup_rotation.md) | `supabase/migrations/20261021151557_markup_rotation.sql` | Applied; optional `rotation` on photo markup marks |
 | [20261021111736_qa_photo_markup](20261021111736_qa_photo_markup.md) | `supabase/migrations/20261021111736_qa_photo_markup.sql` | Applied; markup overlay on inspection / NCR evidence photos, validated and insert-only |
 | [Independent checklist-item QA](../2026-10-20-concurrent-checklist-qa.md) | `supabase/migrations/20261020072554_concurrent_checklist_qa.sql` | Applied; item-scoped requests allow adding and submitting other items during review; evidence, authorization and completion guards verified |
@@ -53,6 +56,8 @@ One document per SQL file in `supabase/`. Same sections every time so changes ar
 
 ## Latest workflow migrations
 
+- [`20261023075625_away_photo_message.sql`](20261023075625_away_photo_message.md) and [`20261023075351_away_photo_counts.sql`](20261023075351_away_photo_counts.md): applied via connector; see [away photos count audit](../2026-10-23-away-photos-count.md). `photo_eligible` excludes only `clock_ahead` / `old_photo`.
+- [`20261023073942_pin_photo_markup.sql`](20261023073942_pin_photo_markup.md): applied via connector; see [correction photo markup audit](../2026-10-23-correction-photo-markup.md). `pin_photos.annotations`, no UPDATE policy.
 - [`20261021151557_markup_rotation.sql`](20261021151557_markup_rotation.md): applied via connector; see [photo markup select / move / rotate audit](../2026-10-22-photo-markup-select-move-rotate.md). `valid_issue_markup` accepts an optional `rotation`.
 - [`20261021111736_qa_photo_markup.sql`](20261021111736_qa_photo_markup.md): applied via connector; see [QA photo markup audit](../2026-10-21-qa-photo-markup.md). `qa_photos.annotations` checked by `valid_issue_markup`, no UPDATE grant.
 - `20261019101438_site_issue_checklist_filter.sql`: applied and live-verified; see [issue checklist filtering audit](../2026-10-19-issue-checklist-filter.md). Pin-scoped checklist selection, durable name snapshot, checklist filters and backward-compatible RPC signatures.

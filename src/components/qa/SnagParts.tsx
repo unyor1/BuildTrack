@@ -1,8 +1,12 @@
 import { useState } from "react"
 import Modal from "../Modal"
 import { buttonSecondary } from "../ui/PageParts"
+import { Chip } from "./QaBits"
+import OpenOnBlueprint from "../OpenOnBlueprint"
 import { useSignedUrl } from "../../lib/blueprints"
-import { useSnags, useSnagPhotos, type SnagPhoto } from "../../lib/snags"
+import { fixStageText, refNumber, snagStatusLabels, snagTone, urgencyLabels } from "../../lib/qaModel"
+import { useProjectWork } from "../../lib/projectWork"
+import { useSnags, useSnagPhotos, type Snag, type SnagPhoto } from "../../lib/snags"
 import IssuePhotoEditor from "../issues/IssuePhotoEditor"
 import { MarkupLayer } from "../issues/MarkupLayer"
 
@@ -33,6 +37,30 @@ function SavedSnagPhoto({ photo, onClose }: { photo: SnagPhoto; onClose: () => v
   const { url, failed } = useSignedUrl("snag-photos", photo.path)
   if (!url) return <Modal title="Report photo" onClose={onClose} footer={<button type="button" className={buttonSecondary} onClick={onClose}>Close</button>}><p>{failed ? "Photo unavailable" : "Loading photo…"}</p></Modal>
   return <IssuePhotoEditor photos={[{ id: photo.id, src: url, annotations: photo.annotations ?? [], caption: photo.caption || "Reported problem" }]} readOnly onClose={onClose} />
+}
+
+const reportedAt = (iso: string) => new Date(iso).toLocaleString("en-PH", { timeZone: "Asia/Manila", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })
+
+// The client's own report: status in plain words, the engineer's answer, the linked pin and the original photos.
+// Used on Report a problem and in the client's pin panel (onPlan hides the plan link there).
+export function ClientSnagModal({ snag, onClose, onWithdraw, onPlan = false }: { snag: Snag; onClose: () => void; onWithdraw?: () => void; onPlan?: boolean }) {
+  const { photos, error, reload } = useSnagPhotos(snag.id)
+  const work = useProjectWork(snag.project_id)
+  const pin = work.pins.find(row => row.id === snag.pin_id)
+  return (
+    <Modal title={`${refNumber("snag", snag.number)}  ${snag.title}`} description={`${reportedAt(snag.created_at)} • ${urgencyLabels[snag.urgency]}${snag.location ? ` • ${snag.location}` : ""}`} size="lg" onClose={onClose}
+      footer={<>{snag.status === "submitted" && onWithdraw ? <button type="button" className={buttonSecondary} onClick={onWithdraw}>Withdraw</button> : null}<button type="button" className={buttonSecondary} onClick={onClose}>Close</button></>}>
+      <div className="space-y-3">
+        <div className="flex flex-wrap items-center gap-2"><Chip tone={snagTone[snag.status]}>{snagStatusLabels[snag.status]}</Chip><span className="text-sm">{fixStageText(snag.status, snag.fix_stage)}</span></div>
+        <p className="text-xs font-semibold text-fg-muted">{pin ? `Work pin: ${pin.title}` : snag.pin_id ? "Linked work pin unavailable" : "Project-wide report (not one pin)"}</p>
+        {snag.description ? <p className="whitespace-pre-wrap text-sm">{snag.description}</p> : null}
+        {snag.response ? <p className="rounded-lg bg-surface-muted px-3 py-2 text-sm"><strong>The engineer wrote:</strong> {snag.response}</p> : null}
+        {pin && !onPlan ? <OpenOnBlueprint projectId={snag.project_id} pinId={pin.id} sheetId={pin.blueprint_id} section="issues" label={`Open on blueprint: ${pin.title}`} /> : null}
+        {error ? <p role="alert" className="text-sm text-danger-fg">{error} <button type="button" onClick={() => void reload()} className="underline">Retry photos</button></p> : null}
+        {photos.length ? <SnagPhotoStrip photos={photos} /> : null}
+      </div>
+    </Modal>
+  )
 }
 
 // Keep the client's original annotated problem visible alongside the Foreman's

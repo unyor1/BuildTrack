@@ -10,6 +10,7 @@ import { PhotoGrid } from "./PhotoGallery"
 import type { GalleryPhoto } from "../lib/photoGalleryModel"
 import { followLink } from "../lib/notifications"
 import { workItemPath } from "../lib/workItemModel"
+import OpenOnBlueprint from "./OpenOnBlueprint"
 
 const itemState = (item: WorkItemOption) => (item.review_status === "verified" ? " · Completed" : item.review_status === "for_review" ? " · For review" : item.done ? " · Preparing" : "")
 
@@ -114,7 +115,7 @@ export function ReportReviewPanel({ report, pins, nameOf, onChanged }: { report:
         : work.item_id ? "Linked checklist item is unavailable" : pin?.status === "verified" ? "Work completed" : "Not completed"
       return <div key={i} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-surface-muted p-2 text-xs"><p><strong>{describe(work)}</strong> · {state}</p>
         {pin && item && item.pin_id === pin.id ? <button type="button" className="font-bold text-brand-text underline" onClick={() => followLink(workItemPath("engineer", report.project_id, item.id), report.project_id)}>Open checklist, QA and NCRs</button>
-          : pin ? <button type="button" className="font-bold text-brand-text underline" onClick={() => followLink(`/engineer/annotation?project=${report.project_id}&sheet=${pin.blueprint_id}&pin=${pin.id}`, report.project_id)}>Open work pin</button> : <span>Linked work is unavailable.</span>}
+          : pin ? <OpenOnBlueprint projectId={report.project_id} pinId={pin.id} sheetId={pin.blueprint_id} section="reports" label="Open work pin on blueprint" className="font-bold text-brand-text underline" /> : <span>Linked work is unavailable.</span>}
       </div>
     })}
     {report.status === "submitted" ? <><label className="block text-xs font-bold">Review feedback<textarea className={inputClass} rows={2} maxLength={2000} value={note} onChange={e => setNote(e.target.value)} placeholder="Record your review or identify what the Foreman must correct" /></label>

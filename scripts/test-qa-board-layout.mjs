@@ -78,11 +78,54 @@ assert.equal(find(node => node.props?.label === "Waiting for you").props.value, 
 groups = find(node => node.type === Board).props.groups
 slots = []; render(Board, { ...boardProps, groups })
 assert.deepEqual(filters().map(text), ["Inspect 1", "All 1"])
+// The page's other lists (here Recently completed) are separate: own chip, shown under All, hidden under Inspect.
+const sections = () => all(tree).filter(node => node.type === "section").map(node => node.props["aria-label"])
+const extras = [{ key: "recent", short: "Completed", title: "Recently completed", count: 2, content: "two completed pins" }]
+slots = []; render(Board, { ...boardProps, groups, extras })
+assert.deepEqual(filters().map(text), ["Inspect 1", "Completed 2", "All 3"], "All is now more than Inspect, and stays last")
+assert.deepEqual(sections(), ["Inspect", "Recently completed"])
+filters()[0].props.onClick(); render(Board, { ...boardProps, groups, extras })
+assert.deepEqual(sections(), ["Inspect"], "Inspect shows only the work to inspect, not Recently completed")
+filters()[1].props.onClick(); render(Board, { ...boardProps, groups, extras })
+assert.deepEqual(sections(), ["Recently completed"]); assert.match(text(tree), /two completed pins/); assert.doesNotMatch(text(tree), /Showing/)
+filters().at(-1).props.onClick(); render(Board, { ...boardProps, groups, extras })
+find(node => node.type === "input").props.onChange({ target: { value: "WALL" } }); render(Board, { ...boardProps, groups, extras })
+assert.ok(!sections().includes("Recently completed"), "searching work items sets the other lists aside"); assert.match(text(tree), /other lists come back/)
+find(node => node.type === "input").props.onChange({ target: { value: "" } })
+filters()[1].props.onClick(); render(Board, { ...boardProps, groups, extras: [] })
+assert.equal(filters().at(-1).props["aria-pressed"], true, "a chip whose list emptied falls back to All")
+slots = []; render(Board, { ...boardProps, groups: [], extras, emptyTitle: "All caught up", emptyText: "Nothing waiting" })
+assert.deepEqual(sections(), ["Recently completed"]); assert.ok(all(tree).some(node => node.props?.title === "All caught up"), "nothing to review still says so, with the other lists below")
 rows[0].item.review_status = "verified"
 slots = []; render(Engineer, { onNavigate: page => { navigated = page } })
-find(node => node.type === "button" && text(node) === "QA register").props.onClick()
+const blocked = find(node => node.type === Board).props.extras.find(extra => extra.key === "blocked")
+assert.equal(blocked.count, 1, "blocked work is its own list on the board")
+all(blocked.content).find(node => node.type === "button" && text(node) === "QA register").props.onClick()
 assert.equal(navigated, "qa", "Existing inspection blockers retain a route to the register")
 assert.equal(workspace.inspections.length, 1, "Removing stage UI never deletes historical inspection data")
+// Foreman Corrections: Other NCRs and Site issues are separate lists with their own chips, not sections below the board.
+globalThis.__qaLayoutDeps.useIssueRegister = () => ({ everRaised: new Set(), reports: [] })
+const Corrections = await compile("../src/pages/Foreman/ForemanIssueTracking.tsx")
+const savedDefects = workspace.defects, savedPins = workspace.work.pins
+workspace.defects = [{ id: "ncr-open", status: "open", assigned_to: "foreman" }, { id: "ncr-closed", status: "closed", assigned_to: "foreman" }, { id: "ncr-other", status: "open", assigned_to: "someone-else" }]
+workspace.work.pins = [pin, { ...pin, id: "issue-pin", title: "Kitchen", status: "issue", severity: "high" }]
+slots = []; render(Corrections, {})
+let correctionsBoard = find(node => node.type === Board).props
+assert.deepEqual(correctionsBoard.extras.map(extra => [extra.key, extra.count, Boolean(extra.always)]), [["other-ncrs", 1, true], ["site-issues", 1, false]], "open NCRs assigned to you are counted")
+assert.doesNotMatch(text(tree), /Site issues on your work|Raised on site/, "the lists live inside the board, not below it")
+slots = []; render(Board, correctionsBoard)
+assert.deepEqual(filters().map(text), ["Other NCRs 1", "Site issues 1", "All 2"])
+assert.deepEqual(sections(), ["Other NCRs", "Site issues on your work"], "All shows every list")
+filters()[1].props.onClick(); render(Board, correctionsBoard)
+assert.deepEqual(sections(), ["Site issues on your work"], "a chip shows only its own list")
+filters()[0].props.onClick(); render(Board, correctionsBoard)
+assert.deepEqual(sections(), ["Other NCRs"])
+workspace.defects = [{ id: "ncr-closed", status: "closed", assigned_to: "foreman" }]
+slots = []; render(Corrections, {})
+correctionsBoard = find(node => node.type === Board).props
+slots = []; render(Board, correctionsBoard)
+assert.deepEqual(filters().map(text), ["Other NCRs 0", "Site issues 1", "All 1"], "with nothing open, Other NCRs stays reachable for closed ones")
+workspace.defects = savedDefects; workspace.work.pins = savedPins
 globalThis.window = originalWindow
 delete globalThis.__qaLayoutHooks; delete globalThis.__qaLayoutDeps; delete globalThis.__qaLayoutBoard
 console.log("QA board All-last ordering/filter behavior, Engineer/Foreman checklist-only pages, corrected inbox counts and retained history/register route passed")

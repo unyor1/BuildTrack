@@ -382,7 +382,7 @@ assert.equal(document.body.style.overflow,"auto");assert.equal(restored,2)
 assert.deepEqual(focusOptions,{preventScroll:true},"Closing the drawer restores focus without jumping away from the chosen section")
 console.log("Shared modal fullscreen/default and sidebar sizing, current Escape handler, backdrop close, focus trap, scroll lock and scroll-preserving drawer focus restoration passed")
 
-// Exercise the actual Log issue form's pin/checklist controls and submitted payload, without network access.
+// Exercise the actual Log issue form: the shared sheet -> pin -> checklist picker, the saved selection and its guards, without network access.
 let logCalls=[],retryCalls=0
 globalThis.__issueChecklistTest={
   lists:{
@@ -391,36 +391,42 @@ globalThis.__issueChecklistTest={
   },
   log:async input=>{logCalls.push(input)},
 }
-const blueprintModule=dataModule("export const severityLabels={low:'Low',medium:'Medium',high:'High',critical:'Critical'};export const useChecklist=id=>globalThis.__issueChecklistTest.lists[id];")
+const blueprintModule=dataModule("export const severityLabels={low:'Low',medium:'Medium',high:'High',critical:'Critical'};export const useChecklist=id=>id?globalThis.__issueChecklistTest.lists[id]:{items:[],loading:false,error:'',reload:async()=>{}};")
 const progressModule=dataModule("export const severityOrder=['critical','high','medium','low'];")
 const issueModule=dataModule("export const logSiteIssue=input=>globalThis.__issueChecklistTest.log(input);")
+const pickerModule=dataModule("export default function PinLinkPicker(){return null}")
 let logCompiled=ts.transpileModule(readFileSync(new URL("../src/components/issues/LogIssueModal.tsx",import.meta.url),"utf8"),{compilerOptions:{jsx:ts.JsxEmit.ReactJSX,module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText
-for(const [path,replacement] of [["react",hookModule],["react/jsx-runtime",import.meta.resolve("react/jsx-runtime")],["../Modal",modalModule],["../ui/PageParts",pageModule],["../../lib/blueprints",blueprintModule],["../../lib/progress",progressModule],["../../lib/siteIssues",issueModule],["./IssuePhotoPicker",modalModule],["../../lib/issueChecklist",new URL("../src/lib/issueChecklist.ts",import.meta.url).href]]) {
+for(const [path,replacement] of [["react",hookModule],["react/jsx-runtime",import.meta.resolve("react/jsx-runtime")],["../Modal",modalModule],["../ui/PageParts",pageModule],["../ui/PinLinkPicker",pickerModule],["../../lib/blueprints",blueprintModule],["../../lib/progress",progressModule],["../../lib/siteIssues",issueModule],["./IssuePhotoPicker",modalModule],["../../lib/pinPickerModel",new URL("../src/lib/pinPickerModel.ts",import.meta.url).href]]) {
   logCompiled=logCompiled.replace(`from "${path}"`,`from ${JSON.stringify(replacement)}`)
 }
 const {default:LogIssueModal}=await import(dataModule(logCompiled))
-const logProps={pins:[{id:"pin-a",project_id:"project",blueprint_id:"sheet",status:"in_progress",category:"progress",title:"Kitchen"},{id:"pin-b",project_id:"project",blueprint_id:"sheet",status:"in_progress",category:"progress",title:"Laundry"}],sheetOf:()=>"Plan",onClose:()=>{},onDone:async()=>{}}
+const logPins=[{id:"pin-a",project_id:"project",blueprint_id:"sheet",status:"in_progress",category:"progress",title:"Kitchen"},{id:"pin-b",project_id:"project",blueprint_id:"sheet",status:"in_progress",category:"progress",title:"Laundry"},{id:"done",project_id:"project",blueprint_id:"sheet",status:"verified",category:"progress",title:"Completed"}]
+let logProps={pins:logPins,sheets:[{id:"sheet",title:"Ground floor"}],sheetOf:()=>"Plan",onClose:()=>{},onDone:async()=>{}}
 const renderLog=()=>{cursor=0;tree=LogIssueModal(logProps)}
-const field=title=>get(node=>node.type === "label" && node.props.children[0]===title).props.children.find(node=>node?.type === "select")
+const picker=()=>get(node=>typeof node.type === "function" && node.type.name === "PinLinkPicker")
 values=[];renderLog()
-assert.equal(field("Checklist item").props.children[1][0].props.children,"FLOOR")
-field("Checklist item").props.onChange({target:{value:"floor-a"}});renderLog()
+assert.deepEqual(picker().props.value,{sheetId:"",pinId:"",itemId:""},"From the issue register nothing is preselected")
+assert.deepEqual(picker().props.pins.map(pin=>pin.id),["pin-a","pin-b"],"Completed work is not offered")
+assert.deepEqual(picker().props.sheets,[{id:"sheet",title:"Ground floor"}])
+assert.equal(button("Log issue").props.disabled,true,"A site issue needs its work pin")
+picker().props.onChange({sheetId:"sheet",pinId:"pin-a",itemId:"floor-a"});renderLog()
+assert.equal(picker().props.checklist,globalThis.__issueChecklistTest.lists["pin-a"],"The picker shows the chosen pin's checklist")
 get(node=>node.type === "textarea").props.onChange({target:{value:"Synthetic issue description"}});renderLog()
+assert.equal(button("Log issue").props.disabled,false)
 get(node=>node.type === "form").props.onSubmit({preventDefault(){}})
 await new Promise(resolve=>setImmediate(resolve));renderLog()
-assert.equal(logCalls.length,1);assert.equal(logCalls[0].checklistItemId,"floor-a");assert.equal(logCalls[0].pinId,"pin-a")
-field("Work pin").props.onChange({target:{value:"pin-b"}});renderLog()
-assert.equal(field("Checklist item").props.value,"")
-assert.equal(field("Checklist item").props.children[1][0].props.children,"WALL")
-field("Checklist item").props.onChange({target:{value:"floor-a"}});renderLog()
-assert.equal(button("Log issue").props.disabled,true)
+assert.equal(logCalls.length,1);assert.equal(logCalls[0].checklistItemId,"floor-a");assert.equal(logCalls[0].pinId,"pin-a");assert.equal(logCalls[0].projectId,"project")
+picker().props.onChange({sheetId:"sheet",pinId:"pin-b",itemId:"floor-a"});renderLog()
+assert.equal(button("Log issue").props.disabled,true,"An item of another pin is refused")
 get(node=>node.type === "form").props.onSubmit({preventDefault(){}})
 await new Promise(resolve=>setImmediate(resolve));assert.equal(logCalls.length,1,"Wrong-pin checklist cannot be submitted")
-field("Checklist item").props.onChange({target:{value:""}})
-globalThis.__issueChecklistTest.lists["pin-b"].loading=true;renderLog();assert.equal(button("Log issue").props.disabled,true)
+picker().props.onChange({sheetId:"sheet",pinId:"pin-b",itemId:""})
+globalThis.__issueChecklistTest.lists["pin-b"].loading=true;renderLog();assert.equal(button("Log issue").props.disabled,true,"Wait for the checklist before saving")
 globalThis.__issueChecklistTest.lists["pin-b"].loading=false;globalThis.__issueChecklistTest.lists["pin-b"].error="offline";renderLog()
-assert.equal(button("Log issue").props.disabled,true);button("Retry checklist").props.onClick();await new Promise(resolve=>setImmediate(resolve));assert.equal(retryCalls,1)
+assert.equal(button("Log issue").props.disabled,true);await picker().props.checklist.reload();assert.equal(retryCalls,1)
 globalThis.__issueChecklistTest.lists["pin-b"].error="";renderLog();assert.equal(button("Log issue").props.disabled,false)
-console.log("Issue checklist form options, saved selection, pin-change reset, wrong-pin rejection, loading/error guards and retry checks passed")
+logProps={...logProps,initialPinId:"pin-b",initialItemId:"wall-b"};values=[];renderLog()
+assert.deepEqual(picker().props.value,{sheetId:"sheet",pinId:"pin-b",itemId:"wall-b"},"From a pin panel the sheet, pin and item are already chosen")
+console.log("Issue form: shared pin picker, preselected pin from the panel, saved selection, wrong-pin rejection, checklist loading/error guards and retry passed")
 delete globalThis.__issueChecklistTest
 delete globalThis.__issueEditorHooks

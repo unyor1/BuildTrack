@@ -29,10 +29,10 @@ export default async function(ctx) {
     await as("revFore")
     await db.query("select public.select_pin_qa_checklist($1,$2)",[pin,template])
   })
-  await test("Evidence: away-from-site image is retained but cannot satisfy a QA submission",async()=>{
+  await test("Evidence: a wrong-time image (phone clock ahead) is retained but cannot satisfy a QA submission",async()=>{
     await as("revFore")
-    badPhoto = (await db.query("insert into public.pin_photos(project_id,pin_id,checklist_item_id,path,lat,lng,taken_at) values($1,$2,$3,$4,0,0,now()) returning *",[project,pin,steps[0],`${project}/${pin}/away.jpg`])).rows[0]
-    assert.equal(badPhoto.stamp_flag,"away_from_site")
+    badPhoto = (await db.query("insert into public.pin_photos(project_id,pin_id,checklist_item_id,path,lat,lng,taken_at) values($1,$2,$3,$4,14.5,121,now()+interval '1 hour') returning *",[project,pin,steps[0],`${project}/${pin}/ahead.jpg`])).rows[0]
+    assert.equal(badPhoto.stamp_flag,"clock_ahead")
     await db.query("update public.pin_checklist_items set done=true where id=$1",[steps[0]])
     await expectFail("select public.submit_checklist_qa($1,$2::uuid[])",[pin,[steps[0]]],/eligible photo/)
     for (const step of steps) {

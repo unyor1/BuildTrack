@@ -7,15 +7,19 @@ import { ChecklistsPanel, DefectsPanel, InspectionsPanel, OverviewPanel, type In
 import TemplateEditor from "./TemplateEditor"
 import { SnagDetail, SnagsPanel } from "./SnagPanel"
 import { useSnags, type Snag } from "../../lib/snags"
+import DateRangeFilter from "../ui/DateRangeFilter"
+import { allDates, isFiltered, pastPresets, rangeProblem, rangeSearch, rangeText, readRange, type DateRange } from "../../lib/dateRangeModel"
 import type { Defect, Template } from "../../lib/qa"
 import type { QaWorkspace } from "../../lib/qaWorkspace"
 
 export type QaTab = "overview" | "inspections" | "defects" | "snags" | "checklists"
 const tabNames: Record<QaTab, string> = { overview: "Overview", inspections: "Inspections", defects: "NCR register", snags: "Client reports", checklists: "Inspection criteria" }
+// One calendar range for the Overview and registers; each record uses its requested / raised / reported Manila day.
+const datedTabs: Partial<Record<QaTab, { label: string; noun: string }>> = { overview: { label: "Overview", noun: "Overview for" }, inspections: { label: "Requested", noun: "Inspections requested" }, defects: { label: "Raised", noun: "NCRs raised" }, snags: { label: "Reported", noun: "Client reports made" } }
 
 // The shared QA workspace. The Engineer page shows all four tabs; the Foreman's pages show one tab each (inspection requests,
 // the defects assigned to them, the checklists they will be inspected against). The database decides who may do what.
-export default function QaView({ ws, mode, tabs, canEditLibrary = false, inspectionKind, defectScope }: { ws: QaWorkspace; mode: QaMode; tabs: QaTab[]; canEditLibrary?: boolean; inspectionKind?: InspectionKind; defectScope?: (defect: Defect) => boolean }) {
+export default function QaView({ ws, mode, tabs, canEditLibrary = false, inspectionKind, defectScope, dateFilter = false }: { ws: QaWorkspace; mode: QaMode; tabs: QaTab[]; canEditLibrary?: boolean; inspectionKind?: InspectionKind; defectScope?: (defect: Defect) => boolean; dateFilter?: boolean }) {
   const [search, setSearch] = useState(window.location.search)
   useEffect(() => { const changed = () => setSearch(window.location.search); window.addEventListener("popstate", changed); return () => window.removeEventListener("popstate", changed) }, [])
   const params = new URLSearchParams(search)
@@ -30,6 +34,15 @@ export default function QaView({ ws, mode, tabs, canEditLibrary = false, inspect
   const [linkError, setLinkError] = useState("")
   const snagData = useSnags(tabs.includes("snags") ? ws.projectId : null)
   const [snagOpen, setSnagOpen] = useState<Snag | null>(null)
+  // Calendar filter (QA register): kept in ?from=&to= without touching the deep-link handling above.
+  const [range, setRange] = useState<DateRange>(() => (dateFilter ? readRange(window.location.search) : allDates))
+  useEffect(() => { if (dateFilter) setRange(readRange(search)) }, [search, dateFilter])
+  const dates = dateFilter && !rangeProblem(range) ? range : allDates
+  const changeRange = (next: DateRange) => {
+    setRange(next)
+    window.history.replaceState(window.history.state, "", `${window.location.pathname}${rangeSearch(window.location.search, next)}${window.location.hash}`)
+  }
+  const dated = dateFilter ? datedTabs[tab] : undefined
 
   // Links from notifications: ?inspection=<id> or ?defect=<id> opens it once the lists are loaded.
   useEffect(() => {
@@ -73,11 +86,17 @@ export default function QaView({ ws, mode, tabs, canEditLibrary = false, inspect
 
       {ws.error ? <p role="alert" className="mb-3 rounded-lg bg-danger-soft px-4 py-2 text-sm text-danger-fg">{ws.error}</p> : null}
       {linkError ? <p role="alert" className="mb-3 rounded-lg bg-danger-soft p-3 text-sm text-danger-fg">{linkError}</p> : null}
+      {dated ? (
+        <div className="mb-3 space-y-2 rounded-2xl border border-line bg-surface p-3 shadow-sm">
+          <DateRangeFilter label={`${dated.label} date`} range={range} presets={pastPresets} today={ws.today} onChange={changeRange} />
+          <p className="text-xs text-fg-muted">{isFiltered(dates) ? <><span className="font-bold text-fg">{dated.noun} {rangeText(dates)}</span> · Manila time. The same dates apply to the Overview, Inspections (requested), NCR register (raised) and Client reports (reported).</> : "Showing every date. Choose dates to narrow the Overview, Inspections (requested), NCR register (raised) and Client reports (reported)."} Overview figures show the current status of inspections requested and NCRs raised in the period, not a historical snapshot. Tab badges count all dates.</p>
+        </div>
+      ) : null}
 
-      {tab === "overview" ? <OverviewPanel ws={ws} mode={mode} onOpenInspection={setInspectionId} onOpenDefect={setDefectId} onGo={(next) => (tabs.includes(next) ? setTab(next) : undefined)} /> : null}
-      {tab === "inspections" ? <InspectionsPanel ws={ws} canRequest kind={inspectionKind} onOpen={setInspectionId} onNew={() => setRequesting(true)} /> : null}
-      {tab === "defects" ? <DefectsPanel ws={ws} mode={mode} scope={defectScope} onOpen={setDefectId} onNew={engineer ? () => setRaising(true) : null} /> : null}
-      {tab === "snags" ? <SnagsPanel snags={snagData.snags} loading={snagData.loading} error={snagData.error} nameOf={ws.nameOf} onOpen={setSnagOpen} /> : null}
+      {tab === "overview" ? <OverviewPanel ws={ws} mode={mode} dates={dates} onOpenInspection={setInspectionId} onOpenDefect={setDefectId} onGo={(next) => (tabs.includes(next) ? setTab(next) : undefined)} /> : null}
+      {tab === "inspections" ? <InspectionsPanel ws={ws} canRequest kind={inspectionKind} dates={dates} onOpen={setInspectionId} onNew={() => setRequesting(true)} /> : null}
+      {tab === "defects" ? <DefectsPanel ws={ws} mode={mode} scope={defectScope} dates={dates} onOpen={setDefectId} onNew={engineer ? () => setRaising(true) : null} /> : null}
+      {tab === "snags" ? <SnagsPanel snags={snagData.snags} loading={snagData.loading} error={snagData.error} nameOf={ws.nameOf} dates={dates} onOpen={setSnagOpen} /> : null}
       {tab === "checklists" ? <ChecklistsPanel ws={ws} canEdit={engineer && Boolean(ws.projectId)} canEditLibrary={canEditLibrary} onEdit={(template, scope) => setEditing({ template, scope })} /> : null}
 
       {inspection && project ? (

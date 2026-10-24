@@ -13,6 +13,7 @@ import FloatingPanel from "./FloatingPanel"
 import Inspector, { type AnnotationPatch, type EditorRole, type InspectorProps, type LayerVisibility, type SelectionActions, type SheetTab } from "./Inspector"
 import LabelDialog, { labelKinds } from "./LabelDialog"
 import PinDetailsModal from "./PinDetailsModal"
+import type { PinSection } from "../../lib/pinRecordsModel"
 import PinQr from "./PinQr"
 import { dbMessage, field } from "./PinParts"
 import PresentationBar from "./PresentationBar"
@@ -111,6 +112,9 @@ export default function BlueprintEditor({ projectId, role, canEdit, canUpload = 
   const [draftNote, setDraftNote] = useState<Point | null>(null)
   const [draftText, setDraftText] = useState<Point | null>(null)
   const [detailsOpen, setDetailsOpen] = useState(false)
+  const [detailsSection, setDetailsSection] = useState<PinSection>("details")
+  // A link's ?pintab= (or older ?worktab=) opens that section of the linked pin's panel, once.
+  const [pinLink, setPinLink] = useState<{ pinId: string; search: string } | null>(null)
   const [calibrating, setCalibrating] = useState(false)
   const [upload, setUpload] = useState<"new" | "revision" | null>(null)
   const [exporting, setExporting] = useState(false)
@@ -225,11 +229,13 @@ export default function BlueprintEditor({ projectId, role, canEdit, canUpload = 
 
   // Deep link from other pages (verification queue, issue register): ?pin=<id> opens that pin on its own sheet, once.
   const pendingPin = useRef<string | null>(new URLSearchParams(window.location.search).get("pin"))
+  const pendingSearch = useRef(window.location.search)
   const [pinLinkVersion, setPinLinkVersion] = useState(0)
   useEffect(() => {
     const changed = () => {
       const params=new URLSearchParams(window.location.search)
       pendingPin.current=params.get("pin")
+      pendingSearch.current=window.location.search
       const sheetId=params.get("sheet")
       if(sheetId) setBlueprintId(sheetId)
       setPinLinkVersion(v => v + 1)
@@ -247,9 +253,10 @@ export default function BlueprintEditor({ projectId, role, canEdit, canUpload = 
     }
     if (blueprintId !== target.blueprint_id) return setBlueprintId(target.blueprint_id)
     pendingPin.current = null
+    setPinLink({ pinId: id, search: pendingSearch.current })
     select({ pin: id, ann: [] })
     const url = new URL(window.location.href)
-    url.searchParams.delete("pin")
+    for (const key of ["pin", "pintab", "worktab"]) url.searchParams.delete(key)
     window.history.replaceState({}, "", url)
   }, [pins, blueprintId, loading, pinsLoading, select, pinLinkVersion])
 
@@ -1039,7 +1046,8 @@ export default function BlueprintEditor({ projectId, role, canEdit, canUpload = 
         historyError,
         onSetStatus: (pin, status) => void setStatus(pin, status),
         onReport: report,
-        onOpenDetails: () => setDetailsOpen(true),
+        onOpenDetails: (section?: PinSection) => { setDetailsSection(section ?? "details"); setDetailsOpen(true) },
+        pinLink,
         onDeletePin: () => selectedPin && void deletePin(selectedPin),
         onPinChanged: () => { void reloadPins(); touched() },
         onAnnotationPatch: (patch: AnnotationPatch) => {
@@ -1413,7 +1421,7 @@ export default function BlueprintEditor({ projectId, role, canEdit, canUpload = 
       {draftNote ? <TextDialog title="New note" submit="Add note" placeholder="e.g. Verify beam depth against the structural drawing" rows={4} initialColor={color} onClose={() => setDraftNote(null)} onCreate={createNote} /> : null}
       {draftText ? <TextDialog title="New text box" submit="Add text" placeholder="Type the text to put on the sheet" rows={3} initialColor={color} onClose={() => setDraftText(null)} onCreate={createText} /> : null}
       {calibrating ? <CalibrateDialog onClose={() => setCalibrating(false)} onSave={async (meters) => { const failure = await calibrate(meters); if (!failure) setCalibrating(false); return failure }} /> : null}
-      {detailsOpen && selectedPin && inspector ? <PinDetailsModal pin={selectedPin} inspector={inspector} onClose={() => setDetailsOpen(false)} onDelete={() => void deletePin(selectedPin)} /> : null}
+      {detailsOpen && selectedPin && inspector ? <PinDetailsModal pin={selectedPin} inspector={inspector} section={detailsSection} onClose={() => { setDetailsOpen(false); setDetailsSection("details") }} onDelete={() => void deletePin(selectedPin)} /> : null}
       {exporting && blueprint && revision ? <ExportDialog sheetName={blueprint.title} revisionLabel={`Rev ${revision.revision}`} initialShow={layers} render={renderExport} onClose={() => setExporting(false)} onDone={(filename) => { setExporting(false); toast.success("Export ready", filename) }} /> : null}
       {comparing && blueprint ? <CompareModal revisions={revisions} initialNewer={revision?.id ?? null} onClose={() => setComparing(false)} /> : null}
       {commands ? <CommandPalette commands={commandList} onClose={() => setCommands(false)} /> : null}

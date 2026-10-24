@@ -6,7 +6,11 @@ import BeforeAfter from "../BeforeAfter"
 import StampChip from "../StampChip"
 import WorkChecklistEditor from "../qa/WorkChecklistEditor"
 import { usePinQa } from "../../lib/pinQa"
-import { captureStamp, stampFields, stampSummary, photoEligible, photoPreviewBlocked } from "../../lib/photoStamp"
+import { captureStamp, stampFields, stampSummary, photoEligible, photoPreviewBlocked, type PhotoStamp } from "../../lib/photoStamp"
+import MarkupUploadDialog, { type UploadOutcome } from "../issues/MarkupUploadDialog"
+import { MarkupLayer } from "../issues/MarkupLayer"
+import { markupProblem } from "../../lib/issueMarkup"
+import type { IssuePhotoDraft } from "../../lib/siteIssues"
 import { StageChip } from "../qa/WorkItemParts"
 import { useWorkQaHistory } from "../../lib/qaAttempts"
 import { stageOf, usePinDefects } from "../../lib/workItem"
@@ -259,13 +263,21 @@ export function PinTimeline({ pinId, canComment, refreshKey = 0 }: { pinId: stri
 function Thumb({ photo, onRemove }: { photo: PinPhoto; onRemove?: () => void }) {
   const { profile } = useAuth()
   const [viewing,setViewing] = useState(false)
+  const [height,setHeight] = useState(750)
+  const markup = photo.annotations ?? []
   const blocked = photoPreviewBlocked(profile?.role, photo)
   const { url, failed } = useSignedUrl("pin-photos", blocked ? null : photo.path)
   return (
     <><figure className="relative">
       {blocked ? <div className="flex h-24 items-center justify-center rounded-lg bg-danger-soft p-2 text-xs text-danger-fg">Image blocked: site/time check failed</div> : url ? (
         <button type="button" aria-label="Zoom photo and view details" onClick={()=>setViewing(true)} className="block w-full cursor-zoom-in">
-          <img src={url} alt={photo.caption ?? `Pin photo added ${formatStamp(photo.created_at)}`} loading="lazy" className="h-24 w-full rounded-lg border border-line object-cover transition hover:opacity-90" />
+          <span className="relative block">
+            <img src={url} alt={photo.caption ?? `Pin photo added ${formatStamp(photo.created_at)}`} loading="lazy" onLoad={markup.length ? (event) => setHeight((1000 * event.currentTarget.naturalHeight) / event.currentTarget.naturalWidth) : undefined} className="block h-24 w-full rounded-lg border border-line object-cover transition hover:opacity-90" />
+            {markup.length ? <>
+              <svg viewBox={`0 0 1000 ${height}`} preserveAspectRatio="xMidYMid slice" className="pointer-events-none absolute inset-0 h-full w-full rounded-lg" aria-hidden="true"><MarkupLayer items={markup} height={height} /></svg>
+              <span title="Marked up" className="absolute bottom-1 left-1 grid h-4 w-4 place-items-center rounded-full bg-black/70 text-white" aria-hidden="true"><svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 20h4L19 9l-4-4L4 16z" /></svg></span>
+            </> : null}
+          </span>
         </button>
       ) : failed ? (
         <div className="flex h-24 items-center justify-center rounded-lg border border-line bg-surface-muted text-xs text-fg-muted">Unavailable</div>
@@ -279,85 +291,86 @@ function Thumb({ photo, onRemove }: { photo: PinPhoto; onRemove?: () => void }) 
   )
 }
 
-// Compress, stamp and upload photos of a pin (optionally for one checklist item); without signal they wait in the offline queue.
-function usePhotoUpload(pin: Pin, checklistItemId: string | undefined, onAdded: () => Promise<void> | void, attemptId?: string | null) {
-  const toast = useToast()
+// Shrunk once before markup (JPEG, 1600 px), so the markup sits on exactly the stored pixels. Module-level: a stable function.
+export async function preparePinPhoto(file: File): Promise<File> {
+  if (!file.type.startsWith("image/")) throw new Error("not an image")
+  const blob = await compressPhoto(file)
+  return new File([blob], `${file.name.replace(/\.[^.]*$/, "") || "photo"}.jpg`, { type: "image/jpeg", lastModified: file.lastModified })
+}
+
+// Uploads one prepared photo of a pin (optionally for one checklist item / correction) with its caption and markup. Without
+// signal it waits in the offline queue on this device, markup included, and is sent when the connection is back.
+function usePinPhotoUpload(pin: Pin, checklistItemId: string | undefined, attemptId?: string | null) {
   const { profile } = useAuth()
-  const [busy, setBusy] = useState(false)
-  const uploading = useRef(false)
   const itemLink = { ...(checklistItemId ? { checklist_item_id: checklistItemId } : {}), ...(attemptId ? { qa_attempt_id: attemptId } : {}) }
-
-  const add = async (files: FileList | null) => {
-    if (!files?.length || uploading.current) return
-    uploading.current = true
-    setBusy(true)
-    let added = 0
-    try {
-    const stamp = await captureStamp() // the phone's time and (if allowed) position, checked against the site by the database
-    for (const file of Array.from(files)) {
-      if (!file.type.startsWith("image/")) {
-        toast.error("Not an image", `${file.name} was skipped.`)
-        continue
-      }
-      try {
-        const blob = await compressPhoto(file)
-        const path = `${pin.project_id}/${pin.id}/${crypto.randomUUID()}.jpg`
-        // No signal: keep the compressed photo on this device; it is uploaded when the connection is back.
-        const keepOffline = async () => {
-          if (!profile) throw new Error("You are signed out.")
-          await enqueue({ userId: profile.id, kind: "pin_photo", label: pin.title, payload: { projectId: pin.project_id, pinId: pin.id, itemId: checklistItemId ?? null, attemptId: attemptId ?? null, path, blob, stamp } })
-          toast.info("Photo saved on this device", "It will be uploaded when you are back online.")
-        }
-        if (!navigator.onLine) {
-          await keepOffline()
-          continue
-        }
-        const upload = await supabase.storage.from("pin-photos").upload(path, blob, { contentType: "image/jpeg", upsert: false })
-        if (upload.error && isNetworkProblem(upload.error)) {
-          await keepOffline()
-          continue
-        }
-        if (upload.error) throw new Error(upload.error.message)
-        const { error } = await supabase.from("pin_photos").insert({ pin_id: pin.id, project_id: pin.project_id, path, ...itemLink, ...stampFields(stamp) })
-        if (error) {
-          await supabase.storage.from("pin-photos").remove([path])
-          throw new Error(error.message)
-        }
-        added++
-      } catch (error) {
-        toast.error("Photo not added", error instanceof Error ? dbMessage({ message: error.message }) : "Upload failed.")
-      }
+  return async (draft: IssuePhotoDraft, stamp: PhotoStamp | null): Promise<UploadOutcome> => {
+    const problem = markupProblem(draft.annotations)
+    if (problem) throw new Error(problem)
+    const path = `${pin.project_id}/${pin.id}/${crypto.randomUUID()}.jpg`
+    const caption = draft.caption.trim().slice(0, 200)
+    const extra = { ...(caption ? { caption } : {}), ...(draft.annotations.length ? { annotations: draft.annotations } : {}) }
+    const keepOffline = async (): Promise<UploadOutcome> => {
+      if (!profile) throw new Error("You are signed out.")
+      await enqueue({ userId: profile.id, kind: "pin_photo", label: pin.title, payload: { projectId: pin.project_id, pinId: pin.id, itemId: checklistItemId ?? null, attemptId: attemptId ?? null, path, blob: draft.file, stamp, ...extra } })
+      return "queued"
     }
-    if (added) toast.success(`${added} photo${added === 1 ? "" : "s"} added`)
-    await onAdded()
-    } catch (error) {
-      toast.error("Photos could not be processed", error instanceof Error ? error.message : "Please try again.")
-    } finally {
-      setBusy(false)
-      uploading.current = false
+    if (!navigator.onLine) return keepOffline()
+    const upload = await supabase.storage.from("pin-photos").upload(path, draft.file, { contentType: "image/jpeg", upsert: false })
+    if (upload.error && isNetworkProblem(upload.error)) return keepOffline()
+    if (upload.error) throw new Error(upload.error.message)
+    const { error } = await supabase.from("pin_photos").insert({ pin_id: pin.id, project_id: pin.project_id, path, ...itemLink, ...stampFields(stamp), ...extra })
+    if (error) {
+      await supabase.storage.from("pin-photos").remove([path])
+      throw new Error(dbMessage(error))
     }
+    return "uploaded"
   }
+}
 
-  return { add, busy }
+// Chosen photos open the markup dialog; the phone's time and position are taken when they are chosen (checked by the database).
+function usePinPhotoDialog(pin: Pin, checklistItemId: string | undefined, label: string, onAdded: () => Promise<void> | void, attemptId?: string | null) {
+  const toast = useToast()
+  const upload = usePinPhotoUpload(pin, checklistItemId, attemptId)
+  const [chosen, setChosen] = useState<File[] | null>(null)
+  const stamp = useRef<Promise<PhotoStamp> | null>(null)
+  const choose = (files: FileList | null) => {
+    const list = Array.from(files ?? [])
+    if (!list.length) return
+    stamp.current = captureStamp()
+    setChosen(list)
+  }
+  const dialog = chosen ? (
+    <MarkupUploadDialog files={chosen} title={`Add photos: ${label}`} prepare={preparePinPhoto} editorTitle="Mark up work photo"
+      onUpload={async (draft) => upload(draft, await (stamp.current ?? captureStamp()))}
+      onDone={async ({ uploaded, queued }) => {
+        if (uploaded) toast.success(`${uploaded} photo${uploaded === 1 ? "" : "s"} added`)
+        if (queued) toast.info(`${queued} photo${queued === 1 ? "" : "s"} saved on this device`, "They will be uploaded when you are back online.")
+        await onAdded()
+      }}
+      onClose={() => { setChosen(null); stamp.current = null }} />
+  ) : null
+  return { choose, busy: Boolean(chosen), dialog }
 }
 
 // The upload button on a checklist item: opens the camera / gallery and links the photos to that item.
 export function ChecklistUploadButton({ pin, itemId, label, onAdded, attemptId }: { pin: Pin; itemId: string; label: string; onAdded: () => void; attemptId?: string }) {
   const fileInput = useRef<HTMLInputElement>(null)
   const cameraInput = useRef<HTMLInputElement>(null)
-  const { add, busy } = usePhotoUpload(pin, itemId, () => {
+  const { choose, busy, dialog } = usePinPhotoDialog(pin, itemId, label, onAdded, attemptId)
+  const pick = (files: FileList | null) => {
+    choose(files)
     if (fileInput.current) fileInput.current.value = ""
     if (cameraInput.current) cameraInput.current.value = ""
-    onAdded()
-  }, attemptId)
+  }
   return (
     <>
-      <input ref={fileInput} type="file" accept="image/*" multiple hidden onChange={(e) => void add(e.target.files)} />
-      <input ref={cameraInput} type="file" accept="image/*" capture="environment" hidden onChange={(e) => void add(e.target.files)} />
+      <input ref={fileInput} type="file" accept="image/*" multiple hidden onChange={(e) => pick(e.target.files)} />
+      <input ref={cameraInput} type="file" accept="image/*" capture="environment" hidden onChange={(e) => pick(e.target.files)} />
       <button type="button" disabled={busy} onClick={() => fileInput.current?.click()} aria-label={`Upload photos for: ${label}`} className="min-h-6 text-[11px] font-bold text-brand-text underline underline-offset-2 hover:no-underline disabled:opacity-60">
-        {busy ? "Uploading..." : "Upload photos"}
+        {busy ? "Marking up..." : "Upload photos"}
       </button>
       <button type="button" disabled={busy} onClick={() => cameraInput.current?.click()} aria-label={`Take a photo for: ${label}`} className="min-h-6 text-[11px] font-semibold text-brand-text underline underline-offset-2 hover:no-underline disabled:opacity-60">Take photo</button>
+      {dialog}
     </>
   )
 }
@@ -373,8 +386,7 @@ export function PinPhotos({ pin, checklistItemId, canAdd, canRemoveAny, meId, on
   const evidence = usePinEvidence(pin.id, pin.status)
   const fileInput = useRef<HTMLInputElement>(null)
 
-  const { add, busy } = usePhotoUpload(pin, checklistItemId, async () => {
-    if (fileInput.current) fileInput.current.value = ""
+  const { choose, busy, dialog } = usePinPhotoDialog(pin, checklistItemId, pin.title, async () => {
     await reload()
     onChanged?.()
   }, attemptId)
@@ -394,8 +406,9 @@ export function PinPhotos({ pin, checklistItemId, canAdd, canRemoveAny, meId, on
     <div className="space-y-2">
       {canAdd ? (
         <div>
-          <input ref={fileInput} type="file" accept="image/*" multiple hidden onChange={(e) => void add(e.target.files)} />
-          <button type="button" disabled={busy} onClick={() => fileInput.current?.click()} className="rounded-lg border border-line px-3 py-1.5 text-sm font-semibold hover:bg-surface-muted disabled:opacity-60">{busy ? "Uploading..." : "Add photos"}</button>
+          <input ref={fileInput} type="file" accept="image/*" multiple hidden onChange={(e) => { choose(e.target.files); e.target.value = "" }} />
+          <button type="button" disabled={busy} onClick={() => fileInput.current?.click()} className="rounded-lg border border-line px-3 py-1.5 text-sm font-semibold hover:bg-surface-muted disabled:opacity-60">{busy ? "Marking up..." : "Add photos"}</button>
+          {dialog}
           {checklistItemId ? <p className="mt-1 text-xs text-fg-muted">Select multiple photos or add more later. Every photo stays linked to this checklist item.</p> : null}
         </div>
       ) : null}

@@ -1,6 +1,7 @@
 import { reportHtml } from "./printReport.ts"
 import { categoryLabels, defectStatusLabels, dueText, inspectionStatusLabels, qaSeverityLabels, refNumber, toleranceText, tradeLabels } from "./qaModel.ts"
 import type { Defect, DefectEvent, Inspection, InspectionItem, QaSummary } from "./qa"
+import { allDates, isFiltered, rangeText, type DateRange } from "./dateRangeModel.ts"
 
 // Printable QA documents. Every value goes through reportHtml, which escapes it.
 type Person = (id: string | null) => string
@@ -99,7 +100,7 @@ export function defectReportHtml(input: { defect: Defect; events: DefectEvent[];
   })
 }
 
-export function qaSummaryHtml(input: { summary: QaSummary; defects: Defect[]; project: Project; nameOf: Person; today: string; asOf: string }): string {
+export function qaSummaryHtml(input: { summary: QaSummary; defects: Defect[]; project: Project; nameOf: Person; today: string; asOf: string; dates?: DateRange }): string {
   const { summary: s, defects, project, nameOf, today, asOf } = input
   const open = defects.filter((defect) => defect.status !== "closed")
   const pct = (value: number | null) => (value === null ? "-" : `${value}%`)
@@ -108,6 +109,7 @@ export function qaSummaryHtml(input: { summary: QaSummary; defects: Defect[]; pr
     subtitle: subtitle(project),
     meta: [
       ["As of", asOf],
+      ...(isFiltered(input.dates ?? allDates) ? [["Period (Manila)", rangeText(input.dates!)], ["Scope", "Current status of inspections requested and NCRs raised in the period; not a historical snapshot."]] as Array<[string, string]> : []),
       ["First-time pass rate", pct(s.inspections.first_pass_rate)],
       ["Open NCRs", String(s.defects.open)],
       ["Overdue NCRs", String(s.defects.overdue)],

@@ -3,8 +3,9 @@ import { Icon } from "./EditorToolbar"
 import LayerStack, { EyeButton, describe } from "./LayerStack"
 import { ChecklistProgress, PinChecklist, PinTimeline, ProgressTracker, field } from "./PinParts"
 import ChecklistPhotos from "../ChecklistPhotos"
-import PinDailyReports from "../client/PinDailyReports"
+import { PinCommunicationSection, PinIssuesSection, PinReportsSection, usePinPanelData, type PinPanelData } from "./PinRecordSections"
 import { clientActionPath, clientPinStatus, openClientPath } from "../../lib/clientPortalModel"
+import { pinSectionsFor, readPinSection, sectionLabel, type PinSection } from "../../lib/pinRecordsModel"
 import { useToast } from "../../lib/toast"
 import { usePinQa } from "../../lib/pinQa"
 import { SkeletonList } from "../ui/Skeleton"
@@ -133,19 +134,21 @@ export type InspectorProps = {
   historyError: string
   onSetStatus: (pin: Pin, status: PinStatus) => void
   onReport: (pin: Pin, status: "in_progress" | "for_review", note: string) => Promise<void>
-  onOpenDetails: () => void
+  onOpenDetails: (section?: PinSection) => void
+  pinLink?: { pinId: string; search: string } | null // the pin a link opened, with its ?pintab=
   onDeletePin: () => void
   onPinChanged: () => void
   onAnnotationPatch: (patch: AnnotationPatch) => void
   onDeleteAnnotation: () => void
 }
 
-function Tabs<T extends string>({ tabs, value, onChange, label }: { tabs: Array<{ key: T; label: string }>; value: T; onChange: (key: T) => void; label: string }) {
+export function Tabs<T extends string>({ tabs, value, onChange, label }: { tabs: Array<{ key: T; label: string; count?: number }>; value: T; onChange: (key: T) => void; label: string }) {
   return (
-    <div role="tablist" aria-label={label} className="flex shrink-0 overflow-x-auto border-b border-line bg-surface-muted/40 px-2">
+    <div role="tablist" aria-label={label} className="flex shrink-0 overflow-x-auto overscroll-x-contain border-b border-line bg-surface-muted/40 px-2 [scrollbar-width:thin]">
       {tabs.map((tab) => (
-        <button key={tab.key} type="button" role="tab" aria-selected={value === tab.key} onClick={() => onChange(tab.key)} className={`min-h-11 flex-1 whitespace-nowrap border-b-2 px-3 py-3 text-xs font-bold transition ${value === tab.key ? "border-brand text-brand-text" : "border-transparent text-fg-muted hover:text-fg"}`}>
+        <button key={tab.key} type="button" role="tab" aria-selected={value === tab.key} onClick={() => onChange(tab.key)} className={`flex min-h-11 shrink-0 grow items-center justify-center gap-1.5 whitespace-nowrap border-b-2 px-3 py-3 text-xs font-bold transition ${value === tab.key ? "border-brand text-brand-text" : "border-transparent text-fg-muted hover:text-fg"}`}>
           {tab.label}
+          {tab.count ? <span className="rounded-full bg-brand px-1.5 py-0.5 text-[11px] font-bold leading-none text-white" aria-label={`${tab.count} open`}>{tab.count}</span> : null}
         </button>
       ))}
     </div>
@@ -156,38 +159,9 @@ function Tabs<T extends string>({ tabs, value, onChange, label }: { tabs: Array<
 // a small editor for a drawing, note, text box or shape. Deep editing (all fields, large photos) happens in the pin details dialog.
 export default function Inspector(props: InspectorProps) {
   const { selectedPin: pin, selectedAnnotation: annotation } = props
-  const [pinTab, setPinTab] = useState<"details" | "timeline" | "checklist" | "photos" | "reports">("details")
-
-  useEffect(() => {
-    setPinTab(new URLSearchParams(window.location.search).get("worktab") === "checklist" ? "checklist" : "details")
-  }, [pin?.id])
-
   if (props.selectedAnnotations.length >= 2) return <MultiPanel {...props} />
   if (annotation) return <AnnotationEditor {...props} annotation={annotation} />
-
-  if (pin) {
-    // Photos are checklist evidence (staff only); clients see the checklist with each item's acceptance.
-    const tabs = props.role === "client" ? [{ key: "details" as const, label: "Details" }, { key: "checklist" as const, label: "Checklist" }, { key: "reports" as const, label: "Daily reports" }] : [{ key: "details" as const, label: "Details" }, { key: "timeline" as const, label: "Timeline" }, { key: "checklist" as const, label: "Checklist" }, { key: "photos" as const, label: "Photos" }]
-    return (
-      <aside className="flex h-full min-h-0 w-full min-w-0 flex-col bg-surface">
-        <div className="flex items-start gap-2 px-4 pb-3 pt-4">
-          <span className="mt-0.5 flex h-7 w-7 flex-none items-center justify-center rounded-full text-xs font-bold text-white" style={{ background: statusDot[workStatus(pin.status)] }}>{props.numberOf(pin)}</span>
-          <div className="min-w-0 flex-1 space-y-1.5">
-            <h2 className="break-words text-base font-extrabold">{pin.title}{pin.locked ? <span title="Locked" className="ml-1 inline-block align-middle text-fg-muted"><Icon name="lock" size={14} /></span> : null}</h2>
-            <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ${statusChip[workStatus(pin.status)]}`}>{statusLabels[workStatus(pin.status)]}</span>
-          </div>
-        </div>
-        <Tabs tabs={tabs} value={pinTab} onChange={setPinTab} label="Pin sections" />
-        <div className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain p-4 [overflow-wrap:anywhere]">
-          {pinTab === "details" ? <PinDetailsTab {...props} pin={pin} /> : null}
-          {pinTab === "timeline" ? <PinTimeline pinId={pin.id} canComment={props.canReport} /> : null}
-          {pinTab === "checklist" ? <PinChecklist pin={pin} canEdit={props.canEdit} canTick={canWorkOn(props, pin)} notice={checklistNotice(props, pin, pin.assigned_to ? props.team.find((member) => member.user_id === pin.assigned_to)?.full_name : undefined)} onPinChanged={props.onPinChanged} /> : null}
-          {pinTab === "photos" && props.role !== "client" ? <ChecklistPhotos pin={pin} /> : null}
-          {pinTab === "reports" && props.role === "client" ? <PinDailyReports key={pin.id} pin={pin} /> : null}
-        </div>
-      </aside>
-    )
-  }
+  if (pin) return <PinPanel {...props} pin={pin} />
 
   const tabs: Array<{ key: SheetTab; label: string }> = [{ key: "pins", label: "Pins" }, { key: "layers", label: "Layers" }, ...(props.canSeeHistory ? [{ key: "history" as const, label: "History" }] : []), { key: "sheet", label: "Sheet" }]
   const active = props.sheetTab === "history" && !props.canSeeHistory ? "pins" : props.sheetTab
@@ -202,6 +176,51 @@ export default function Inspector(props: InspectorProps) {
       </div>
     </aside>
   )
+}
+
+// The section a pin opens on: the one its link asked for (once), otherwise Details.
+export const startSection = (props: Pick<InspectorProps, "role" | "pinLink">, pinId: string): PinSection =>
+  props.pinLink?.pinId === pinId ? readPinSection(props.pinLink.search, props.role) : "details"
+
+// One pin beside the sheet: Details and assignment, Checklist & QA, Issues & NCRs, Daily reports, Photos, Activity and
+// Communication, as the role allows (pinSectionsFor). Counts mark what still needs attention. "For review" stays a checklist
+// state: the pin header shows the work status only.
+function PinPanel(props: InspectorProps & { pin: Pin }) {
+  const { pin } = props
+  const data = usePinPanelData(pin, props.role)
+  const [pinTab, setPinTab] = useState<PinSection>(() => startSection(props, pin.id))
+  useEffect(() => { setPinTab(startSection(props, pin.id)) }, [pin.id, props.pinLink]) // eslint-disable-line react-hooks/exhaustive-deps
+  const tabs = pinSectionsFor(props.role).map((key) => ({ key, label: sectionLabel(props.role, key), count: data.counts[key] }))
+  const active = tabs.some((tab) => tab.key === pinTab) ? pinTab : "details"
+  return (
+    <aside className="flex h-full min-h-0 w-full min-w-0 flex-col bg-surface">
+      <div className="flex items-start gap-2 px-4 pb-3 pt-4">
+        <span className="mt-0.5 flex h-7 w-7 flex-none items-center justify-center rounded-full text-xs font-bold text-white" style={{ background: statusDot[workStatus(pin.status)] }}>{props.numberOf(pin)}</span>
+        <div className="min-w-0 flex-1 space-y-1.5">
+          <h2 className="break-words text-base font-extrabold">{pin.title}{pin.locked ? <span title="Locked" className="ml-1 inline-block align-middle text-fg-muted"><Icon name="lock" size={14} /></span> : null}</h2>
+          <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ${statusChip[workStatus(pin.status)]}`}>{statusLabels[workStatus(pin.status)]}</span>
+        </div>
+        <button type="button" onClick={() => props.onOpenDetails(active)} className="flex-none rounded-lg border border-line px-2 py-1 text-[11px] font-bold hover:bg-surface-muted" title="Open this section in the full pin view with detailed columns">Full view</button>
+      </div>
+      <Tabs tabs={tabs} value={active} onChange={setPinTab} label="Pin sections" />
+      <div className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain p-4 [overflow-wrap:anywhere]">
+        <PinSectionBody {...props} pin={pin} section={active} data={data} />
+      </div>
+    </aside>
+  )
+}
+
+// The body of one pin section, shared by the side panel (compact cards) and the full pin view (wide = detailed columns).
+export function PinSectionBody(props: InspectorProps & { pin: Pin; section: PinSection; data: PinPanelData; wide?: boolean; refreshKey?: number; onChanged?: () => void }) {
+  const { pin, section, data } = props
+  const shared = { pin, role: props.role, meId: props.meId, team: props.team, canEdit: props.canEdit, canWork: canWorkOn(props, pin), data, wide: props.wide }
+  if (section === "details") return props.wide ? null : <PinDetailsTab {...props} pin={pin} />
+  if (section === "checklist") return <PinChecklist pin={pin} canEdit={props.canEdit} canTick={canWorkOn(props, pin)} notice={checklistNotice(props, pin, pin.assigned_to ? props.team.find((member) => member.user_id === pin.assigned_to)?.full_name : undefined)} onPinChanged={props.onChanged ?? props.onPinChanged} />
+  if (section === "issues") return <PinIssuesSection {...shared} />
+  if (section === "reports") return <PinReportsSection {...shared} />
+  if (section === "photos") return props.role === "client" ? null : <ChecklistPhotos pin={pin} />
+  if (section === "activity") return props.role === "client" ? null : <PinTimeline pinId={pin.id} canComment={props.canReport} refreshKey={props.refreshKey} />
+  return <PinCommunicationSection {...shared} />
 }
 
 export function PinDetailsTab(props: InspectorProps & { pin: Pin; inDialog?: boolean }) {
@@ -283,7 +302,7 @@ export function PinDetailsTab(props: InspectorProps & { pin: Pin; inDialog?: boo
           </div>
 
           <div className="flex flex-wrap gap-2 pt-1">
-            <button type="button" onClick={props.onOpenDetails} className="flex-1 rounded-lg bg-brand px-3 py-2 text-sm font-bold text-white hover:bg-brand-hover">Open full details</button>
+            <button type="button" onClick={() => props.onOpenDetails()} className="flex-1 rounded-lg bg-brand px-3 py-2 text-sm font-bold text-white hover:bg-brand-hover">Open full details</button>
             {props.canEdit ? <button type="button" onClick={props.onDeletePin} disabled={pin.locked} title={pin.locked ? "Unlock the pin first" : undefined} className="rounded-lg border border-line px-3 py-2 text-sm font-semibold text-danger-fg hover:bg-danger-soft disabled:opacity-50">Delete</button> : null}
           </div>
         </>

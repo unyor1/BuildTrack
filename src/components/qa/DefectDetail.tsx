@@ -18,6 +18,7 @@ import { submittedChecklistItems, type ChecklistRecord } from "../../lib/qaCheck
 import { workItemPath } from "../../lib/workItemModel"
 import { PhotoGrid } from "../PhotoGallery"
 import { LinkedClientReportEvidence } from "./SnagParts"
+import OpenOnBlueprint from "../OpenOnBlueprint"
 import type { PinPhoto } from "../../lib/blueprints"
 
 const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString("en-PH", { timeZone: "Asia/Manila", day: "numeric", month: "short", year: "numeric", hour: "numeric", minute: "2-digit" }) : "-")
@@ -39,6 +40,7 @@ export default function DefectDetail({
   onClose,
   onChanged,
   onOpenInspection,
+  onPlan = false,
 }: {
   defect: Defect
   project: { id: string; name: string; code: string; location?: string | null }
@@ -50,6 +52,7 @@ export default function DefectDetail({
   onClose: () => void
   onChanged: () => void | Promise<void>
   onOpenInspection?: (inspectionId: string) => void
+  onPlan?: boolean // opened from the pin panel on the blueprint: no link back to the plan
 }) {
   const toast = useToast()
   const { profile } = useAuth()
@@ -164,8 +167,9 @@ export default function DefectDetail({
           <Chip tone={dueTone[due.state]}>{dueText(defect, today)}</Chip>
           {defect.inspection_id && onOpenInspection ? <button type="button" onClick={() => onOpenInspection(defect.inspection_id as string)} className="text-xs font-bold text-brand-text underline">View the inspection</button> : null}
           {workItems.map((row) => <button key={row.id} type="button" className="text-xs font-bold text-brand-text underline" onClick={() => openItem(row.id)}>Open work item: {row.text}</button>)}
-          {defect.pin_id && !viaPackage ? <button type="button" className="text-xs font-bold text-brand-text underline" onClick={() => followLink(`/${canVerify ? "engineer/annotation" : "foreman/daily-work"}?project=${defect.project_id}&pin=${defect.pin_id}`, defect.project_id)}>Open on the plan</button> : null}
+          {defect.pin_id && !viaPackage && !onPlan ? <OpenOnBlueprint projectId={defect.project_id} pinId={defect.pin_id} section="issues" className="text-xs font-bold text-brand-text underline" /> : null}
         </div>
+        {defect.checklist_name ? <p className="text-xs font-semibold text-fg-muted">Raised on checklist item: {defect.checklist_name}{defect.checklist_item_id ? "" : " (item since removed from the checklist)"}</p> : !defect.pin_id ? <p className="text-xs font-semibold text-fg-muted">Project-wide NCR (not linked to one pin)</p> : null}
 
         {editing ? (
           <div className="space-y-3 rounded-xl border border-brand p-3">

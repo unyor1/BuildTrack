@@ -107,7 +107,7 @@ export function workItemStage(input: StageInput): StageView {
   }
 
   if (!input.criteriaApproved) return view("preparing", "Engineer", "Inspection criteria needed.", `Engineer adds the inspection criteria to ${name}.`, "approve_criteria")
-  if (input.eligiblePhotos === 0) return view("preparing", "Foreman", "Evidence needed.", `Foreman adds photos of ${name}, then submits for QA.`, "add_evidence", "No eligible photo: away-from-site or wrong-time photos do not count.")
+  if (input.eligiblePhotos === 0) return view("preparing", "Foreman", "Evidence needed.", `Foreman adds photos of ${name}, then submits for QA.`, "add_evidence", "No eligible photo: photos with a wrong phone clock or older than 3 days do not count.")
   return view("preparing", "Foreman", "Not submitted.", `Foreman submits ${name} for QA.`, "submit")
 }
 

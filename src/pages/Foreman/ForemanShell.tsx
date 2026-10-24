@@ -11,6 +11,7 @@ import type { ForemanNavigate, ForemanPageKey } from "./types"
 const labels: Record<ForemanPageKey, { label: string; icon: AdminIconName }> = {
   projects: { label: "My projects", icon: "building" },
   dashboard: { label: "Dashboard", icon: "grid" },
+  calendar: { label: "Project Calendar", icon: "calendar" },
   "daily-work": { label: "My Work", icon: "blueprint" },
   "daily-report": { label: "Daily Progress Report", icon: "file" },
   "photo-documentation": { label: "Photo Documentation", icon: "camera" },
@@ -49,7 +50,7 @@ export default function ForemanShell({
       persona="foreman"
       workspace="Field operations"
       groups={inProject ? [
-        { label: "Today", items: [item("dashboard"), item("daily-work"), item("daily-report"), item("photo-documentation")] },
+        { label: "Today", items: [item("dashboard"), item("calendar"), item("daily-work"), item("daily-report"), item("photo-documentation")] },
         { label: "Quality", items: [item("quality-control"), item("issues"), item("qa-workflow")] },
         { label: "Crew", items: [item("attendance")] },
       ] : [{ label: "Workspace", items: [item("projects")] }]}

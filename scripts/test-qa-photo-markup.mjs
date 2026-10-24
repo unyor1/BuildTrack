@@ -212,4 +212,92 @@ reset(); render(Viewer, { ...viewerProps, photo: { ...viewerProps.photo, annotat
 assert.ok(!has(node => node.type === "button" && /View original|Show markup/.test(text(node))), "photos without markup get no toggle")
 assert.equal(find(node => node.type === "img").props.onLoad, undefined)
 
-console.log("QA photo markup: upload keeps the shrunk original with validated markup, strip dialog add/retry/cancel, cropped thumbnail overlay, picker prepare mode, viewer overlay toggle")
+// ---- Work item / correction photos (Foreman Corrections, work item checklist): the markup dialog before upload ----
+const Dialog = (await compile("../src/components/issues/MarkupUploadDialog.tsx")).default
+let dialogUploads = [], dialogDone = [], dialogClosed = 0, failName = "b.jpg"
+const toJpeg = async file => { if (!file.type.startsWith("image/")) throw new Error("not an image"); return new File(["jpg"], file.name.replace(/\.\w+$/, ".jpg"), { type: "image/jpeg" }) }
+const dialogProps = {
+  files: [photoFile("a.png"), photoFile("b.png"), new File(["notes"], "notes.txt", { type: "text/plain" })], title: "Add photos: FLOOR correction", prepare: toJpeg,
+  onUpload: async draft => { dialogUploads.push(draft); if (draft.file.name === failName) throw new Error("Network lost"); return draft.file.name === "a.jpg" ? "uploaded" : "queued" },
+  onDone: result => { dialogDone.push(result) }, onClose: () => { dialogClosed++ },
+}
+reset(); render(Dialog, dialogProps)
+assert.match(text(tree), /Preparing the photos/, "the chosen photos are shrunk first")
+await settle(); render(Dialog, dialogProps)
+let workPicker = find(node => node.type?.name === "IssuePhotoPicker")
+assert.deepEqual(workPicker.props.photos.map(photo => photo.file.name), ["a.jpg", "b.jpg"]); assert.equal(workPicker.props.photos[0].caption, "")
+assert.equal(workPicker.props.prepare, toJpeg, "photos added inside the dialog are shrunk the same way"); assert.equal(workPicker.props.captionLimit, 200)
+assert.match(text(find(node => node.props?.role === "alert")), /notes\.txt: not an image/)
+workPicker.props.onChange([{ ...workPicker.props.photos[0], annotations: markup, caption: "Joint fixed" }, workPicker.props.photos[1]]); render(Dialog, dialogProps)
+button("Add 2 photos").props.onClick(); await settle(); render(Dialog, dialogProps)
+assert.deepEqual(dialogUploads[0].annotations, markup); assert.deepEqual(dialogDone, [{ uploaded: 1, queued: 0 }]); assert.equal(dialogClosed, 0)
+assert.deepEqual(find(node => node.type?.name === "IssuePhotoPicker").props.photos.map(photo => photo.file.name), ["b.jpg"], "only the failed photo stays")
+assert.match(text(find(node => node.props?.role === "alert")), /A photo was not added: Network lost\./)
+failName = null
+button("Add photo").props.onClick(); await settle()
+assert.deepEqual(dialogDone[1], { uploaded: 0, queued: 1 }, "a photo kept on the device for later counts as done"); assert.equal(dialogClosed, 1)
+calls.confirms.length = 0; confirmAnswer = false
+reset(); render(Dialog, { ...dialogProps, files: [photoFile("c.png")] }); await settle(); render(Dialog, { ...dialogProps, files: [photoFile("c.png")] })
+workPicker = find(node => node.type?.name === "IssuePhotoPicker")
+workPicker.props.onChange([{ ...workPicker.props.photos[0], annotations: markup }]); render(Dialog, { ...dialogProps, files: [photoFile("c.png")] })
+button("Cancel").props.onClick(); await settle()
+assert.equal(calls.confirms.length, 1); assert.equal(dialogClosed, 1, "keeping the markup leaves the dialog open")
+confirmAnswer = true
+
+// The Corrections / work item upload button: chosen photos open the dialog; each photo goes up with its caption and markup,
+// or waits on the device (offline queue) with them.
+const queued = [], pinInserts = [], pinStorage = []
+let pinInsertError = null
+Object.assign(deps, {
+  compressPhoto: async () => new Blob(["small"], { type: "image/jpeg" }), enqueue: async input => { queued.push(input) }, isNetworkProblem: () => false,
+  dbMessage: error => error.message, formatStamp: () => "", useSignedUrl: () => ({ url: null, failed: false }), lazy: () => null,
+  useToast: () => ({ success: (...args) => calls.toasts.push(["success", ...args]), error: (...args) => calls.toasts.push(["error", ...args]), info: (...args) => calls.toasts.push(["info", ...args]) }),
+})
+deps.supabase.storage = { from: bucket => ({ upload: async path => { pinStorage.push(["upload", bucket, path]); return { error: null } }, remove: async paths => { pinStorage.push(["remove", bucket, paths]); return { error: null } } }) }
+deps.supabase.from = table => ({ insert: async row => { pinInserts.push({ table, row }); return { error: pinInsertError } } })
+const Parts = await compile("../src/components/editor/PinParts.tsx", { "../../lib/issueMarkup": new URL("../src/lib/issueMarkup.ts", import.meta.url).href })
+const shrunk = await Parts.preparePinPhoto(photoFile("IMG_7.HEIC.png"))
+assert.equal(shrunk.type, "image/jpeg"); assert.equal(shrunk.name, "IMG_7.HEIC.jpg")
+await assert.rejects(Parts.preparePinPhoto(new File(["x"], "plan.pdf", { type: "application/pdf" })), /not an image/)
+let added = 0
+const pinWork = { id: "W", project_id: "P", title: "LAUNDRY" }
+const buttonProps = { pin: pinWork, itemId: "I", label: "FLOOR correction", attemptId: "A", onAdded: () => { added++ } }
+reset(); render(Parts.ChecklistUploadButton, buttonProps)
+const inputs = () => all(tree).filter(node => node.type === "input")
+inputs()[0].props.ref.current = { value: "x" }; inputs()[1].props.ref.current = { value: "x" }
+inputs()[0].props.onChange({ target: { files: [photoFile("a.jpg"), photoFile("b.jpg")] } }); render(Parts.ChecklistUploadButton, buttonProps)
+assert.equal(inputs()[0].props.ref.current.value, "", "the file input is cleared")
+const workDialog = find(node => node.type?.name === "MarkupUploadDialog")
+assert.equal(workDialog.props.title, "Add photos: FLOOR correction"); assert.equal(workDialog.props.files.length, 2); assert.equal(workDialog.props.prepare, Parts.preparePinPhoto)
+assert.ok(all(tree).filter(node => node.type === "button").every(node => node.props.disabled), "no second batch while one is being marked up")
+Object.defineProperty(globalThis, "navigator", { value: { onLine: true }, configurable: true, writable: true })
+const draft = { id: "d1", file: new File(["jpg"], "a.jpg", { type: "image/jpeg" }), url: "blob:a", caption: "  Joint fixed  ", annotations: markup }
+assert.equal(await workDialog.props.onUpload(draft), "uploaded")
+assert.equal(pinInserts[0].table, "pin_photos"); assert.equal(pinInserts[0].row.checklist_item_id, "I"); assert.equal(pinInserts[0].row.qa_attempt_id, "A", "correction photos stay linked to their correction")
+assert.equal(pinInserts[0].row.caption, "Joint fixed"); assert.deepEqual(pinInserts[0].row.annotations, markup); assert.equal(pinInserts[0].row.taken_at, stamp.taken_at)
+assert.match(pinStorage[0][2], /^P\/W\/[0-9a-f-]+\.jpg$/)
+await workDialog.props.onUpload({ ...draft, caption: "", annotations: [] })
+assert.ok(!("annotations" in pinInserts[1].row) && !("caption" in pinInserts[1].row), "a plain photo sends neither")
+await assert.rejects(workDialog.props.onUpload({ ...draft, annotations: [{ kind: "script" }] }), /Invalid annotation/)
+pinInsertError = { message: "Awaiting Engineer inspection or verified: checklist and evidence are locked" }
+await assert.rejects(workDialog.props.onUpload(draft), /evidence are locked/); assert.equal(pinStorage.at(-1)[0], "remove", "a refused record removes its file again")
+pinInsertError = null
+globalThis.navigator.onLine = false
+assert.equal(await workDialog.props.onUpload(draft), "queued")
+assert.equal(queued[0].kind, "pin_photo"); assert.deepEqual(queued[0].payload.annotations, markup); assert.equal(queued[0].payload.caption, "Joint fixed"); assert.equal(queued[0].payload.blob, draft.file); assert.equal(queued[0].payload.attemptId, "A")
+await workDialog.props.onDone({ uploaded: 1, queued: 1 })
+assert.equal(added, 1); assert.ok(calls.toasts.some(toast => toast[1] === "1 photo added")); assert.ok(calls.toasts.some(toast => toast[1] === "1 photo saved on this device"))
+workDialog.props.onClose(); render(Parts.ChecklistUploadButton, buttonProps)
+assert.ok(!has(node => node.type?.name === "MarkupUploadDialog"))
+
+// The offline queue later sends the photo with its caption and markup; old queued photos (no markup) still send.
+const queueInserts = []
+Object.assign(deps, { sendOrder: rows => rows, summarizeQueue: () => ({}), verdictFor: () => "retry", backoffSeconds: () => 1, MAX_ATTEMPTS: 5, kindLabel: {} })
+deps.supabase.from = table => ({ insert: async row => { queueInserts.push({ table, row }); return { error: null } } })
+const Queue = await compile("../src/lib/offlineQueue.ts")
+assert.equal(await Queue.sendQueuedItem({ kind: "pin_photo", payload: { ...queued[0].payload } }), null)
+assert.deepEqual(queueInserts[0].row.annotations, markup); assert.equal(queueInserts[0].row.caption, "Joint fixed"); assert.equal(queueInserts[0].row.qa_attempt_id, "A")
+await Queue.sendQueuedItem({ kind: "pin_photo", payload: { projectId: "P", pinId: "W", itemId: "I", attemptId: null, path: "P/W/old.jpg", blob: new Blob(["x"]), stamp } })
+assert.ok(!("annotations" in queueInserts[1].row) && !("caption" in queueInserts[1].row), "photos queued before markup existed send as before")
+
+console.log("QA photo markup: work item / correction photos marked up before upload (dialog prepare/add/retry/cancel, caption + markup + attempt link, offline queue keeps markup), upload keeps the shrunk original with validated markup, strip dialog add/retry/cancel, cropped thumbnail overlay, picker prepare mode, viewer overlay toggle")

@@ -8,6 +8,7 @@ import type { ClientNavigate, ClientPageKey } from "./types"
 
 const labels: Record<ClientPageKey, { label: string; icon: AdminIconName }> = {
   overview: { label: "Overview & progress", icon: "grid" },
+  calendar: { label: "Project Calendar", icon: "calendar" },
   blueprint: { label: "Blueprint & issues", icon: "blueprint" },
   ticket: { label: "Report a Problem", icon: "pin" },
   "site-logs": { label: "Site logs & media", icon: "history" },
@@ -43,7 +44,7 @@ export default function ClientShell({
       persona="client"
       workspace="Client portal"
       groups={[
-        { label: "Your project", items: [item("overview"), item("blueprint"), item("site-logs")] },
+        { label: "Your project", items: [item("overview"), item("calendar"), item("blueprint"), item("site-logs")] },
         { label: "Talk to the team", items: [item("ticket"), item("communication")] },
       ]}
       active={activePage}

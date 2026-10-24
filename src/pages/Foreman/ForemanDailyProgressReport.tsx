@@ -69,6 +69,28 @@ export default function ForemanDailyProgressReport(_: ForemanPageProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId, date, existing?.id, existing?.updated_at])
 
+  // "Add this pin to today's daily report" from a pin panel: ?linkpin=<pin>[&linkitem=<item>] adds that work to today's draft once
+  // today's report is known (an existing draft is never replaced). The Foreman still saves or submits it.
+  const linkRequest = useRef<ReportWork | null>((() => {
+    const params = new URLSearchParams(window.location.search)
+    const pin = params.get("linkpin")
+    return pin ? { pin_id: pin, item_id: params.get("linkitem") || null } : null
+  })())
+  useEffect(() => {
+    const wanted = linkRequest.current
+    if (!wanted || loading || date !== today || !pins.length) return
+    linkRequest.current = null
+    const url = new URL(window.location.href)
+    url.searchParams.delete("linkpin"); url.searchParams.delete("linkitem")
+    window.history.replaceState({}, "", url)
+    const pin = pins.find((row) => row.id === wanted.pin_id && row.project_id === projectId && row.category !== "note")
+    if (!pin) return toast.error("Work pin not found", "Choose the linked work in the report.")
+    if (readOnly) return toast.info("Today's report is already submitted", `${pin.title} was not added. The Engineer can return the report for changes.`)
+    dirty.current = true
+    setForm((current) => current.linked_work.some((row) => row.pin_id === wanted.pin_id && (row.item_id ?? null) === wanted.item_id) ? current : { ...current, linked_work: [...current.linked_work, wanted] })
+    toast.success("Work pin added to today's report", workItems.some((item) => item.pin_id === pin.id) && !wanted.item_id ? `Choose the checklist item worked on for ${pin.title}, then save.` : "Save or submit the report to keep it.")
+  }, [loading, date, today, pins, projectId, readOnly, workItems, toast])
+
   const validate = (submitting: boolean) => {
     const found: typeof errors = {}
     const workers = Number(form.workers_count || 0)

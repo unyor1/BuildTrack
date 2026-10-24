@@ -9,6 +9,7 @@ import type { AdminNavigate } from "./types"
 
 const tabs: { key: ProjectSection; label: string }[] = [
   { key: "project-overview", label: "Project Overview" },
+  { key: "calendar", label: "Project Calendar" },
   { key: "blueprint-upload", label: "Blueprint Upload" },
   { key: "blueprint-mapping", label: "Blueprint Mapping" },
   { key: "blueprint-progress", label: "Progress Tracking" },

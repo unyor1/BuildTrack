@@ -8,20 +8,19 @@ import { severityLabels, statusLabels } from "../../lib/blueprints"
 import { daysBetween, downloadCsv, isOverdue, byZone, summarize, toCsv } from "../../lib/progress"
 import { printHtml, reportHtml } from "../../lib/printReport"
 import WeeklyReportModal from "../../components/WeeklyReportModal"
+import ProjectQuestions from "../../components/ProjectQuestions"
 import { useDefects, useInspections } from "../../lib/qa"
 import { getSelectedProjectId } from "../../lib/projects"
 import { useProjectWork } from "../../lib/projectWork"
-import { dailyReportHtml, reportDateLong, useDailyReports, useQuestions, weatherLabels, type DailyReport, type ProjectQuestion } from "../../lib/reports"
+import { dailyReportHtml, reportDateLong, useDailyReports, useQuestions, weatherLabels, type DailyReport } from "../../lib/reports"
 import { linkedWorkLabel, type ReportWork } from "../../lib/reportFormat"
 import { useProjectWorkItems } from "../../lib/dailyPhotos"
-import { supabase } from "../../lib/supabase"
 import { useToast } from "../../lib/toast"
 import type { EngineerPageProps } from "./types"
 import { filterSiteLogs, siteLogReports, type SiteReportState } from "../../lib/siteReportsModel"
 
 type Tab = "reports" | "questions"
 const initialTab = (): Tab => (new URLSearchParams(window.location.search).get("tab") === "questions" ? "questions" : "reports")
-const when = (iso: string) => new Date(iso).toLocaleString("en-PH", { timeZone: "Asia/Manila", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })
 
 // Site logs (the foreman's submitted daily reports), client questions to answer, and a printable progress report.
 export default function EngineerReports({ onNavigate }: EngineerPageProps) {
@@ -168,7 +167,7 @@ export default function EngineerReports({ onNavigate }: EngineerPageProps) {
               )}
             </>
           ) : (
-            <Questions questions={questions} loading={questionsLoading} error={questionsError} nameOf={work.nameOf} pinTitle={(id) => work.pins.find((pin) => pin.id === id)?.title ?? null} pinPath={id => { const pin = work.pins.find(pin => pin.id === id); return pin ? `/engineer/annotation?project=${encodeURIComponent(pin.project_id)}&sheet=${encodeURIComponent(pin.blueprint_id)}&pin=${encodeURIComponent(pin.id)}` : null }} onAnswered={reloadQuestions} />
+            <ProjectQuestions questions={questions} loading={questionsLoading} error={questionsError} nameOf={work.nameOf} pinOf={(id) => { const pin = work.pins.find((row) => row.id === id); return pin ? { title: pin.title, sheetId: pin.blueprint_id } : null }} onAnswered={reloadQuestions} />
           )}
         </>
       )}
@@ -189,54 +188,5 @@ export default function EngineerReports({ onNavigate }: EngineerPageProps) {
         />
       ) : null}
     </div>
-  )
-}
-
-function Questions({ questions, loading, error, nameOf, pinTitle, pinPath, onAnswered }: { questions: ProjectQuestion[]; loading: boolean; error: string; nameOf: (id: string | null) => string; pinTitle: (id: string) => string | null; pinPath: (id: string) => string | null; onAnswered: () => Promise<void> }) {
-  const toast = useToast()
-  const [drafts, setDrafts] = useState<Record<string, string>>({})
-  const [busy, setBusy] = useState<string | null>(null)
-  const [wanted, setWanted] = useState(() => new URLSearchParams(window.location.search).get("question"))
-  useEffect(() => { const changed = () => setWanted(new URLSearchParams(window.location.search).get("question")); window.addEventListener("popstate", changed); return () => window.removeEventListener("popstate", changed) }, [])
-  useEffect(() => { if (wanted && questions.some(question => question.id === wanted)) document.getElementById(`client-question-${wanted}`)?.scrollIntoView({ block: "center", behavior: "smooth" }) }, [wanted, questions])
-  const sorted = [...questions].sort((a, b) => Number(Boolean(a.answer)) - Number(Boolean(b.answer)) || b.created_at.localeCompare(a.created_at))
-
-  const answer = async (question: ProjectQuestion) => {
-    const text = (drafts[question.id] ?? "").trim()
-    if (!text) return toast.error("Write an answer first")
-    setBusy(question.id)
-    const { error: rpcError } = await supabase.rpc("answer_question", { p_id: question.id, p_answer: text }).then(result => result, () => ({ error: { message: "Connection interrupted. Check the saved answer before trying again." } }))
-    setBusy(null)
-    if (rpcError) return toast.error("Not sent", rpcError.message)
-    toast.success("Answer sent", `${nameOf(question.author_id)} is notified`)
-    setDrafts((current) => ({ ...current, [question.id]: "" }))
-    await onAnswered()
-  }
-
-  if (loading) return <SkeletonList rows={3} label="Loading questions" />
-  if (error) return <p role="alert" className="rounded-lg bg-danger-soft px-4 py-2 text-sm text-danger-fg">{error}</p>
-  if (!sorted.length) return <EmptyState title="No questions from the client">Questions the client asks about the project or a pin show up here, and you get a notification.</EmptyState>
-  return (
-    <ul className="space-y-3">
-      {sorted.map((question) => (
-        <li id={`client-question-${question.id}`} key={question.id} className={`rounded-xl border bg-surface p-4 ${question.answer && question.id !== wanted ? "border-line" : "border-brand"} ${question.id === wanted ? "ring-1 ring-brand" : ""}`}>
-          <p className="text-xs text-fg-muted">{nameOf(question.author_id)} • {when(question.created_at)}{question.pin_id && pinTitle(question.pin_id) ? ` • about "${pinTitle(question.pin_id)}"` : ""}</p>
-          <p className="mt-1 whitespace-pre-wrap text-sm font-semibold">{question.question}</p>
-          {question.pin_id && pinPath(question.pin_id) ? <a className="mt-2 inline-block text-xs font-bold text-brand-text underline" href={pinPath(question.pin_id)!}>Open linked work pin</a> : null}
-          {question.answer ? (
-            <div className="mt-3 rounded-lg bg-surface-muted p-3 text-sm">
-              <p className="text-xs font-bold text-brand-text">Answered by {nameOf(question.answered_by)} • {question.answered_at ? when(question.answered_at) : ""}</p>
-              <p className="mt-1 whitespace-pre-wrap">{question.answer}</p>
-            </div>
-          ) : (
-            <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-              <label className="sr-only" htmlFor={`answer-${question.id}`}>Answer</label>
-              <textarea id={`answer-${question.id}`} rows={2} maxLength={2000} value={drafts[question.id] ?? ""} onChange={(event) => setDrafts((current) => ({ ...current, [question.id]: event.target.value }))} placeholder="Write a clear answer in plain language." className={`${inputClass} flex-1`} />
-              <button type="button" className={buttonPrimary + " self-end"} disabled={busy === question.id} onClick={() => void answer(question)}>{busy === question.id ? "Sending..." : "Send answer"}</button>
-            </div>
-          )}
-        </li>
-      ))}
-    </ul>
   )
 }

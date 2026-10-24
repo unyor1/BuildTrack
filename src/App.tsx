@@ -41,6 +41,7 @@ const EngineerAssignments = lazy(() => import("./pages/Engineer/EngineerAssignme
 const EngineerReports = lazy(() => import("./pages/Engineer/EngineerReports"))
 const EngineerQa = lazy(() => import("./pages/Engineer/EngineerQa"))
 const EngineerChecklists = lazy(() => import("./pages/Engineer/EngineerChecklists"))
+const ProjectCalendarPage = lazy(() => import("./pages/ProjectCalendarPage"))
 import type { EngineerPageKey } from "./pages/Engineer/types"
 import ForemanShell from "./pages/Foreman/ForemanShell"
 const ForemanProjects = lazy(() => import("./pages/Foreman/ForemanProjects"))
@@ -103,6 +104,7 @@ function pageFromPath(): Page {
       "access-review",
       "backup",
       "qa-checklists",
+      "calendar",
     ]
     if (validKeys.includes(key)) return `admin/${key}`
   }
@@ -123,6 +125,7 @@ function pageFromPath(): Page {
       "reports",
       "qa",
       "checklists",
+      "calendar",
     ]
     if (validKeys.includes(key)) return `engineer/${key}`
   }
@@ -141,6 +144,7 @@ function pageFromPath(): Page {
       "quality-control",
       "qa-workflow",
       "issues",
+      "calendar",
     ]
     // Corrective Action was merged into Corrections (issues): old links and bookmarks still land there.
     if ((key as string) === "corrective-action") {
@@ -160,6 +164,7 @@ function pageFromPath(): Page {
       "ticket",
       "site-logs",
       "communication",
+      "calendar",
     ]
     if (validKeys.includes(key)) return `client/${key}`
   }
@@ -287,6 +292,7 @@ export default class App extends Component<Record<string, never>, AppState> {
         "access-review": <AccessReview {...pageProps} />,
         backup: <ProjectBackup {...pageProps} />,
         "qa-checklists": <AdminQaChecklists {...pageProps} />,
+        calendar: <ProjectCalendarPage role="admin" />,
       }[activePage]
       return (
         <AdminShell activePage={activePage} onNavigate={this.navigateAdmin}>
@@ -314,6 +320,7 @@ export default class App extends Component<Record<string, never>, AppState> {
         reports: <EngineerReports {...pageProps} />,
         qa: <EngineerQa {...pageProps} />,
         checklists: <EngineerChecklists {...pageProps} />,
+        calendar: <ProjectCalendarPage role="engineer" />,
       }[activePage]
       return (
         <EngineerShell
@@ -340,6 +347,7 @@ export default class App extends Component<Record<string, never>, AppState> {
         "quality-control": <ForemanQualityControl {...pageProps} />,
         "qa-workflow": <ForemanQAWorkflow {...pageProps} />,
         issues: <ForemanIssueTracking {...pageProps} />,
+        calendar: <ProjectCalendarPage role="foreman" />,
       }[activePage]
       return (
         <ForemanShell activePage={activePage} onNavigate={this.navigateForeman}>
@@ -364,6 +372,7 @@ export default class App extends Component<Record<string, never>, AppState> {
         ticket: <ClientTicketSubmission {...pageProps} />,
         "site-logs": <ClientSiteLogs {...pageProps} />,
         communication: <ClientCommunication {...pageProps} />,
+        calendar: <ProjectCalendarPage role="client" />,
       }[activePage]
       return (
         <ClientShell activePage={activePage} onNavigate={this.navigateClient}>

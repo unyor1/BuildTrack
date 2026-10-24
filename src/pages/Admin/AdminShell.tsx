@@ -18,6 +18,7 @@ export const pageTitles: Record<AdminPageKey, string> = {
   "blueprint-progress": "Blueprint Progress Tracking",
   "blueprint-version": "Blueprint Version Control",
   "project-overview": "Project Overview",
+  calendar: "Project Calendar",
   invites: "Invitation Codes",
   "audit-log": "Audit Log",
   settings: "System Settings",

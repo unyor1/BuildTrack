@@ -5,6 +5,7 @@ import { EmptyState, PageHead, inputClass } from "../../components/ui/PageParts"
 import { SkeletonList } from "../../components/ui/Skeleton"
 import { severityChip, severityLabels, statusChip, statusLabels, type Pin, type PinStatus } from "../../lib/blueprints"
 import { followLink } from "../../lib/notifications"
+import { pinPlanPath } from "../../lib/pinRecordsModel"
 import { isOverdue } from "../../lib/progress"
 import { getSelectedProjectId } from "../../lib/projects"
 import { useProjectWork } from "../../lib/projectWork"
@@ -99,7 +100,7 @@ export default function EngineerAssignments(_: EngineerPageProps) {
               {shown.map(pin => <AssignmentRow key={pin.id} pin={pin} sheet={work.sheetOf(pin.blueprint_id)} assignee={work.nameOf(pin.assigned_to)}
                 foremen={foremen.map(member => ({ id: member.user_id, name: member.full_name }))} late={isOverdue(pin, work.today)}
                 saving={saving === pin.id} busy={saving !== null} onAssign={target => void assign(pin.id, target)}
-                onOpen={() => followLink(`/engineer/annotation?project=${pin.project_id}&sheet=${pin.blueprint_id}&pin=${pin.id}`, pin.project_id)} />)}
+                onOpen={() => followLink(pinPlanPath("engineer", { projectId: pin.project_id, pinId: pin.id, sheetId: pin.blueprint_id }), pin.project_id)} />)}
             </ul>
           </section>}
         </div>}

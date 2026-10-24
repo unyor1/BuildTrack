@@ -11,6 +11,7 @@ export type GalleryPhoto = {
   checklist?: { id: string; text: string; done: boolean; remark: string | null; done_at: string | null } | null
   work?: { title: string; description: string | null; status: string } | null
   report?: { report_date: string; status: string; work_done: string } | null
+  qa_attempt_id?: string | null // a checklist photo added to a correction (resubmission), not to the original submission
 }
 
 export type PhotoDates = { from: string; to: string }

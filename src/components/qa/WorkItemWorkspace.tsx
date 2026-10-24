@@ -9,6 +9,7 @@ import WorkChecklistEditor from "./WorkChecklistEditor"
 import QaRequirements from "./QaRequirements"
 import CorrectionForm from "./CorrectionForm"
 import DefectDetail from "./DefectDetail"
+import OpenOnBlueprint from "../OpenOnBlueprint"
 import InspectionDetail from "./InspectionDetail"
 import QaAttemptHistory from "./QaAttemptHistory"
 import SubmittedEvidence from "./SubmittedEvidence"
@@ -18,7 +19,6 @@ import { useAuth } from "../../lib/auth"
 import { useConfirm } from "../../lib/confirm"
 import { useToast } from "../../lib/toast"
 import { formatStamp, type PinPhoto } from "../../lib/blueprints"
-import { followLink } from "../../lib/notifications"
 import { photoEligible, photoPreviewBlocked } from "../../lib/photoStamp"
 import { manilaToday } from "../../lib/progress"
 import { useProject, useProjectTeam } from "../../lib/projects"
@@ -150,7 +150,7 @@ export default function WorkItemWorkspace({ itemId, onClose, onChanged, fromPlan
 
   const footer = <>
     <button type="button" className={buttonSecondary} onClick={onClose}>Close</button>
-    {!fromPlan ? <button type="button" className={buttonSecondary} onClick={() => followLink(`/${engineer ? "engineer/annotation" : "foreman/daily-work"}?project=${pin.project_id}&pin=${pin.id}`, pin.project_id)}>Open on the plan</button> : null}
+    {!fromPlan ? <OpenOnBlueprint projectId={pin.project_id} pinId={pin.id} sheetId={pin.blueprint_id} section="checklist" /> : null}
     {engineer && (item.review_status === "for_review" || item.review_status === "verified") && !stage.open ? <button type="button" className={buttonSecondary} disabled={busy} onClick={() => setReturning(true)}>{item.review_status === "verified" ? `Reopen ${name}` : `Return ${name}`}</button> : null}
     {primary}
     {engineer && item.review_status === "for_review" && current?.status === "passed" ? <button type="button" className={buttonPrimary} disabled={busy || Boolean(completionBlock)} title={completionBlock || undefined} onClick={() => void complete()}>Complete checklist</button> : null}
@@ -195,7 +195,7 @@ export default function WorkItemWorkspace({ itemId, onClose, onChanged, fromPlan
           ) : view.stage === "correction" ? <p className="text-sm text-fg-muted">The Foreman records the correction here once: remarks, new photos and the NCRs it answers. You then review the re-inspection and those NCRs together.</p> : null}
           {otherNcrs.length ? <div>
             <h3 className={heading}>Other NCRs on {pin.title} (block completion only)</h3>
-            <ul className="space-y-1.5">{otherNcrs.map((row) => <li key={row.id}><button type="button" onClick={() => setDefectOpen(row.id)} className="flex w-full flex-wrap items-center gap-2 rounded-lg border border-line px-3 py-2 text-left text-sm hover:bg-surface-muted"><strong>{ncrRef(row.number)}</strong><span className="min-w-0 flex-1 truncate">{row.title}</span><Chip tone={defectTone[row.status]}>{defectStatusLabels[row.status]}</Chip></button></li>)}</ul>
+            <ul className="space-y-1.5">{otherNcrs.map((row) => <li key={row.id}><button type="button" onClick={() => setDefectOpen(row.id)} className="flex w-full flex-wrap items-center gap-2 rounded-lg border border-line px-3 py-2 text-left text-sm hover:bg-surface-muted"><strong>{ncrRef(row.number)}</strong><span className="min-w-0 flex-1 truncate">{row.title}</span>{row.checklist_item_id === item.id ? <span className="rounded-full bg-brand-soft px-2 py-0.5 text-[11px] font-bold text-brand-text">Raised on this item</span> : row.checklist_name ? <span className="text-[11px] text-fg-muted">{row.checklist_name}</span> : null}<Chip tone={defectTone[row.status]}>{defectStatusLabels[row.status]}</Chip></button></li>)}</ul>
           </div> : null}
         </section>
 

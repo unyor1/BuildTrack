@@ -9,6 +9,8 @@ import { completionProblem, connectedHistory, headline as itemHeadline, itemAtte
 import { adjustPhotoZoom, changePhotoScope, defaultPhotoDates, emptyPhotoScope, photoDateBounds, photoRangeDates, photoRangeOf, readPhotoDates, readPhotoScope, validPhotoDate, photoTime } from "../src/lib/photoGalleryModel.ts"
 import { foremanTasks, manilaDayRange, reportStatusLabel, taskCounts, taskFilters } from "../src/lib/foremanDashboardModel.ts"
 import { fieldPagePath, fieldShellMode, projectPath, projectSections, readProjectRoute } from "../src/lib/projectRoutes.ts"
+import { checklistText, defectChecklist, inspectionChecklist, panelRole, pinNextActions, pinPlanPath, pinSectionCounts, pinSectionsFor, readPinSection, sectionLabel } from "../src/lib/pinRecordsModel.ts"
+import { changePinLink, emptyPinLink, itemChoices, pinChoices, pinLinkProblem, startPinLink } from "../src/lib/pinPickerModel.ts"
 import { areaSquareMeters, asPoints, bbox, formatArea, lengthMeters, limitPoints, polygonAreaPx, polylineLengthPx, pointsToPath, simplify, translatePoints } from "../src/lib/geometry.ts"
 import { alignMoves, distributeMoves, fitImageBox, resizeFromCorner, resizedBox, inRectangle, isNoop, itemBox, shifted, shiftedTogether, withGroupMembers } from "../src/lib/arrange.ts"
 import { angleFromCenter, arrowHeadPx, cloudPath, constrainAngle, dimensionTickPx, normalizeAngle, rectCorners, snapAngle, toLocalAxes } from "../src/lib/shapes.ts"
@@ -17,7 +19,7 @@ import { symbolByKey, symbolGroups, symbolLibrary } from "../src/lib/symbols.ts"
 import { addDays, byZone, csvEscape, daysBetween, isDueSoon, isOverdue, projectHealth, sCurve, scheduleElapsed, summarize, toCsv } from "../src/lib/progress.ts"
 import { fetchAll } from "../src/lib/paging.ts"
 import { canSearch, hitPath, searchPattern } from "../src/lib/projectSearchModel.ts"
-import { metres, stampFields, stampLabel, stampSummary } from "../src/lib/photoStamp.ts"
+import { metres, photoEligible, photoPreviewBlocked, stampFields, stampLabel, stampSummary } from "../src/lib/photoStamp.ts"
 import { buildWeekly, headline, periodPresets, sCurveSvg, weeklyReportHtml } from "../src/lib/weeklyReport.ts"
 import { escapeHtml, reportHtml } from "../src/lib/printReport.ts"
 import { reportableDates } from "../src/lib/reportFormat.ts"
@@ -28,6 +30,7 @@ import { issuePhotoProblem, issueTab, markupBox, markupCenter, markupProblem, mo
 import { issueChecklistIndex, issueChecklistKey, issueChecklistLabel, issueChecklistOptions, issueChecklistSelectionProblem, WHOLE_PIN_CHECKLIST } from "../src/lib/issueChecklist.ts"
 import { MAX_ATTEMPTS, backoffSeconds, isNetworkProblem, sendOrder, summarizeQueue, verdictFor } from "../src/lib/offlineModel.ts"
 import { pinLink, qrMatrix, qrSvg } from "../src/lib/qr.ts"
+import { allDates, inRange, isFiltered, manilaDayOf, pastPresets, presetOf, presetRange, rangeProblem, rangeSearch, rangeText, readRange, schedulePresets } from "../src/lib/dateRangeModel.ts"
 import { HISTORY_LIMIT, applyMarkupChanges, changeMark, docChanged, markupChanges, markupColors, newDoc, openDocs, photoCounter, recordEdit, redoEdit, removeMark, restyleMark, stepPhoto, textSizes, toolByKey, undoEdit } from "../src/lib/photoEditorModel.ts"
 import { canFormat, decorations, displayLines, labelToSize, mergeFormat, resolveFormat, sanitizeFormat, sizeToLabel, transformText } from "../src/lib/textFormat.ts"
 import { capsulePlacement, rotatedBounds } from "../src/lib/capsule.ts"
@@ -1085,19 +1088,28 @@ test("stamp: every database flag has a clear label; photos from before the stamp
   assert.equal(label("at_site", 40).tone, "good")
   assert.match(label("at_site", 40).detail, /40 m from its centre/)
   assert.equal(label("away_from_site", 2345).text, "Away from site · 2.3 km")
-  assert.equal(label("away_from_site", 2345).tone, "bad")
+  assert.equal(label("away_from_site", 2345).tone, "warn")
+  assert.match(label("away_from_site", 2345).detail, /still counts as evidence/)
   assert.equal(label("no_location").tone, "warn")
   assert.equal(label("no_site_set").tone, "muted")
   assert.equal(label("clock_ahead").tone, "bad")
   assert.equal(label("old_photo").tone, "bad")
   assert.equal(label(null), null)
 })
-test("stamp: the summary line counts failures and missing locations, and is empty when all is well or unstamped", () => {
+test("stamp: the summary line counts wrong times, away photos and missing locations, and is empty when all is well or unstamped", () => {
   const photo = (flag) => ({ stamp_flag: flag, distance_m: null, taken_at: null })
   assert.equal(stampSummary([photo("at_site"), photo("at_site")]), "")
   assert.equal(stampSummary([photo(null), photo(null)]), "")
-  assert.equal(stampSummary([photo("at_site"), photo("away_from_site"), photo("no_location")]), "1 of 3 photos fail the site, time or location check; 1 has no location")
-  assert.equal(stampSummary([photo("old_photo")]), "1 of 1 photo fails the site, time or location check")
+  assert.equal(stampSummary([photo("at_site"), photo("away_from_site"), photo("no_location")]), "1 was taken away from the site; 1 has no location")
+  assert.equal(stampSummary([photo("old_photo")]), "1 of 1 photo has a wrong time and does not count")
+  assert.equal(stampSummary([photo("clock_ahead"), photo("old_photo"), photo("away_from_site"), photo("away_from_site")]), "2 of 4 photos have a wrong time and do not count; 2 were taken away from the site")
+})
+test("stamp: away-from-site photos count as evidence; only an untrusted time keeps a photo out (same as SQL photo_eligible)", () => {
+  const counts = (flag) => photoEligible({ stamp_flag: flag })
+  assert.deepEqual(["at_site", "away_from_site", "no_site_set", "no_location", "clock_ahead", "old_photo", null].map(counts), [true, true, true, true, false, false, true])
+  assert.equal(photoPreviewBlocked("engineer", { stamp_flag: "away_from_site" }), false, "the Engineer can open an away photo")
+  assert.equal(photoPreviewBlocked("engineer", { stamp_flag: "clock_ahead" }), true)
+  assert.equal(photoPreviewBlocked("foreman", { stamp_flag: "clock_ahead" }), false)
 })
 
 // ---- Project search ----
@@ -1353,5 +1365,136 @@ test("Photo markup rotation: optional, bounded, around the mark's own centre; ke
   assert.equal(changeMark(doc,"b",item=>item,false),doc,"no change, no undo step")
   assert.equal(restyleMark(doc,"b",{rotation:30},false).items[0].rotation,30)
   assert.ok(!("rotation" in restyleMark({...doc,items:[{...box,rotation:30}]},"b",{rotation:0},false).items[0]))
+})
+test("Calendar filter: presets are Manila days, weeks run Monday to Sunday, months and years roll over", () => {
+  assert.deepEqual(presetRange("today","2026-10-22"),{from:"2026-10-22",to:"2026-10-22"})
+  assert.deepEqual(presetRange("last7","2026-10-22"),{from:"2026-10-16",to:"2026-10-22"})
+  assert.deepEqual(presetRange("thisWeek","2026-10-22"),{from:"2026-10-19",to:"2026-10-25"},"Thursday 22 Oct belongs to Monday 19 - Sunday 25")
+  assert.deepEqual(presetRange("thisWeek","2026-10-25"),{from:"2026-10-19",to:"2026-10-25"},"Sunday is the last day of its week")
+  assert.deepEqual(presetRange("thisWeek","2026-10-19"),{from:"2026-10-19",to:"2026-10-25"})
+  assert.deepEqual(presetRange("thisMonth","2028-02-10"),{from:"2028-02-01",to:"2028-02-29"},"leap February")
+  assert.deepEqual(presetRange("thisMonth","2026-12-31"),{from:"2026-12-01",to:"2026-12-31"})
+  assert.deepEqual(presetRange("lastMonth","2027-01-05"),{from:"2026-12-01",to:"2026-12-31"},"January looks back into last year")
+  assert.deepEqual(presetRange("last30","2026-10-22"),{from:"2026-09-23",to:"2026-10-22"})
+  assert.deepEqual(presetRange("next30","2026-10-22"),{from:"2026-10-22",to:"2026-11-20"})
+  assert.deepEqual(presetRange("all","2026-10-22"),allDates)
+  assert.equal(presetOf({from:"2026-10-19",to:"2026-10-25"},pastPresets,"2026-10-22"),"thisWeek")
+  assert.equal(presetOf({from:"2026-10-20",to:"2026-10-25"},pastPresets,"2026-10-22"),"custom")
+  assert.equal(presetOf(presetRange("next30","2026-10-22"),pastPresets,"2026-10-22"),"custom","past presets never offer future windows")
+  assert.equal(presetOf(presetRange("next30","2026-10-22"),schedulePresets,"2026-10-22"),"next30")
+})
+test("Calendar filter: timestamps count on their Manila day, due dates as written; records without a date only show unfiltered", () => {
+  assert.equal(manilaDayOf("2026-10-21T16:30:00Z"),"2026-10-22","00:30 Manila is the next day");assert.equal(manilaDayOf("2026-10-21T15:59:00Z"),"2026-10-21")
+  assert.equal(manilaDayOf("2026-10-21"),"2026-10-21");assert.equal(manilaDayOf(null),null);assert.equal(manilaDayOf("not a date"),null)
+  const october={from:"2026-10-01",to:"2026-10-31"}
+  assert.equal(inRange("2026-10-31T15:59:59Z",october),true);assert.equal(inRange("2026-10-31T16:00:00Z",october),false,"1 Nov Manila is outside October")
+  assert.equal(inRange("2026-09-30T16:00:00Z",october),true,"1 Oct 00:00 Manila is inside")
+  assert.equal(inRange("2026-10-15",october),true);assert.equal(inRange(null,october),false,"no date = not in any period")
+  assert.equal(inRange(null,allDates),true,"no filter shows everything");assert.equal(inRange("2026-10-15",{from:"2026-10-15",to:""}),true);assert.equal(inRange("2026-10-14",{from:"2026-10-15",to:""}),false)
+  assert.equal(inRange("2026-10-14",{from:"2026-10-20",to:"2026-10-01"}),true,"an invalid range hides nothing; the filter shows the problem")
+  assert.equal(isFiltered(allDates),false);assert.equal(isFiltered({from:"",to:"2026-10-01"}),true)
+})
+test("Calendar filter: validation, wording and the address keep only real ranges", () => {
+  assert.equal(rangeProblem({from:"2026-10-20",to:"2026-10-01"}),"The end date must be on or after the start date.")
+  assert.equal(rangeProblem({from:"2026-02-30",to:""}),"Choose valid calendar dates.");assert.equal(rangeProblem({from:"2026-10-01",to:"2026-10-01"}),"")
+  assert.equal(rangeText(allDates),"all dates");assert.equal(rangeText({from:"2026-10-05",to:"2026-10-05"}),"5 Oct 2026")
+  assert.equal(rangeText({from:"2026-10-01",to:"2026-10-31"}),"1 Oct 2026 to 31 Oct 2026");assert.equal(rangeText({from:"2026-10-01",to:""}),"1 Oct 2026 onwards");assert.equal(rangeText({from:"",to:"2026-10-31"}),"up to 31 Oct 2026")
+  assert.deepEqual(readRange("?project=p&from=2026-10-01&to=2026-10-31"),{from:"2026-10-01",to:"2026-10-31"})
+  assert.deepEqual(readRange("?from=2026-13-01&to=x"),allDates,"made-up dates are ignored");assert.deepEqual(readRange("?from=2026-10-31&to=2026-10-01"),allDates,"a reversed range is ignored")
+  assert.equal(rangeSearch("?project=p&tab=defects",{from:"2026-10-01",to:""}),"?project=p&tab=defects&from=2026-10-01","other parameters stay")
+  assert.equal(rangeSearch("?project=p&from=2026-10-01&to=2026-10-31",allDates),"?project=p");assert.equal(rangeSearch("?from=2026-10-01",allDates),"")
+})
+test("Pin panel: each role gets its own sections; a link opens a section the role may see, otherwise Details", () => {
+  assert.deepEqual(pinSectionsFor("engineer"), ["details", "checklist", "issues", "reports", "photos", "activity", "communication"])
+  assert.deepEqual(pinSectionsFor("foreman"), ["details", "checklist", "issues", "reports", "photos", "activity"])
+  assert.deepEqual(pinSectionsFor("client"), ["details", "checklist", "issues", "reports", "communication"], "clients: no staff photos, no timeline")
+  assert.ok(!pinSectionsFor("admin").includes("communication"), "admins read records but do not answer clients")
+  assert.equal(sectionLabel("client", "issues"), "My reports"); assert.equal(sectionLabel("engineer", "issues"), "Issues & NCRs")
+  assert.equal(readPinSection("?project=p&pin=x&pintab=issues", "foreman"), "issues")
+  assert.equal(readPinSection("?pintab=activity", "client"), "details", "a client cannot open the timeline by link")
+  assert.equal(readPinSection("?worktab=checklist", "engineer"), "checklist", "older links keep working")
+  assert.equal(readPinSection("?pintab=nonsense", "engineer"), "details")
+  assert.equal(panelRole("super_admin"), "admin"); assert.equal(panelRole("user"), null)
+})
+test("Open on blueprint: each role's plan page with project, sheet, pin and section", () => {
+  const link = { projectId: "P", pinId: "N", sheetId: "S", section: "issues" }
+  assert.equal(pinPlanPath("engineer", link), "/engineer/annotation?project=P&sheet=S&pin=N&pintab=issues")
+  assert.equal(pinPlanPath("foreman", link), "/foreman/daily-work?project=P&sheet=S&pin=N&pintab=issues")
+  assert.equal(pinPlanPath("client", { ...link, section: "reports" }), "/client/blueprint?project=P&sheet=S&pin=N&pintab=reports")
+  assert.equal(pinPlanPath("admin", link), "/admin/projects/P/blueprints?project=P&sheet=S&pin=N&pintab=issues")
+  assert.equal(pinPlanPath("engineer", { projectId: "P", pinId: "N" }), "/engineer/annotation?project=P&pin=N", "details is the default section")
+})
+test("Pin records: an NCR shows its own checklist item, else the items its inspection checked; renames show, removed items keep the saved name", () => {
+  const submissions = [{ inspection_id: "ir1", pin_id: "pin", item_ids: ["floor"], checklist_snapshot: [{ id: "floor", text: "FLOOR", done: true }, { id: "wall", text: "WALL", done: true }] }]
+  const items = [{ id: "floor", text: "FLOOR TILES" }, { id: "door", text: "DOOR" }]
+  const ncr = (extra) => ({ id: "d", number: 1, status: "open", title: "Gap", pin_id: "pin", inspection_id: null, assigned_to: null, due_date: null, ...extra })
+  assert.deepEqual(defectChecklist(ncr({ checklist_item_id: "door", checklist_name: "DOOR (old)" }), submissions, items), [{ id: "door", text: "DOOR" }])
+  assert.deepEqual(defectChecklist(ncr({ checklist_item_id: null, checklist_name: "SKIRTING" }), submissions, items), [{ id: "", text: "SKIRTING" }], "removed item: saved name")
+  assert.deepEqual(defectChecklist(ncr({ inspection_id: "ir1" }), submissions, items), [{ id: "floor", text: "FLOOR TILES" }], "inspection-raised: the request's item, current name")
+  assert.deepEqual(defectChecklist(ncr({ inspection_id: "stage" }), submissions, items), [])
+  assert.equal(checklistText([]), "Whole work pin")
+  const ir = { id: "ir2", number: 2, status: "requested", title: "IR", pin_id: "pin", requested_at: "", requested_by: null, inspector_id: null, work_item_ids: ["door", "gone"] }
+  assert.deepEqual(inspectionChecklist(ir, submissions, items), [{ id: "door", text: "DOOR" }])
+  assert.deepEqual(inspectionChecklist({ ...ir, id: "ir1" }, submissions, items), [{ id: "floor", text: "FLOOR TILES" }])
+})
+test("Pin records: counts and next actions follow the role (Engineer acts, Foreman corrects, Client follows)", () => {
+  const records = {
+    defects: [
+      { id: "a", number: 1, status: "open", title: "Gap", pin_id: "pin", inspection_id: null, assigned_to: "me", due_date: "2026-10-20" },
+      { id: "b", number: 2, status: "for_verification", title: "Crack", pin_id: "pin", inspection_id: null, assigned_to: "me", due_date: null },
+      { id: "c", number: 3, status: "open", title: "Stain", pin_id: "pin", inspection_id: null, assigned_to: null, due_date: null },
+      { id: "d", number: 4, status: "closed", title: "Old", pin_id: "pin", inspection_id: null, assigned_to: "me", due_date: null },
+    ],
+    inspections: [{ id: "i", number: 5, status: "requested", title: "Floor check", pin_id: "pin", requested_at: "", requested_by: null, inspector_id: null }, { id: "j", number: 6, status: "passed", title: "Done", pin_id: "pin", requested_at: "", requested_by: null, inspector_id: null }],
+    snags: [{ id: "s", number: 7, status: "submitted", title: "Noise", fix_stage: null, defect_id: null, created_at: "" }, { id: "t", number: 8, status: "resolved", title: "Fixed", fix_stage: "closed", defect_id: "d", created_at: "" }],
+    issues: 1, questions: [{ id: "q", answer: null, created_at: "" }, { id: "r", answer: "Yes", created_at: "" }], reports: 2,
+  }
+  assert.deepEqual(pinSectionCounts("engineer", records), { issues: 5, reports: 2, communication: 1 })
+  assert.deepEqual(pinSectionCounts("foreman", records), { issues: 4, reports: 2 }, "Foremen do not see client reports or questions")
+  assert.deepEqual(pinSectionCounts("client", records), { issues: 1, reports: 2, communication: 1 })
+  assert.deepEqual(pinNextActions("engineer", "eng", records, "2026-10-24").map((row) => row.text), [
+    "Inspect IR-0005 Floor check", "Verify the correction of NCR-0002 Crack", "Assign NCR-0003 Stain to a Foreman", "Decide on client report SR-0007 Noise"])
+  assert.deepEqual(pinNextActions("foreman", "me", records, "2026-10-24").map((row) => [row.text, row.tone]), [
+    ["Correct NCR-0001 Gap (4 days overdue)", "act"], ["NCR-0002 Crack: correction waiting for Engineer verification", "wait"], ["IR-0005 Floor check: waiting for the Engineer's inspection", "wait"]])
+  assert.deepEqual(pinNextActions("client", "c", records, "2026-10-24").map((row) => row.text), ["SR-0007 Noise: waiting for the engineer"])
+  assert.deepEqual(pinNextActions("admin", "a", records, "2026-10-24"), [], "admins get no actions")
+})
+test("Pin picker: project work pins only, search, and dependent choices clear when a wider one changes", () => {
+  const pins = [
+    { id: "p1", title: "Laundry", blueprint_id: "s1", project_id: "A", category: "progress", description: "Ground floor wet area" },
+    { id: "p2", title: "Kitchen", blueprint_id: "s2", project_id: "A", category: "progress" },
+    { id: "p3", title: "Note", blueprint_id: "s1", project_id: "A", category: "note" },
+    { id: "p4", title: "Laundry", blueprint_id: "x", project_id: "B", category: "progress" },
+  ]
+  const items = [{ id: "i1", pin_id: "p1", text: "FLOOR", position: 2 }, { id: "i0", pin_id: "p1", text: "WALL", position: 1 }, { id: "i2", pin_id: "p2", text: "SINK" }]
+  assert.deepEqual(pinChoices(pins, { projectId: "A", sheetId: "", query: "" }).map((pin) => pin.id), ["p2", "p1"], "no notes, no other project")
+  assert.deepEqual(pinChoices(pins, { projectId: "A", sheetId: "", query: "wet" }).map((pin) => pin.id), ["p1"], "search reads the description")
+  assert.deepEqual(pinChoices(pins, { projectId: "A", sheetId: "", query: "ground", sheetTitle: () => "Ground plan" }).map((pin) => pin.id), ["p2", "p1"], "and the sheet name")
+  assert.deepEqual(pinChoices(pins, { projectId: "A", sheetId: "s2", query: "" }).map((pin) => pin.id), ["p2"])
+  assert.deepEqual(itemChoices(items, "p1").map((item) => item.id), ["i0", "i1"]); assert.deepEqual(itemChoices(items, ""), [])
+  let link = changePinLink(emptyPinLink, "pinId", "p1", pins, items)
+  assert.deepEqual(link, { sheetId: "s1", pinId: "p1", itemId: "" }, "a pin selects its sheet")
+  link = changePinLink(link, "itemId", "i1", pins, items); assert.equal(link.itemId, "i1")
+  assert.equal(changePinLink(link, "itemId", "i2", pins, items).itemId, "i1", "an item of another pin is ignored")
+  assert.deepEqual(changePinLink(link, "sheetId", "s2", pins, items), { sheetId: "s2", pinId: "", itemId: "" }, "another sheet clears pin and item")
+  assert.deepEqual(changePinLink(link, "sheetId", "s1", pins, items), link, "the same sheet keeps them")
+  assert.deepEqual(changePinLink(link, "pinId", "p2", pins, items), { sheetId: "s2", pinId: "p2", itemId: "" }, "another pin clears the item")
+  assert.deepEqual(changePinLink(link, "pinId", "", pins, items), { sheetId: "s1", pinId: "", itemId: "" }, "Project-wide keeps the sheet filter")
+  assert.deepEqual(startPinLink(pins, "p2", "i2"), { sheetId: "s2", pinId: "p2", itemId: "i2" }); assert.deepEqual(startPinLink(pins, "missing"), emptyPinLink)
+})
+test("Pin picker: location records need a pin of this project; Project-wide only where allowed; the item must belong to the pin", () => {
+  const pins = [{ id: "p1", title: "Laundry", blueprint_id: "s1", project_id: "A" }, { id: "n", title: "Note", blueprint_id: "s1", project_id: "A", category: "note" }, { id: "x", title: "Other", blueprint_id: "o", project_id: "B" }]
+  const items = [{ id: "i1", pin_id: "p1", text: "FLOOR" }]
+  const problem = (link, extra = {}) => pinLinkProblem(link, { projectId: "A", pins, items, requirePin: true, ...extra })
+  assert.equal(problem(emptyPinLink), "Choose the work pin this record belongs to.")
+  assert.equal(problem(emptyPinLink, { requirePin: false }), "", "Project-wide is allowed where the record permits it")
+  assert.equal(problem({ sheetId: "", pinId: "x", itemId: "" }), "Choose a work pin from this project.")
+  assert.equal(problem({ sheetId: "", pinId: "n", itemId: "" }), "Choose a work pin from this project.")
+  assert.equal(problem({ sheetId: "o", pinId: "p1", itemId: "" }), "The chosen pin is not on the chosen sheet.")
+  assert.equal(problem({ sheetId: "s1", pinId: "p1", itemId: "i1" }), "")
+  assert.equal(problem({ sheetId: "s1", pinId: "p1", itemId: "zz" }), "Choose a checklist item of this work pin.")
+  assert.equal(problem({ sheetId: "s1", pinId: "p1", itemId: "i1" }, { itemsLoading: true }), "Loading this pin's checklist…")
+  assert.equal(problem({ sheetId: "s1", pinId: "p1", itemId: "" }, { itemsLoading: true }), "", "a whole-pin record need not wait")
+  assert.equal(problem({ sheetId: "s1", pinId: "p1", itemId: "" }, { itemsError: "offline", waitForChecklist: true }), "Could not load this pin's checklist. Retry before saving.", "forms that offer the item wait for the checklist")
 })
 console.log(`\n${passed} passed${process.exitCode ? ", some FAILED" : ""}`)

@@ -4,6 +4,7 @@ import { sanitizeFormat, type TextFormat } from "./textFormat"
 import type { Discipline } from "./projects"
 import { supabase } from "./supabase"
 import type { StampFlag } from "./photoStamp"
+import type { IssueMarkup } from "./issueMarkup"
 import { fetchAll } from "./paging"
 import { byColumn, byProject, useLiveReload } from "./realtime"
 
@@ -68,7 +69,8 @@ export type Pin = {
   updated_at: string
 }
 
-export type PinPhoto = { id: string; pin_id: string; checklist_item_id?: string | null; qa_attempt_id?: string | null; path: string; caption: string | null; uploaded_by: string | null; created_at: string; taken_at: string | null; stamp_flag: StampFlag | null; distance_m: number | null }
+// `annotations` = markup drawn over the photo (20261023073942); the stored file itself is the untouched original.
+export type PinPhoto = { id: string; pin_id: string; checklist_item_id?: string | null; qa_attempt_id?: string | null; path: string; caption: string | null; uploaded_by: string | null; created_at: string; taken_at: string | null; stamp_flag: StampFlag | null; distance_m: number | null; annotations?: IssueMarkup[] }
 
 export type TimelineEntry = {
   id: number

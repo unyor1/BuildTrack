@@ -20,6 +20,7 @@ import { useInspectionTimeline } from "../../lib/qaAttempts"
 import { submittedChecklistItems } from "../../lib/qaChecklistModel"
 import { workItemPath } from "../../lib/workItemModel"
 import { followLink } from "../../lib/notifications"
+import OpenOnBlueprint from "../OpenOnBlueprint"
 import LimitedTimeline from "../ui/LimitedTimeline"
 import { usePinQa } from "../../lib/pinQa"
 
@@ -213,6 +214,7 @@ export default function InspectionDetail({
   onChanged,
   onOpenDefect,
   onOpenInspection,
+  onPlan = false,
 }: {
   inspection: Inspection
   project: { id: string; name: string; code: string; location?: string | null }
@@ -226,6 +228,7 @@ export default function InspectionDetail({
   onChanged: () => void | Promise<void>
   onOpenDefect?: (defect: Defect) => void
   onOpenInspection?: (id: string) => void
+  onPlan?: boolean // opened from the pin panel on the blueprint: no link back to the plan
 }) {
   const { profile } = useAuth()
   const toast = useToast()
@@ -316,7 +319,7 @@ export default function InspectionDetail({
     <>
       {done || inspection.status === "cancelled" ? <button type="button" className={buttonSecondary} onClick={print}>Print / PDF</button> : null}
       {(inspection.status === "failed" || inspection.status === "conditional") && canRequest ? workItems.length ? <button type="button" className={buttonPrimary} onClick={() => openItem(workItems[0].id)}>{canInspect ? "Open the work item" : "Open the correction form"}</button> : <button type="button" className={buttonSecondary} disabled={workSubmission.loading || Boolean(workSubmission.error)} onClick={() => setAsking("reinspect")}>Request re-inspection</button> : null}
-      {inspection.pin_id && !workItems.length ? <button type="button" className={buttonSecondary} onClick={() => followLink(`/${canInspect ? "engineer/annotation" : "foreman/daily-work"}?project=${inspection.project_id}&pin=${inspection.pin_id}`, inspection.project_id)}>Open on the plan</button> : null}
+      {inspection.pin_id && !workItems.length && !onPlan ? <OpenOnBlueprint projectId={inspection.project_id} pinId={inspection.pin_id} section="issues" /> : null}
       {(inspection.status === "requested" || inspection.status === "in_progress") && canRequest && !workSubmission.loading && !workSubmission.error && (!workSubmission.submission || canInspect) ? <button type="button" className={buttonSecondary} onClick={() => setAsking("cancel")}>Cancel inspection</button> : null}
       {inspection.status === "requested" && canInspect ? <button type="button" className={buttonPrimary} disabled={busy} onClick={() => void start()}>{busy ? "Starting..." : "Start inspection"}</button> : null}
       {isInspector ? <button type="button" className={buttonPrimary} disabled={busy || loading} onClick={() => void complete()}>{busy ? "Signing off..." : "Complete inspection"}</button> : null}

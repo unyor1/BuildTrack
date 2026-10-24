@@ -1,6 +1,6 @@
 # BuildTrack development handover
 
-Updated: 2026-10-22.
+Updated: 2026-10-24.
 
 Read this alongside `AGENTS.md`, `README.md` and the task-specific audit in `docs/audits/`. This file records current project decisions; it is not an application entrypoint or a database migration. Check the implementation and tests before treating an older document as current behavior. In particular, older handover text mentioning a required Ready tick or a separate Accept action is outdated.
 
@@ -27,9 +27,10 @@ Important constraints:
 - A pending request for one checklist item must not block another eligible item on the same pin. Do not restore a blanket whole-pin pending block. Duplicate active requests for the same item and guarded legacy/stage routes remain subject to server checks.
 - The Engineer must be able to add eligible checklist items while other work awaits QA; preserve existing evidence and completion safeguards.
 - Every original request/resubmission keeps its own immutable photos, remarks, timestamps, result and timeline. New correction evidence must not overwrite old submissions.
+- An **Away from site** photo still counts as evidence and the Engineer can open it (owner's decision, `20261023075351`; message follow-up `20261023075625`). It keeps its flag, distance and amber chip. Only a wrong phone clock (`clock_ahead`) or a photo more than 3 days old (`old_photo`) stays on record without counting and stays hidden from Engineers. SQL `photo_eligible` and TS `photoEligible` must stay identical.
 - Evidence and Corrections & NCRs tabs must show actual linked records, with explicit empty/loading/error states. Link by permanent item IDs, not just names.
 - Preserve the original-versus-latest comparison. Clicking for a larger view must not replace/remove comparison functionality or its details.
-- Engineer/Foreman boards put **All** last. Stage/hold-point request panels were removed from these boards, not from historical data or database completion checks. Existing blocked inspections remain accessible through the QA register.
+- Engineer/Foreman boards put **All** last. Every list on the Review inbox is separate: besides the work-item chips (Inspect, NCRs, Complete checklist, Criteria missing) the other lists (Other NCRs, Blocked work, Older submissions, Recently completed) are `WorkItemBoard` `extras` with their own chips. The Foreman Corrections page does the same: To fix and In review, then Other NCRs (counts open NCRs assigned to them and stays available at 0 when they have older ones, since it is also where closed NCRs are looked up) and Site issues. Choosing a chip shows only that list; All shows every list. Search and the sheet / pin / item filters apply to work items only, so the other lists step aside while they are in use. Stage/hold-point request panels were removed from these boards, not from historical data or database completion checks. Existing blocked inspections remain accessible through the QA register.
 - **For review** belongs to checklist QA presentation, not a displayed pin-level status. Keep underlying status/authorization logic intact.
 
 Relevant files: `src/lib/workItemModel.ts`, `src/lib/workItem.ts`, `src/components/qa/WorkItemWorkspace.tsx`, `WorkItemBoard.tsx`, `SubmittedEvidence.tsx` and `WorkSubmissionEvidence.tsx`.
@@ -39,12 +40,24 @@ Relevant files: `src/lib/workItemModel.ts`, `src/lib/workItem.ts`, `src/componen
 - Site Logs reads real Foreman Daily Progress Reports. QA activity does not automatically create a daily report.
 - Submitted reports retain linked pins/checklists and their historical snapshots. Older reports outside the editing window remain available read-only.
 - Progress uses completed work pins, excluding notes. Checklist completion contributes to completing its pin; do not silently substitute a checklist-percentage or quantity-weighted progress formula.
+- Calendar filters (`components/ui/DateRangeFilter.tsx` + pure `lib/dateRangeModel.ts`, Manila days, weeks Monday to Sunday, kept in `?from=&to=`):
+  - Progress by Zone filters work pins by **due date**. Pins without a due date are left out and counted in the note, which also shows how many pins were verified on those dates. Stat cards, zones (empty ones hidden), disciplines, deadlines and CSV follow the filter; the S-curve stays whole-project.
+  - The Engineer QA register shares a calendar filter across Overview, Inspections (requested), NCR register (raised) and Client reports (reported). Search, filters and CSV follow it. Overview cards, attention, recent inspections, trade breakdown, trends and printed summary follow the period using current status, not an end-of-period historical snapshot. All dates restores server summary figures. Filtered check counts use a paginated, authenticated/project-scoped read of inspection results, never inferred NCR counts; incomplete/failed reads show an error instead of partial figures. Filtered trends cover the whole interval; URL dates survive refresh and Back/Forward. Tab badges remain whole-project and Foreman QA pages are unchanged. See `docs/audits/2026-10-23-qa-overview-calendar.md`.
 - Progress by Zone and Assignment Board must use the same project-scoped pin records. Assignment lists include completed work by default and support assigned/unassigned, sheet and status filtering.
 - Confirm assignment writes on the server, guard concurrent/stale saves and reload canonical records. Never show an optimistic reassignment as successfully saved after a rejected write.
 - Project changes must discard late responses from the previous project. Preserve pagination and reconnect/live-update handling rather than relying on a first-page query.
 - Engineer site issues link to a work pin and optionally its checklist item. Assigned Foremen read the same issue and preserved annotated evidence; do not create a disconnected duplicate issue source.
 
 Relevant files: `src/lib/projectWork.ts`, `reports.ts`, `siteReportsModel.ts`, `src/pages/Engineer/EngineerAssignments.tsx`, `EngineerReports.tsx` and `src/components/DailyReportWorkflow.tsx`.
+
+## Per-project calendar
+
+- A Google Calendar-inspired **Project Calendar** lives inside each project's workspace, not a global cross-project page. Admin uses the project tab at `/admin/projects/<id>/calendar`; Engineer, Foreman and Client use `/engineer/calendar`, `/foreman/calendar` and `/client/calendar` with `?project=<id>`.
+- Shared `components/calendar/ProjectCalendar.tsx` and scoped CSS provide Month, Week, Day and Schedule views, a mini calendar, Today/previous/next controls, search, category filters, completed toggle, day overflow expansion and linked event details. Date/view survive refresh and Back/Forward; the calendar starts on the current Manila date. Sunday-first grids follow the supplied reference; existing Monday-first report/date-filter rules are unchanged.
+- This is a **read-only projection** of existing records, not Google-account integration: non-note work-pin `due_date`, inspection `target_at` (Manila time), NCR `due_date`, and project start/end dates. Do not invent meetings, report deadlines, appointment durations or dates for unscheduled records. Edit canonical records to change their schedules; no duplicate event table or new scheduling permissions.
+- Engineer sees project work deadlines, scheduled QA/reinspections, NCR deadlines and milestones. Foreman sees assigned work/NCRs and inspections requested by them or linked to assigned pins, plus milestones. Admin sees management work deadlines and milestones. Client sees work deadlines/milestones only, with no internal QA/NCR details, staff identities, private remarks or evidence. Admin/Client calendars never request the internal QA/NCR tables.
+- Reuses authenticated project reads, pagination, Realtime, reconnect/periodic reloads and existing RLS. Page checks actual active role; project IDs and canonical project objects are checked before deriving events. Loading/error states do not render stale events. Event links use permanent record IDs and the existing pin-panel deep links.
+- Files: `src/lib/projectCalendarModel.ts`, `projectCalendar.ts`, `src/pages/ProjectCalendarPage.tsx`; test `pnpm test:project-calendar` is in `pnpm check`. See `docs/audits/2026-10-24-project-calendar.md`.
 
 ## Client portal
 
@@ -72,6 +85,12 @@ Relevant files: `src/pages/Client/`, `src/components/client/PinDailyReports.tsx`
   - Rotation is the optional `rotation` key (degrees, around the mark's own centre from `markupBox`, stored -180..180, dropped at 0), allowed by `valid_issue_markup` since `20261021151557`. Every viewer and thumbnail draws it through `MarkupLayer`.
 - Several photos open as a manual slideshow: "Image n of N" with Previous / Next (no wrap-around, never automatic) and a collapsible numbered thumbnail strip (`PhotoSlides.tsx`, like the sheet sidebar; a row above the photo on phones) with the current photo highlighted and an "edited" note. Each photo keeps its own markup, caption and undo / redo history (`src/lib/photoEditorModel.ts`, pure and tested). Fullscreen and the chosen tool stay when moving between photos. A single photo shows none of these controls.
 - Unsaved work is protected: closing the editor with changes asks (`useConfirm`); the picker asks before removing a photo that has markup or an edited caption; Escape leaves fullscreen first.
+- Work item / correction photos (`pin_photos`, Foreman **Corrections** correction package and the work item checklist):
+  - The upload button (`ChecklistUploadButton` / `PinPhotos` in `editor/PinParts.tsx`) opens `components/issues/MarkupUploadDialog.tsx`. Chosen photos are shrunk first (`preparePinPhoto`, JPEG 1600 px), marked up in the same picker / editor, then added one by one; failures stay to retry.
+  - Each photo keeps its link to the checklist item and correction (`qa_attempt_id`) and carries its caption and `annotations` (`20261023073942`, checked by `valid_issue_markup`, no UPDATE policy, so fixed once saved).
+  - Without signal it waits in the offline queue with its markup (`lib/offlineQueue.ts` sends caption and annotations; older queued photos still send).
+  - QA submission snapshots copy the whole row, so submitted evidence keeps its markup. Thumbnails (`PinPhotos`, `PhotoGrid`) and `PhotoViewer` draw it.
+  - NCR evidence on the same page uses the QA `EvidenceStrip` dialog (`qa_photos.annotations`).
 - `src/lib/canvasView.ts` shares the blueprint sheet's fit/zoom mathematics with `src/components/editor/StageCanvas.tsx`. Zoom limits are 5%-1000%, multiplicative 1.3x buttons. Every photo opens with **Fit** (whole image, padding, never cropped or stretched). **Fill** covers the canvas only when chosen and stays chosen for the next photo; manual zoom/pan stays stable across fullscreen changes.
 - The canvas gets most of the space: 56vh on phones and 64vh beside the thumbnails on wider screens (minimums 18-20rem); in fullscreen it takes all remaining height. The dialog body still scrolls to the caption and hints on small screens.
 - Ordinary mouse-wheel scrolling moves through the editor. Ctrl/Command + wheel zooms toward the cursor. Keep button zoom, Pan/Select/Space/middle-button drag, touch pinch and keyboard controls working.
@@ -141,6 +160,10 @@ Relevant files: `src/pages/Client/`, `src/components/client/PinDailyReports.tsx`
 - `docs/audits/2026-10-21-client-portal-connections.md`
 - `docs/audits/2026-10-21-qa-photo-markup.md`
 - `docs/audits/2026-10-21-photo-editor-zoom-fullscreen.md`
+- `docs/audits/2026-10-22-calendar-filters.md`
+- `docs/audits/2026-10-23-qa-overview-calendar.md`
+- `docs/audits/2026-10-23-correction-photo-markup.md`
+- `docs/audits/2026-10-23-away-photos-count.md`
 - `docs/audits/2026-10-22-photo-markup-select-move-rotate.md`
 - `docs/audits/2026-10-21-photo-editor-toolbar-slideshow.md` (supersedes the Fill-first default and viewport heights above)
 

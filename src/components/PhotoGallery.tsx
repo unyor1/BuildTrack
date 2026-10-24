@@ -1,5 +1,6 @@
 import { useState } from "react"
 import PhotoViewer from "./PhotoViewer"
+import { MarkupLayer } from "./issues/MarkupLayer"
 import { EmptyState } from "./ui/PageParts"
 import { SkeletonCardGrid } from "./ui/Skeleton"
 import { formatStamp, useSignedUrl } from "../lib/blueprints"
@@ -9,14 +10,25 @@ import { photoPreviewBlocked } from "../lib/photoStamp"
 
 export type { GalleryPhoto } from "../lib/photoGalleryModel"
 
+// Marked-up photos draw their markup cropped like the picture (object-cover = slice) and zoom with it on hover.
 function Thumb({ photo, bucket, className, compact = false }: { photo: GalleryPhoto; bucket: "pin-photos" | "daily-photos"; className: string; compact?: boolean }) {
   const { profile } = useAuth()
+  const [height, setHeight] = useState(750)
+  const markup = photo.annotations ?? []
   const blocked = photoPreviewBlocked(profile?.role, photo)
   const { url, failed } = useSignedUrl(bucket, blocked ? null : photo.path)
   if (blocked) return <div className={`${className} flex items-center justify-center bg-danger-soft p-3 text-xs text-danger-fg`}>{compact ? "Image blocked" : "Image blocked: photo failed the site or time check. Ask the Foreman for valid evidence."}</div>
   if (failed) return <div className={`${className} flex items-center justify-center bg-surface-muted text-xs text-fg-muted`}>{compact ? "Unavailable" : "Photo unavailable"}</div>
   if (!url) return <div className={`${className} skeleton`} aria-hidden="true" />
-  return <img src={url} alt={photo.caption || photo.checklist?.text || photo.label || "Site photo"} loading="lazy" className={className} />
+  const alt = photo.caption || photo.checklist?.text || photo.label || "Site photo"
+  if (!markup.length) return <img src={url} alt={alt} loading="lazy" className={className} />
+  return (
+    <span className={`relative block overflow-hidden ${className}`}>
+      <img src={url} alt={alt} loading="lazy" className="h-full w-full object-cover" onLoad={(event) => setHeight((1000 * event.currentTarget.naturalHeight) / event.currentTarget.naturalWidth)} />
+      <svg viewBox={`0 0 1000 ${height}`} preserveAspectRatio="xMidYMid slice" className="pointer-events-none absolute inset-0 h-full w-full" aria-hidden="true"><MarkupLayer items={markup} height={height} /></svg>
+      <span title="Marked up" className="absolute bottom-1 left-1 grid h-4 w-4 place-items-center rounded-full bg-black/70 text-white" aria-hidden="true"><svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 20h4L19 9l-4-4L4 16z" /></svg></span>
+    </span>
+  )
 }
 
 const tileDate = (iso: string) => new Date(iso).toLocaleDateString("en-PH", { timeZone: "Asia/Manila", month: "short", day: "numeric" })

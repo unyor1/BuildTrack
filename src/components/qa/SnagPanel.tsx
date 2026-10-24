@@ -4,19 +4,22 @@ import { EmptyState, buttonPrimary, buttonSecondary, inputClass } from "../ui/Pa
 import { SkeletonList } from "../ui/Skeleton"
 import { Chip } from "./QaBits"
 import { SnagPhotoStrip } from "./SnagParts"
+import OpenOnBlueprint from "../OpenOnBlueprint"
 import { categories, categoryLabels, defaultDueDate, qaSeverityHelp, qaSeverityLabels, refNumber, severities, snagStatusLabels, snagTone, trades, tradeLabels, urgencyLabels, type DefectCategory, type QaSeverity, type Trade } from "../../lib/qaModel"
 import { snagActions, useSnagPhotos, type Snag } from "../../lib/snags"
 import { useToast } from "../../lib/toast"
 import { useProjectWork } from "../../lib/projectWork"
+import { allDates, inRange, isFiltered, type DateRange } from "../../lib/dateRangeModel"
 
 const when = (iso: string) => new Date(iso).toLocaleString("en-PH", { timeZone: "Asia/Manila", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })
 const label = "mb-1 block text-xs font-extrabold uppercase tracking-wider text-fg-muted"
 const urgencyTone = { low: "bg-surface-muted text-fg-muted", normal: "bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-200", urgent: "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200" }
 
 // The engineer's inbox of client reports: look at the photos, then accept (it becomes an NCR for the foreman) or explain why not.
-export function SnagsPanel({ snags, loading, error, nameOf, onOpen }: { snags: Snag[]; loading: boolean; error: string; nameOf: (id: string | null) => string; onOpen: (snag: Snag) => void }) {
+// `dates` (QA register calendar filter) keeps reports made on those Manila days.
+export function SnagsPanel({ snags, loading, error, nameOf, onOpen, dates = allDates }: { snags: Snag[]; loading: boolean; error: string; nameOf: (id: string | null) => string; onOpen: (snag: Snag) => void; dates?: DateRange }) {
   const [filter, setFilter] = useState<"waiting" | "all">("waiting")
-  const list = useMemo(() => snags.filter((row) => filter === "all" || row.status === "submitted"), [snags, filter])
+  const list = useMemo(() => snags.filter((row) => inRange(row.created_at, dates) && (filter === "all" || row.status === "submitted")), [snags, filter, dates])
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
@@ -26,7 +29,8 @@ export function SnagsPanel({ snags, loading, error, nameOf, onOpen }: { snags: S
       </div>
       {error ? <p role="alert" className="rounded-lg bg-danger-soft px-4 py-2 text-sm text-danger-fg">{error}</p> : null}
       {loading ? <SkeletonList rows={3} label="Loading client reports" /> : list.length === 0 ? (
-        <EmptyState title={filter === "waiting" ? "Nothing waiting" : "No client reports yet"}>When the client reports a problem it appears here and you get a notification.</EmptyState>
+        isFiltered(dates) && snags.length ? <EmptyState title="Nothing in these dates">No client report {filter === "waiting" ? "waiting for you was made" : "was made"} on these dates. Change the dates or show all reports.</EmptyState>
+        : <EmptyState title={filter === "waiting" ? "Nothing waiting" : "No client reports yet"}>When the client reports a problem it appears here and you get a notification.</EmptyState>
       ) : (
         <ul className="space-y-2">
           {list.map((snag) => (
@@ -43,7 +47,7 @@ export function SnagsPanel({ snags, loading, error, nameOf, onOpen }: { snags: S
   )
 }
 
-export function SnagDetail({ snag, today, foremen, nameOf, onClose, onDecided }: { snag: Snag; today: string; foremen: Array<{ user_id: string; full_name: string }>; nameOf: (id: string | null) => string; onClose: () => void; onDecided: (defectId: string | null) => void | Promise<void> }) {
+export function SnagDetail({ snag, today, foremen, nameOf, onClose, onDecided, onPlan = false }: { snag: Snag; today: string; foremen: Array<{ user_id: string; full_name: string }>; nameOf: (id: string | null) => string; onClose: () => void; onDecided: (defectId: string | null) => void | Promise<void>; onPlan?: boolean }) {
   const toast = useToast()
   const { photos, error: photoError, reload: reloadPhotos } = useSnagPhotos(snag.id)
   const work = useProjectWork(snag.project_id)
@@ -92,7 +96,7 @@ export function SnagDetail({ snag, today, foremen, nameOf, onClose, onDecided }:
       <div className="space-y-4">
         <div className="flex flex-wrap items-center gap-2"><Chip tone={snagTone[snag.status]}>{snagStatusLabels[snag.status]}</Chip>{snag.decided_by ? <span className="text-xs text-fg-muted">Decided by {nameOf(snag.decided_by)}{snag.decided_at ? ` • ${when(snag.decided_at)}` : ""}</span> : null}</div>
         {snag.description ? <p className="whitespace-pre-wrap text-sm">{snag.description}</p> : <p className="text-sm text-fg-muted">The client gave no details.</p>}
-        {pin ? <a className={buttonSecondary} href={`/engineer/annotation?project=${encodeURIComponent(snag.project_id)}&sheet=${encodeURIComponent(pin.blueprint_id)}&pin=${encodeURIComponent(pin.id)}`}>Open linked pin: {pin.title}</a> : snag.pin_id ? <p className="text-xs text-fg-muted">Linked work pin unavailable.</p> : null}
+        {pin ? (onPlan ? <p className="text-xs font-semibold text-fg-muted">Work pin: {pin.title}</p> : <OpenOnBlueprint projectId={snag.project_id} pinId={pin.id} sheetId={pin.blueprint_id} section="issues" label={`Open on blueprint: ${pin.title}`} />) : snag.pin_id ? <p className="text-xs text-fg-muted">Linked work pin unavailable.</p> : <p className="text-xs font-semibold text-fg-muted">Project-wide report (not linked to one pin)</p>}
         {photoError ? <p role="alert" className="text-sm text-danger-fg">{photoError} <button type="button" className="underline" onClick={() => void reloadPhotos()}>Retry photos</button></p> : null}
         {photos.length ? <SnagPhotoStrip photos={photos} /> : null}
         {snag.response ? <p className="rounded-lg bg-surface-muted px-3 py-2 text-sm"><strong>Reply to the client:</strong> {snag.response}</p> : null}

@@ -13,9 +13,9 @@ export default async function ({ db, ids, as, asOwner, addUser, test, expectFail
   const criteria = text => [{ text, acceptance_criteria: "Synthetic project-specific passing condition", evidence_requirement: "Synthetic test observation", reference: "TEST clause only" }]
   const save = (item, text, checks, p = pin) => db.query("select public.save_work_checklist_item($1,$2,$3,$4::jsonb) id", [p, item, text, JSON.stringify(checks)])
   const submit = item => db.query("select public.submit_checklist_qa($1,$2::uuid[]) id", [pin, [item]])
-  const photo = async (item, label, attempt = null, lat = 14.5) => {
+  const photo = async (item, label, attempt = null, lat = 14.5, clockAhead = false) => {
     await as("directFore")
-    return (await db.query("insert into public.pin_photos(project_id,pin_id,checklist_item_id,qa_attempt_id,path,lat,lng,taken_at) values($1,$2,$3,$4,$5,$6,121,now()) returning id", [project, pin, item, attempt, `${project}/${pin}/${label}.jpg`, lat])).rows[0].id
+    return (await db.query("insert into public.pin_photos(project_id,pin_id,checklist_item_id,qa_attempt_id,path,lat,lng,taken_at) values($1,$2,$3,$4,$5,$6,121,now()+$7::interval) returning id", [project, pin, item, attempt, `${project}/${pin}/${label}.jpg`, lat, clockAhead ? "1 hour" : "0"])).rows[0].id
   }
   const finish = async (inspection, fail = false) => {
     await as("directEng")
@@ -57,7 +57,7 @@ export default async function ({ db, ids, as, asOwner, addUser, test, expectFail
   await test("Direct QA: eligible evidence still required; a separate Ready tick is never required", async () => {
     await as("directFore")
     await expectFail("select public.submit_checklist_qa($1,$2::uuid[])", [pin, [floor]], /eligible photo/)
-    await photo(floor, "rejected", null, 15.5)
+    await photo(floor, "rejected", null, 14.5, true)
     await expectFail("select public.submit_checklist_qa($1,$2::uuid[])", [pin, [floor]], /eligible photo/)
     originalPhoto = await photo(floor, "original")
     assert.equal((await db.query("select done from public.pin_checklist_items where id=$1", [floor])).rows[0].done, false)

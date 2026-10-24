@@ -4,12 +4,13 @@ export const projectSections = {
   "blueprint-mapping": "mapping",
   "blueprint-progress": "progress",
   "blueprint-version": "versions",
+  calendar: "calendar",
 } as const
 
 export type ProjectSection = keyof typeof projectSections
 
 export function readProjectRoute(path: string): { projectId: string; section: ProjectSection } | null {
-  const match = path.match(/^\/admin\/projects\/([0-9a-f-]+)\/(overview|blueprints|mapping|progress|versions)\/?$/i)
+  const match = path.match(/^\/admin\/projects\/([0-9a-f-]+)\/(overview|blueprints|mapping|progress|versions|calendar)\/?$/i)
   if (!match || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(match[1])) return null
   const section = (Object.keys(projectSections) as ProjectSection[]).find((key) => projectSections[key] === match[2])
   return section ? { projectId: match[1], section } : null

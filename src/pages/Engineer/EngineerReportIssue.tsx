@@ -14,6 +14,7 @@ import { supabase } from "../../lib/supabase"
 import { useToast } from "../../lib/toast"
 import type { EngineerPageProps } from "./types"
 import LogIssueModal from "../../components/issues/LogIssueModal"
+import { pinPlanPath } from "../../lib/pinRecordsModel"
 import IssueDetails from "../../components/issues/IssueDetails"
 import { useIssueRegister } from "../../lib/siteIssues"
 import { issueTab } from "../../lib/issueMarkup"
@@ -178,7 +179,7 @@ export default function EngineerReportIssue({ onNavigate }: EngineerPageProps) {
                       <td className="px-3 py-3">
                         <div className="flex flex-wrap justify-end gap-1.5">
                           <button type="button" className="rounded-md border border-line px-2.5 py-1 text-xs font-bold hover:bg-surface-muted" onClick={()=>setViewing(pin.id)}>Details / photos</button>
-                          <button type="button" className="rounded-md border border-line px-2.5 py-1 text-xs font-bold hover:bg-surface-muted" onClick={() => followLink(`/engineer/annotation?project=${pin.project_id}&pin=${pin.id}`, pin.project_id)}>Plan</button>
+                          <button type="button" className="rounded-md border border-line px-2.5 py-1 text-xs font-bold hover:bg-surface-muted" onClick={() => followLink(pinPlanPath("engineer", { projectId: pin.project_id, pinId: pin.id, sheetId: pin.blueprint_id, section: "issues" }), pin.project_id)}>Plan</button>
                           {tab === "open" ? (
                             <>
                               <button type="button" className="rounded-md border border-line px-2.5 py-1 text-xs font-bold hover:bg-surface-muted" onClick={() => setReopening(pin)}>Back to foreman</button>
@@ -196,7 +197,7 @@ export default function EngineerReportIssue({ onNavigate }: EngineerPageProps) {
         </>
       )}
 
-      {logging ? <LogIssueModal pins={work.pins} sheetOf={work.sheetOf} onClose={() => setLogging(false)} onDone={async () => { toast.success("Issue logged", "Description, photos and markup saved together."); setLogging(false); setTab("open"); await refresh() }} /> : null}
+      {logging ? <LogIssueModal pins={work.pins} sheets={work.blueprints} sheetOf={work.sheetOf} onClose={() => setLogging(false)} onDone={async () => { toast.success("Issue logged", "Description, photos and markup saved together."); setLogging(false); setTab("open"); await refresh() }} /> : null}
       {viewing && work.pins.find(pin=>pin.id===viewing) ? <IssueDetails key={viewing} pin={work.pins.find(pin=>pin.id===viewing)!} canEdit nameOf={work.nameOf} onClose={()=>setViewing(null)} /> : null}
       {reopening ? <BackToForemanModal pin={reopening} onClose={() => setReopening(null)} onDone={async () => { setReopening(null); await refresh() }} /> : null}
       <p className="mt-6 text-xs text-fg-muted">Tip: foremen and engineers can also mark a pin as an issue directly on the plan. <button type="button" className="inline-flex min-h-6 items-center font-bold text-brand-text underline" onClick={() => onNavigate("annotation")}>Open the plan</button></p>

@@ -113,7 +113,7 @@ export default function CorrectionForm({ formId, item, pin, draft, previousIr, p
         <p className={label}>New photos of the corrected work *</p>
         <span className="flex flex-wrap gap-3"><ChecklistUploadButton pin={pin} itemId={item.id} attemptId={draft.id} label={`${item.text} correction`} onAdded={() => void onChanged()} /></span>
         <PinPhotos pin={pin} checklistItemId={item.id} attemptId={draft.id} canAdd={false} canRemoveAny={false} meId={profile?.id ?? ""} columns={3} onChanged={() => void onChanged()} />
-        <p className="text-xs text-fg-muted">{newPhotos} eligible new photo{newPhotos === 1 ? "" : "s"}. Photos from the earlier request do not count; away-from-site or wrong-time photos stay on record but do not count.</p>
+        <p className="text-xs text-fg-muted">{newPhotos} eligible new photo{newPhotos === 1 ? "" : "s"}. Photos from the earlier request do not count; photos with a wrong phone clock or older than 3 days stay on record but do not count. Photos away from the site count.</p>
       </div>
       <fieldset className="space-y-2">
         <legend className={label}>NCRs this correction answers</legend>

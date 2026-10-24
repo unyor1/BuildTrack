@@ -21,7 +21,7 @@ export default function EngineerQa({ onNavigate }: EngineerPageProps) {
         description="Every inspection and NCR of the project for searching, exporting and history. Work item QA and stage / hold-point inspections are labelled separately. To act on something waiting for you, use the Review inbox."
         actions={<button type="button" className={buttonSecondary} onClick={() => onNavigate("verification")}>Open the review inbox</button>}
       />
-      {projectId ? <QaView ws={ws} mode="engineer" tabs={["overview", "inspections", "defects", "snags"]} /> : null}
+      {projectId ? <QaView ws={ws} mode="engineer" tabs={["overview", "inspections", "defects", "snags"]} dateFilter /> : null}
     </div>
   )
 }

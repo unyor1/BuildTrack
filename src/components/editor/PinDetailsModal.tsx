@@ -1,29 +1,34 @@
 import { useState } from "react"
 import Modal from "../Modal"
-import { PinDetailsTab, canWorkOn, checklistNotice, type InspectorProps } from "./Inspector"
-import { PinChecklist, PinFields, PinTimeline } from "./PinParts"
-import ChecklistPhotos from "../ChecklistPhotos"
+import { PinDetailsTab, PinSectionBody, Tabs, type InspectorProps } from "./Inspector"
+import { PinFields } from "./PinParts"
+import { usePinPanelData } from "./PinRecordSections"
 import { statusChip, statusDot, statusLabels, type Pin } from "../../lib/blueprints"
 import { clientPinStatus } from "../../lib/clientPortalModel"
-import PinDailyReports from "../client/PinDailyReports"
+import { pinSectionsFor, sectionLabel, type PinSection } from "../../lib/pinRecordsModel"
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <section>
-      <h3 className="mb-2 text-xs font-bold uppercase tracking-wider text-brand-text">{title}</h3>
-      {children}
-    </section>
-  )
+const prettyDate = (iso: string) => new Date(`${iso.slice(0, 10)}T00:00:00`).toLocaleDateString("en-PH", { day: "numeric", month: "short", year: "numeric" })
+
+function Fact({ label, children }: { label: string; children: React.ReactNode }) {
+  return <div className="min-w-0 rounded-xl border border-line bg-surface px-3 py-2"><dt className="text-[11px] font-bold uppercase tracking-wider text-fg-muted">{label}</dt><dd className="mt-0.5 break-words text-sm font-semibold">{children}</dd></div>
 }
 
-// The roomy view of one pin: every field, large photos, the whole checklist, the timeline with comments.
-// The inspector next to the sheet only shows a summary of this.
-export default function PinDetailsModal({ pin, inspector, onClose, onDelete }: { pin: Pin; inspector: InspectorProps; onClose: () => void; onDelete: () => void }) {
+// The roomy view of one pin: the same sections as the panel beside the sheet, with records in detailed columns, every field,
+// large photos and the timeline. Opens on the section the panel was showing.
+export default function PinDetailsModal({ pin, inspector, section = "details", onClose, onDelete }: { pin: Pin; inspector: InspectorProps; section?: PinSection; onClose: () => void; onDelete: () => void }) {
   const [refresh, setRefresh] = useState(0)
+  const data = usePinPanelData(pin, inspector.role)
+  const sections = pinSectionsFor(inspector.role)
+  const [tab, setTab] = useState<PinSection>(sections.includes(section) ? section : "details")
   const changed = () => {
     inspector.onPinChanged()
     setRefresh((value) => value + 1)
+    void data.reload()
   }
+  const nameOf = (id: string | null) => (id ? inspector.team.find((member) => member.user_id === id)?.full_name ?? "Someone on the team" : "Not assigned yet")
+  const done = data.checklist.items.filter((item) => item.review_status === "verified").length
+  const status = clientPinStatus(pin.status)
+  const openNcrs = data.records.defects.filter((row) => row.status !== "closed").length
   return (
     <Modal
       title={`${inspector.numberOf(pin)}. ${pin.title}`}
@@ -37,36 +42,33 @@ export default function PinDetailsModal({ pin, inspector, onClose, onDelete }: {
         </>
       }
     >
-      <div className="mb-4 flex items-center gap-2">
-        <span className="flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold text-white" style={{ background: statusDot[clientPinStatus(pin.status)] }}>{inspector.numberOf(pin)}</span>
-        <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${statusChip[clientPinStatus(pin.status)]}`}>{statusLabels[clientPinStatus(pin.status)]}</span>
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <span className="flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold text-white" style={{ background: statusDot[status] }}>{inspector.numberOf(pin)}</span>
+        <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${statusChip[status]}`}>{statusLabels[status]}</span>
       </div>
-      <div className="grid gap-8 lg:grid-cols-2">
-        <div className="space-y-6">
-          {inspector.role === "client" ? <Section title="Daily progress reports"><PinDailyReports key={pin.id} pin={pin} /></Section> : null}
-          <Section title="Progress">
+      <dl className="mb-4 grid grid-cols-2 gap-2 md:grid-cols-4">
+        <Fact label="Assigned Foreman">{nameOf(pin.assigned_to)}</Fact>
+        <Fact label="Deadline">{pin.due_date ? prettyDate(pin.due_date) : "Not set"}</Fact>
+        <Fact label="Checklist">{data.checklist.items.length ? `${done} of ${data.checklist.items.length} completed` : "No items yet"}</Fact>
+        <Fact label={inspector.role === "client" ? "Your open reports" : "Open NCRs"}>{inspector.role === "client" ? data.counts.issues ?? 0 : openNcrs}</Fact>
+      </dl>
+      <div className="sticky -top-5 z-10 -mx-6 mb-4 bg-surface">
+        <Tabs tabs={sections.map((key) => ({ key, label: sectionLabel(inspector.role, key), count: data.counts[key] }))} value={tab} onChange={setTab} label="Pin sections" />
+      </div>
+      {tab === "details" ? (
+        <div className="grid gap-8 lg:grid-cols-2">
+          <section>
+            <h3 className="mb-2 text-xs font-bold uppercase tracking-wider text-brand-text">Progress and assignment</h3>
             <PinDetailsTab {...inspector} pin={pin} inDialog />
-          </Section>
+          </section>
           {inspector.canEdit ? (
-            <Section title="Edit details">
+            <section>
+              <h3 className="mb-2 text-xs font-bold uppercase tracking-wider text-brand-text">Edit details</h3>
               <PinFields pin={pin} team={inspector.team} onSaved={changed} idPrefix="dialog-pin" />
-            </Section>
-          ) : null}
-          {inspector.role !== "client" ? <Section title="Checklist photos">
-            <ChecklistPhotos pin={pin} />
-          </Section> : null}
-        </div>
-        <div className="space-y-6">
-          <Section title="Checklist">
-            <PinChecklist pin={pin} canEdit={inspector.canEdit} canTick={canWorkOn(inspector, pin)} notice={checklistNotice(inspector, pin, pin.assigned_to ? inspector.team.find((member) => member.user_id === pin.assigned_to)?.full_name : undefined)} onPinChanged={changed} />
-          </Section>
-          {inspector.role !== "client" ? (
-            <Section title="Timeline and comments">
-              <PinTimeline pinId={pin.id} canComment={inspector.canReport} refreshKey={refresh} />
-            </Section>
+            </section>
           ) : null}
         </div>
-      </div>
+      ) : <PinSectionBody {...inspector} pin={pin} section={tab} data={data} wide refreshKey={refresh} onChanged={changed} />}
     </Modal>
   )
 }

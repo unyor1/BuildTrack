@@ -1,20 +1,24 @@
 import { useState } from "react"
 import Modal from "../Modal"
 import { buttonPrimary, buttonSecondary, inputClass } from "../ui/PageParts"
-import type { Pin } from "../../lib/blueprints"
+import PinLinkPicker from "../ui/PinLinkPicker"
+import { useBlueprints, useChecklist, type Pin } from "../../lib/blueprints"
+import { pinLinkProblem, startPinLink, type PinLink } from "../../lib/pinPickerModel"
 import { categories, categoryLabels, defaultDueDate, qaActions, qaSeverityHelp, qaSeverityLabels, severities, trades, tradeLabels, type DefectCategory, type QaSeverity, type Trade } from "../../lib/qa"
 import { useToast } from "../../lib/toast"
 
 const label = "mb-1 block text-xs font-extrabold uppercase tracking-wider text-fg-muted"
 
 // A non-conformance noticed outside a formal inspection (a walk-through, a delivery, a complaint). Defects found in an inspection
-// are raised automatically when it is signed off.
+// are raised automatically when it is signed off. It is linked to a work pin and optionally one of its checklist items (the
+// database saves the item name with it); "Project-wide" is allowed for findings that concern no single location.
 export default function NewDefectModal({
   projectId,
   pins,
   foremen,
   today,
   initialPinId,
+  initialItemId,
   onClose,
   onCreated,
 }: {
@@ -23,6 +27,7 @@ export default function NewDefectModal({
   foremen: Array<{ user_id: string; full_name: string }>
   today: string
   initialPinId?: string
+  initialItemId?: string
   onClose: () => void
   onCreated: (defectId: string) => void | Promise<void>
 }) {
@@ -33,14 +38,18 @@ export default function NewDefectModal({
   const [severity, setSeverity] = useState<QaSeverity>("major")
   const [trade, setTrade] = useState<Trade>("general")
   const [reference, setReference] = useState("")
-  const [pinId, setPinId] = useState(initialPinId ?? "")
+  const [link, setLink] = useState<PinLink>(() => startPinLink(pins, initialPinId, initialItemId))
+  const { blueprints } = useBlueprints(projectId)
+  const checklist = useChecklist(link.pinId || null)
+  const linkProblem = pinLinkProblem(link, { projectId, pins, items: checklist.items, requirePin: false, itemsLoading: checklist.loading, itemsError: checklist.error, waitForChecklist: true })
   const [assignedTo, setAssignedTo] = useState(foremen.length === 1 ? foremen[0].user_id : "")
   const [due, setDue] = useState("")
   const [busy, setBusy] = useState(false)
 
   const submit = async () => {
+    if (linkProblem) return toast.error("Not raised", linkProblem)
     setBusy(true)
-    const result = await qaActions.raiseDefect({ projectId, title: title.trim(), description: description.trim(), category, severity, trade, reference: reference.trim(), pinId: pinId || null, assignedTo: assignedTo || null, due: due || null })
+    const result = await qaActions.raiseDefect({ projectId, title: title.trim(), description: description.trim(), category, severity, trade, reference: reference.trim(), pinId: link.pinId || null, checklistItemId: link.itemId || null, assignedTo: assignedTo || null, due: due || null })
     setBusy(false)
     if (!result.ok) return toast.error("Not raised", result.message)
     toast.success("Non-conformance raised", assignedTo ? "The foreman is notified" : "Assign it to a foreman so it gets fixed")
@@ -56,7 +65,7 @@ export default function NewDefectModal({
       footer={
         <>
           <button type="button" className={buttonSecondary} onClick={onClose}>Cancel</button>
-          <button type="button" className={buttonPrimary} disabled={busy || title.trim().length < 3} onClick={() => void submit()}>{busy ? "Raising..." : "Raise NCR"}</button>
+          <button type="button" className={buttonPrimary} disabled={busy || title.trim().length < 3 || Boolean(linkProblem)} onClick={() => void submit()}>{busy ? "Raising..." : "Raise NCR"}</button>
         </>
       }
     >
@@ -73,10 +82,9 @@ export default function NewDefectModal({
           <div><label className={label} htmlFor="n-who">Responsible foreman</label><select id="n-who" className={inputClass} value={assignedTo} onChange={(event) => setAssignedTo(event.target.value)}><option value="">Not assigned yet</option>{foremen.map((f) => <option key={f.user_id} value={f.user_id}>{f.full_name}</option>)}</select></div>
           <div><label className={label} htmlFor="n-due">Deadline (optional)</label><input id="n-due" type="date" min={today} className={inputClass} value={due} onChange={(event) => setDue(event.target.value)} /></div>
         </div>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div><label className={label} htmlFor="n-ref">Standard / clause</label><input id="n-ref" className={inputClass} maxLength={200} value={reference} onChange={(event) => setReference(event.target.value)} placeholder="e.g. NSCP 2015, section and clause" /></div>
-          <div><label className={label} htmlFor="n-pin">Linked pin (optional)</label><select id="n-pin" className={inputClass} value={pinId} onChange={(event) => setPinId(event.target.value)}><option value="">No pin</option>{pins.filter((pin) => pin.category !== "note").map((pin) => <option key={pin.id} value={pin.id}>{pin.title}</option>)}</select></div>
-        </div>
+        <div><label className={label} htmlFor="n-ref">Standard / clause</label><input id="n-ref" className={inputClass} maxLength={200} value={reference} onChange={(event) => setReference(event.target.value)} placeholder="e.g. NSCP 2015, section and clause" /></div>
+        <PinLinkPicker projectId={projectId} sheets={blueprints} pins={pins} value={link} onChange={setLink} checklist={checklist} allowProjectWide disabled={busy} />
+        {linkProblem && link.pinId ? <p role="status" className="-mt-2 text-xs text-fg-muted">{linkProblem}</p> : !link.pinId ? <p className="-mt-2 text-xs text-fg-muted">Project-wide: this NCR is not tied to one location. Choose a pin when the problem is at a specific place.</p> : null}
       </div>
     </Modal>
   )

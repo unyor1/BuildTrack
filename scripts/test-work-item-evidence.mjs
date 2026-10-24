@@ -99,7 +99,7 @@ const compareComponent = comparison.type
 tree = compareComponent({ ...comparison.props, attempts: [original, corrected] })
 assert.equal(find(node => node.props?.before).props.before.path, "one.jpg")
 assert.equal(find(node => node.props?.after).props.after.path, "two.jpg", "Keep the interactive comparison for corrected photos")
-assert.equal(compareComponent({ ...comparison.props, attempts: [original, { photos_snapshot: [photo("blocked", "floor")] }], draftPhotos: [ { ...photo("bad"), stamp_flag: "away_from_site" } ], role: "engineer" }), null, "Comparison must preserve Engineer photo restrictions")
+assert.equal(compareComponent({ ...comparison.props, attempts: [original, { photos_snapshot: [photo("blocked", "floor")] }], draftPhotos: [ { ...photo("bad"), stamp_flag: "clock_ahead" } ], role: "engineer" }), null, "Comparison must preserve Engineer photo restrictions")
 data.error = "Could not load NCRs"
 render(Workspace, { itemId: "floor", onClose() {} })
 assert.match(text(tree), /NCR information is unavailable/); assert.doesNotMatch(text(tree), /No NCR recorded/)

@@ -115,6 +115,8 @@ export type Defect = {
   closed_by: string | null
   closing_note: string | null
   correction_attempt_id?: string | null // the correction package (remarks + photos) that answered it
+  checklist_item_id?: string | null // raised directly on one checklist item (20261024090000); inspection NCRs link through their request
+  checklist_name?: string | null // the item's name when the NCR was raised
 }
 
 export type DefectEvent = { id: number; defect_id: string; actor_id: string | null; kind: "raised" | "edited" | "status" | "rejected" | "closed"; from_status: string | null; to_status: string | null; note: string | null; created_at: string }
@@ -345,8 +347,9 @@ export const qaActions = {
   complete: (id: string, summary: string) => call<{ result: "passed" | "conditional" | "failed"; score: number; threshold: number; defects: number; critical_failed: boolean; hold_point_failed: boolean }>("complete_inspection", { p_id: id, p_summary: summary || null }),
   reinspect: (id: string, note: string) => call<string>("request_reinspection", { p_id: id, p_note: note || null }),
   cancel: (id: string, reason: string) => call("cancel_inspection", { p_id: id, p_reason: reason }),
-  raiseDefect: (input: { projectId: string; title: string; description: string; category: DefectCategory; severity: QaSeverity; trade: Trade; reference?: string; pinId?: string | null; assignedTo?: string | null; due?: string | null }) =>
-    call<string>("raise_defect", { p_project: input.projectId, p_title: input.title, p_description: input.description, p_category: input.category, p_severity: input.severity, p_trade: input.trade, p_reference: input.reference ?? null, p_pin: input.pinId ?? null, p_assigned_to: input.assignedTo ?? null, p_due: input.due ?? null }),
+  // The 11-argument form (20261024090000) also records the checklist item; the database validates pin, item and project together.
+  raiseDefect: (input: { projectId: string; title: string; description: string; category: DefectCategory; severity: QaSeverity; trade: Trade; reference?: string; pinId?: string | null; checklistItemId?: string | null; assignedTo?: string | null; due?: string | null }) =>
+    call<string>("raise_defect", { p_project: input.projectId, p_title: input.title, p_description: input.description, p_category: input.category, p_severity: input.severity, p_trade: input.trade, p_reference: input.reference ?? null, p_pin: input.pinId ?? null, p_assigned_to: input.assignedTo ?? null, p_due: input.due ?? null, p_checklist_item: input.checklistItemId ?? null }),
   editDefect: (input: { id: string; title: string; description: string; category: DefectCategory; severity: QaSeverity; reference: string; assignedTo: string | null; due: string | null }) =>
     call("edit_defect", { p_id: input.id, p_title: input.title, p_description: input.description, p_category: input.category, p_severity: input.severity, p_reference: input.reference, p_assigned_to: input.assignedTo, p_due: input.due }),
   updateDefect: (input: { id: string; status: "open" | "in_progress" | "for_verification"; corrective?: string; rootCause?: string; preventive?: string; note?: string }) =>
