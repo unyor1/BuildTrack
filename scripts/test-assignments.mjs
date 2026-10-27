@@ -1,6 +1,7 @@
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import ts from "typescript"
+import { pinPlanPath } from "../src/lib/pinRecordsModel.ts"
 
 // Exercise the real detailed list and controls without network access or real project writes.
 let slots = [], cursor = 0, effects = [], tree, calls = [], fail = false, hold = false, finish, links = [], conflict = false, reloads = 0, projectId = "project"
@@ -22,7 +23,7 @@ const work = {
 const deps = {
   useProjectWork: () => work, getSelectedProjectId: () => projectId, dbMessage: error => error.message,
   isOverdue: row => Boolean(row.due_date && row.due_date < "2026-01-03"), statusChip: {}, severityChip: {}, statusLabels: { in_progress: "In progress", for_review: "For review", verified: "Completed" }, severityLabels: { medium: "Medium" },
-  followLink: (...args) => links.push(args), useToast: () => ({ success() {}, error() {} }), inputClass: "input",
+  followLink: (...args) => links.push(args), pinPlanPath, useToast: () => ({ success() {}, error() {} }), inputClass: "input",
   supabase: {
     from(table) {
       let payload, filters = {}

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { randomUUID } from "node:crypto"
-import { passWorkFixture } from "./qa-fixtures.mjs"
+import { passWorkFixture, submitWorkFixture } from "./qa-fixtures.mjs"
 
 export default async function(ctx) {
   const {db,ids,as,asOwner,addUser,test,expectFail}=ctx
@@ -135,5 +135,26 @@ export default async function(ctx) {
     await expectFail("select public.save_site_issue_photo($1,2,'[]','Edited after completion')",[photo.id],/Reopen completed work/)
     await expectFail("select public.add_site_issue_photos($1,'[]')",[report],/Reopen completed work/)
     await expectFail("select public.log_site_issue($1,$2,'high','After completion','[]')",[randomUUID(),pin],/Reopen completed work/)
+  })
+
+  await test("Site issues: Engineer can log on a locked pin awaiting QA without losing the inspection or its evidence",async()=>{
+    await as("issueEng")
+    const review=(await db.query("insert into public.pins(project_id,blueprint_id,x,y,title,assigned_to) values($1,$2,50,50,'QA issue work',$3) returning id",[project,sheet,ids.issueFore])).rows[0].id
+    const ir=await submitWorkFixture(ctx,review,"issueEng","issueFore")
+    await as("issueEng")
+    await db.query("update public.pins set locked=true where id=$1",[review])
+    assert.equal((await db.query("select status from public.pins where id=$1",[review])).rows[0].status,"for_review")
+    const before=(await db.query("select id from public.pin_photos where pin_id=$1 order by id",[review])).rows
+    await log(randomUUID(),review)
+    assert.deepEqual((await db.query("select status,locked from public.pins where id=$1",[review])).rows[0],{status:"for_review",locked:true})
+    assert.equal((await db.query("select count(*) n from public.site_issue_reports where pin_id=$1",[review])).rows[0].n,1)
+    assert.equal((await db.query("select status from public.qa_inspections where id=$1",[ir])).rows[0].status,"requested")
+    assert.deepEqual((await db.query("select id from public.pin_photos where pin_id=$1 order by id",[review])).rows,before)
+    await db.query("select public.start_inspection($1)",[ir])
+    await log(randomUUID(),review)
+    assert.equal((await db.query("select status from public.qa_inspections where id=$1",[ir])).rows[0].status,"in_progress")
+    await expectFail("update public.pins set status='in_progress' where id=$1",[review],/Awaiting Engineer inspection/)
+    const item=(await db.query("select id from public.pin_checklist_items where pin_id=$1",[review])).rows[0].id
+    await expectFail("update public.pin_checklist_items set text='Rewritten evidence' where id=$1",[item],/locked|pending/i)
   })
 }

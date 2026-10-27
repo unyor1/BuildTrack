@@ -30,12 +30,12 @@ export default function CorrectionForm({ formId, item, pin, draft, previousIr, p
   const [also, setAlso] = useState<string[]>([])
   const eligibleOf = (attemptId: string) => photos.filter((photo) => photo.qa_attempt_id === attemptId && photoEligible(photo)).length
 
-  // Other returned items of the same work whose correction is already prepared can travel in the same package (one request per work).
+  // Only corrections from the same earlier request and criteria can share a package. Independent requests stay separate.
   const others = useMemo(() => pinItems.filter((row) => row.id !== item.id && row.review_status !== "verified" && row.review_status !== "for_review"
     && (row.qa_template_id ?? pin.qa_template_id) === (item.qa_template_id ?? pin.qa_template_id)).flatMap((row) => {
     const other = attempts.find((attempt) => attempt.item_id === row.id && !attempt.submitted_inspection_id)
-    return other ? [{ item: row, draft: other, ready: other.remarks.trim().length >= 5 && eligibleOf(other.id) > 0 }] : []
-  }), [pinItems, attempts, photos, item.id, item.qa_template_id, pin.qa_template_id]) // eslint-disable-line react-hooks/exhaustive-deps
+    return other && other.previous_inspection_id === draft?.previous_inspection_id ? [{ item: row, draft: other, ready: other.remarks.trim().length >= 5 && eligibleOf(other.id) > 0 }] : []
+  }), [pinItems, attempts, photos, item.id, item.qa_template_id, pin.qa_template_id, draft?.previous_inspection_id]) // eslint-disable-line react-hooks/exhaustive-deps
   const included = [item.id, ...also]
   const ncrs = useMemo(() => {
     const seen = new Map<string, Defect>()
@@ -51,6 +51,7 @@ export default function CorrectionForm({ formId, item, pin, draft, previousIr, p
   const minimum = selected.length ? 10 : 5
   const newPhotos = draft ? eligibleOf(draft.id) : 0
   const problem = !draft ? "Start the correction first."
+    : answerable.length > 0 && selected.length === 0 ? "Select at least one NCR finding this correction actually answers."
     : remarks.trim().length < minimum ? `Describe what was corrected (at least ${minimum} characters).`
     : !newPhotos ? "Add at least one new eligible photo of the corrected work."
     : ""
@@ -76,9 +77,10 @@ export default function CorrectionForm({ formId, item, pin, draft, previousIr, p
       const names = pinItems.filter((row) => included.includes(row.id)).map((row) => row.text).join(", ")
       const chosen = ncrs.filter((row) => selected.includes(row.id))
       const ok = await confirm({
-        title: "Submit the correction package?",
-        message: `${names} will be re-inspected${previousIr ? ` (follows ${irRef(previousIr)})` : ""}${chosen.length ? ` and ${chosen.map((row) => ncrRef(row.number)).join(", ")} will be sent for verification` : ""} with these remarks and photos. Earlier requests stay unchanged. The Engineer decides every NCR separately.`,
-        confirmLabel: "Submit correction package",
+        title: "Submit correction?",
+        size: "md",
+        message: `${names}: the full recorded checklist will be reinspected${previousIr ? ` (follows ${irRef(previousIr)})` : ""}, including previously passed checks. ${chosen.length ? `${chosen.map((row) => ncrRef(row.number)).join(", ")} will be sent for verification with these correction remarks and new photos. ` : ""}Original results and evidence stay unchanged. Selecting NCRs identifies the repairs; it does not narrow inspection scope. Each NCR still requires Engineer verification and closure.`,
+        confirmLabel: "Submit request",
       })
       if (!ok) return
       const outcome = await qaActions.submitCorrection({ itemIds: included, defectIds: selected, rootCause: root, preventive })
@@ -102,7 +104,7 @@ export default function CorrectionForm({ formId, item, pin, draft, previousIr, p
     <form id={formId} noValidate onSubmit={(event) => void submit(event)} className="space-y-4 rounded-xl border-2 border-brand/60 bg-brand-soft/40 p-3">
       <div>
         <p className="text-sm font-extrabold">Correction package · {item.text}</p>
-        <p className="text-xs text-fg-muted">These remarks and photos belong to this correction only{previousIr ? `; ${irRef(previousIr)} keeps its own` : ""}.</p>
+        <p className="text-xs leading-relaxed text-fg-muted">These remarks and photos belong to this correction only{previousIr ? `; ${irRef(previousIr)} keeps its own` : ""}. Select the NCR findings actually corrected. The entire {item.text} checklist will be reinspected, including previously passed checks, because a repair may affect other work. NCR selection does not reduce that scope. Unrelated checklists and the whole project are not resubmitted. Open findings still block completion.</p>
       </div>
       <div>
         <label className={label} htmlFor={`${formId}-remarks`}>What was corrected *</label>
@@ -138,7 +140,7 @@ export default function CorrectionForm({ formId, item, pin, draft, previousIr, p
       </div> : null}
       {others.length ? <fieldset className="space-y-1.5">
         <legend className={label}>Include other corrections on this work</legend>
-        <p className="text-xs text-fg-muted">Items with the same criteria can share a correction package. Other items can also be submitted separately while QA is pending.</p>
+        <p className="text-xs text-fg-muted">Only items with the same criteria and earlier request can share this package. Other corrections are submitted independently; unrelated pending QA does not block them.</p>
         {others.map((row) => <label key={row.item.id} className="flex items-center gap-2 text-sm">
           <input type="checkbox" className="h-4 w-4 accent-[#9e1f93]" disabled={!row.ready} checked={also.includes(row.item.id)} onChange={(event) => setAlso((current) => event.target.checked ? [...current, row.item.id] : current.filter((id) => id !== row.item.id))} />
           {row.item.text}{row.ready ? "" : <span className="text-xs text-fg-muted"> (needs remarks and a new photo in its own correction first)</span>}

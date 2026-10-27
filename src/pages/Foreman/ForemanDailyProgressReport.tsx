@@ -84,8 +84,8 @@ export default function ForemanDailyProgressReport(_: ForemanPageProps) {
     url.searchParams.delete("linkpin"); url.searchParams.delete("linkitem")
     window.history.replaceState({}, "", url)
     const pin = pins.find((row) => row.id === wanted.pin_id && row.project_id === projectId && row.category !== "note")
-    if (!pin) return toast.error("Work pin not found", "Choose the linked work in the report.")
-    if (readOnly) return toast.info("Today's report is already submitted", `${pin.title} was not added. The Engineer can return the report for changes.`)
+    if (!pin) { toast.error("Work pin not found", "Choose the linked work in the report."); return }
+    if (readOnly) { toast.info("Today's report is already submitted", `${pin.title} was not added. The Engineer can return the report for changes.`); return }
     dirty.current = true
     setForm((current) => current.linked_work.some((row) => row.pin_id === wanted.pin_id && (row.item_id ?? null) === wanted.item_id) ? current : { ...current, linked_work: [...current.linked_work, wanted] })
     toast.success("Work pin added to today's report", workItems.some((item) => item.pin_id === pin.id) && !wanted.item_id ? `Choose the checklist item worked on for ${pin.title}, then save.` : "Save or submit the report to keep it.")

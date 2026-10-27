@@ -427,6 +427,10 @@ assert.equal(button("Log issue").props.disabled,true);await picker().props.check
 globalThis.__issueChecklistTest.lists["pin-b"].error="";renderLog();assert.equal(button("Log issue").props.disabled,false)
 logProps={...logProps,initialPinId:"pin-b",initialItemId:"wall-b"};values=[];renderLog()
 assert.deepEqual(picker().props.value,{sheetId:"sheet",pinId:"pin-b",itemId:"wall-b"},"From a pin panel the sheet, pin and item are already chosen")
+logProps={...logProps,pins:logPins.map(pin=>pin.id==="pin-b"?{...pin,status:"for_review",locked:true}:pin)};values=[];renderLog()
+assert.equal(picker().props.value.pinId,"pin-b","A pin waiting for QA remains selected even if its position is locked")
+assert.equal(button("Log issue").props.disabled,false,"Pending QA does not prevent logging a site issue")
+assert.ok(!picker().props.pins.some(pin=>pin.id==="done"),"Completed work remains unavailable")
 console.log("Issue form: shared pin picker, preselected pin from the panel, saved selection, wrong-pin rejection, checklist loading/error guards and retry passed")
 delete globalThis.__issueChecklistTest
 delete globalThis.__issueEditorHooks

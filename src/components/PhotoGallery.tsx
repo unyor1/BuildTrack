@@ -7,6 +7,7 @@ import { formatStamp, useSignedUrl } from "../lib/blueprints"
 import type { GalleryPhoto } from "../lib/photoGalleryModel"
 import { useAuth } from "../lib/auth"
 import { photoPreviewBlocked } from "../lib/photoStamp"
+import { photoTime } from "../lib/photoGalleryModel"
 
 export type { GalleryPhoto } from "../lib/photoGalleryModel"
 
@@ -34,7 +35,7 @@ function Thumb({ photo, bucket, className, compact = false }: { photo: GalleryPh
 const tileDate = (iso: string) => new Date(iso).toLocaleDateString("en-PH", { timeZone: "Asia/Manila", month: "short", day: "numeric" })
 
 // Shared thumbnails and viewer for pin evidence and private daily-report photos. "tiles" = compact squares for narrow panels.
-export function PhotoGrid({ photos, bucket, loading = false, emptyHint, onRemove, variant = "cards" }: { photos: GalleryPhoto[]; bucket: "pin-photos" | "daily-photos"; loading?: boolean; emptyHint: string; onRemove?: (photo: GalleryPhoto) => void; variant?: "cards" | "tiles" }) {
+export function PhotoGrid({ photos, bucket, loading = false, emptyHint, onRemove, variant = "cards" }: { photos: GalleryPhoto[]; bucket: "pin-photos" | "daily-photos"; loading?: boolean; emptyHint: string; onRemove?: (photo: GalleryPhoto) => void; variant?: "cards" | "tiles" | "details" }) {
   const [viewingId, setViewingId] = useState<string | null>(null)
   const index = photos.findIndex((photo) => photo.id === viewingId)
   const viewing = index >= 0 ? photos[index] : undefined
@@ -68,19 +69,26 @@ export function PhotoGrid({ photos, bucket, loading = false, emptyHint, onRemove
   )
   return (
     <>
-      <ul className="grid min-w-0 gap-3" style={{gridTemplateColumns:"repeat(auto-fill,minmax(min(100%,13rem),1fr))"}}>
+      <ul className="grid min-w-0 gap-3" style={{gridTemplateColumns:variant === "details" ? "minmax(0,1fr)" : "repeat(auto-fill,minmax(min(100%,13rem),1fr))"}}>
         {photos.map((photo) => (
           <li key={photo.id} className="min-w-0">
             <button type="button" onClick={() => setViewingId(photo.id)} className="group block w-full overflow-hidden rounded-xl border border-line bg-surface text-left transition hover:shadow-md">
               <div className="overflow-hidden"><Thumb photo={photo} bucket={bucket} className="aspect-[4/3] w-full object-cover transition group-hover:scale-[1.02]" /></div>
               <span className="block space-y-1 px-3 py-2">
-                <span className="line-clamp-2 break-words text-sm font-semibold">{photo.caption || photo.work?.title || photo.label}</span>
+                <span className={`${variant === "details" ? "block whitespace-pre-wrap" : "line-clamp-2"} break-words text-sm font-semibold`}>{photo.caption || photo.work?.title || photo.label}</span>
                 {photo.checklist ? <span className="block rounded-lg bg-surface-muted p-2 text-xs">
                   <span className="block font-bold text-brand-text">Checklist item</span>
-                  <span className="line-clamp-2 whitespace-pre-wrap break-words">{photo.checklist.text}</span>
+                  <span className={`${variant === "details" ? "block" : "line-clamp-2"} whitespace-pre-wrap break-words`}>{photo.checklist.text}</span>
                   <span className="mt-1 block font-semibold text-fg-muted">{photo.checklist.done ? "Completed" : "Not completed"}</span>
+                  {variant === "details" && photo.checklist.remark ? <span className="mt-1 block whitespace-pre-wrap break-words">Remarks: {photo.checklist.remark}</span> : null}
                 </span> : null}
-                <span className="block text-xs text-fg-muted">{formatStamp(photo.created_at)}</span>
+                {variant === "details" ? <span className="grid gap-2 border-t border-line pt-2 text-xs" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(min(100%,9rem),1fr))" }}>
+                  <span className="min-w-0"><span className="block font-semibold text-fg-muted">Uploaded</span>{photoTime(photo.created_at)}</span>
+                  <span className="min-w-0"><span className="block font-semibold text-fg-muted">Uploaded by</span><span className="break-words">{photo.uploaderName || "Team member"}</span></span>
+                  <span className="min-w-0"><span className="block font-semibold text-fg-muted">Captured</span>{photoTime(photo.taken_at)}</span>
+                  <span className="min-w-0"><span className="block font-semibold text-fg-muted">Evidence</span>{photo.qa_attempt_id ? "Correction submission" : "Original submission"}</span>
+                  {photo.work?.title ? <span className="min-w-0"><span className="block font-semibold text-fg-muted">Work pin</span><span className="break-words">{photo.work.title}</span></span> : null}
+                </span> : <span className="block text-xs text-fg-muted">{formatStamp(photo.created_at)}</span>}
                 <span className="block text-xs font-bold text-brand-text">View photo and details</span>
               </span>
             </button>

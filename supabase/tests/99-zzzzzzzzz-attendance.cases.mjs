@@ -98,11 +98,8 @@ export default async function ({
       [project, "device-worker-2", ...scan.slice(2)],
       /different scan details/,
     )
-    await expectFail(
-      record,
-      [project, "device-worker-1", "out", ...scan.slice(3)],
-      /different scan details/,
-    )
+    // Since 20261027130000 the database decides IN/OUT: a retry carrying another switch value is still the same scan.
+    assert.equal((await db.query(record, [project, "device-worker-1", "out", ...scan.slice(3)])).rows[0].id, id)
     await expectFail(record, [other, ...scan.slice(1)], /not linked/)
     await expectFail(
       record,
@@ -259,7 +256,8 @@ export default async function ({
           [project],
         )
       ).rows[0].summary,
-      { scans: 4, workers: 2, clocked_in: 1, clocked_out: 1 },
+      // The late import (older than the worker's latest scan that day) is logged as ignored, not counted (20261027130000).
+      { scans: 3, workers: 2, clocked_in: 1, clocked_out: 1, late: 0, ignored: 1 },
     )
     assert.deepEqual(
       (
@@ -268,7 +266,7 @@ export default async function ({
           [other],
         )
       ).rows[0].summary,
-      { scans: 0, workers: 0, clocked_in: 0, clocked_out: 0 },
+      { scans: 0, workers: 0, clocked_in: 0, clocked_out: 0, late: 0, ignored: 0 },
     )
     await as("attendanceClient")
     assert.equal(
@@ -367,7 +365,8 @@ export default async function ({
           [worker],
         )
       ).rows[0].n,
-      3,
+      2,
+      "The out-of-order late import was ignored, not stored as attendance",
     )
     const fn =
       "public.record_biometric_attendance(uuid,text,text,timestamptz,text,text)"

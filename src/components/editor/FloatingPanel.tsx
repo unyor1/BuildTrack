@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode, type PointerEvent as ReactPointerEvent } from "react"
+import PanelResizeHandle from "./PanelResizeHandle"
+import { panelWidth } from "../../lib/panelSize"
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
 
@@ -14,6 +16,7 @@ export default function FloatingPanel({
   collapsed = false,
   onToggleCollapsed,
   onMove,
+  onResize,
   onClose,
   headerActions,
   children,
@@ -27,6 +30,7 @@ export default function FloatingPanel({
   collapsed?: boolean
   onToggleCollapsed?: () => void
   onMove: (x: number, y: number) => void
+  onResize?: (width: number) => void
   onClose?: () => void
   headerActions?: ReactNode
   children: ReactNode
@@ -34,6 +38,8 @@ export default function FloatingPanel({
   const ref = useRef<HTMLDivElement>(null)
   const [pos, setPos] = useState({ x, y })
   const drag = useRef<{ dx: number; dy: number } | null>(null)
+  const maximum = Math.min(760, Math.max(0, window.innerWidth - pos.x - 16))
+  const shownWidth = onResize ? panelWidth(width, maximum) : Math.min(width, window.innerWidth - 16)
 
   useEffect(() => setPos({ x, y }), [x, y])
 
@@ -42,12 +48,12 @@ export default function FloatingPanel({
     const fit = () => {
       const rect = ref.current?.getBoundingClientRect()
       if (!rect) return
-      setPos((current) => ({ x: clamp(current.x, 0, Math.max(0, window.innerWidth - Math.min(rect.width, 120))), y: clamp(current.y, 0, Math.max(0, window.innerHeight - 44)) }))
+      setPos((current) => ({ x: clamp(current.x, 0, Math.max(0, window.innerWidth - Math.min(width, window.innerWidth - 16) - 16)), y: clamp(current.y, 0, Math.max(0, window.innerHeight - 44)) }))
     }
     window.addEventListener("resize", fit)
     fit()
     return () => window.removeEventListener("resize", fit)
-  }, [])
+  }, [width])
 
   const down = (event: ReactPointerEvent<HTMLDivElement>) => {
     if ((event.target as Element).closest("button, a, input, select, textarea")) return
@@ -73,7 +79,7 @@ export default function FloatingPanel({
       role="group"
       aria-label={label}
       className="bt-pop fixed z-[60] flex flex-col overflow-hidden rounded-2xl border border-line bg-surface/95 text-fg shadow-2xl backdrop-blur-xl"
-      style={{ left: pos.x, top: pos.y, width: Math.min(width, window.innerWidth - 16), maxHeight }}
+      style={{ left: pos.x, top: pos.y, width: shownWidth, maxHeight }}
     >
       <div
         className="flex flex-none cursor-grab touch-none select-none items-center gap-2 border-b border-line bg-surface-muted/70 px-3 py-2 active:cursor-grabbing"
@@ -100,6 +106,7 @@ export default function FloatingPanel({
         ) : null}
       </div>
       {collapsed ? null : <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>}
+      {onResize && !collapsed ? <PanelResizeHandle side="right" width={shownWidth} maximum={maximum} onResize={onResize} /> : null}
     </div>
   )
 }

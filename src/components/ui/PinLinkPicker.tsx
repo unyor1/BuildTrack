@@ -2,7 +2,7 @@ import { useId, useState } from "react"
 import { inputClass } from "./PageParts"
 import { changePinLink, itemChoices, pinChoices, type PickItem, type PickPin, type PickSheet, type PinLink } from "../../lib/pinPickerModel"
 
-const field = `${inputClass} mt-1`
+const field = `${inputClass} mt-1 !text-sm !font-normal !normal-case !tracking-normal`
 const label = "block min-w-0 text-xs font-extrabold uppercase tracking-wider text-fg-muted"
 
 // Where a record belongs on the blueprint: sheet -> searchable work pin -> optional checklist item, all of the form's project.

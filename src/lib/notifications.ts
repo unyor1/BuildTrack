@@ -125,6 +125,7 @@ export const notificationKinds: Record<string, { label: string; tone: string }> 
   "pin.milestone": { label: "Milestone", tone: "bg-fuchsia-100 text-fuchsia-900 dark:bg-fuchsia-900/40 dark:text-fuchsia-200" },
   "pin.returned": { label: "Sent back", tone: "bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-200" },
   "pin.assigned": { label: "Assigned", tone: "bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-200" },
+  "pin.problem": { label: "Field problem", tone: "bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-200" },
   "pin.due": { label: "Due soon", tone: "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200" },
   "report.submitted": { label: "Report", tone: "bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-200" },
   "report.reopened": { label: "Report", tone: "bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-200" },

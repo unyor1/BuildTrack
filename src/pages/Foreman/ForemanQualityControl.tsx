@@ -31,7 +31,7 @@ export default function ForemanQualityControl({ onNavigate }: ForemanPageProps) 
         description="Open each item, add photos and submit for QA. The Engineer records the inspection, closes linked NCRs and manually completes the checklist. Earlier requests and corrections stay on record."
         actions={corrections ? <button type="button" className={buttonSecondary} onClick={() => onNavigate("issues")}>{corrections} correction{corrections === 1 ? "" : "s"} to do</button> : undefined} />
       {projectId ? <>
-        <WorkItemBoard groups={groups} loading={work.loading || ws.loading} error={work.error} nameOf={ws.nameOf} sheetOf={ws.work.sheetOf} onOpen={setItemId}
+        <WorkItemBoard key={`${projectId}:${profile?.id}`} groups={groups} loading={work.loading || ws.loading} error={work.error} nameOf={ws.nameOf} sheetOf={ws.work.sheetOf} onOpen={setItemId}
           emptyTitle="No work items assigned to you" emptyText="When the Engineer assigns work with work items (e.g. FLOOR, WALL), each item appears here with its next action." />
       </> : null}
       {itemId ? <WorkItemWorkspace itemId={itemId} onClose={() => setItemId(null)} onChanged={async () => { await Promise.all([ws.reloadAll(), work.reload()]) }} /> : null}

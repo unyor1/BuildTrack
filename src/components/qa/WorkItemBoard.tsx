@@ -1,5 +1,5 @@
 import { useMemo, useState, type ReactNode } from "react"
-import WorkFilters from "../WorkFilters"
+import WorkFilters, { type FilterPin, type FilterItem } from "../WorkFilters"
 import { EmptyState, buttonSecondary, inputClass } from "../ui/PageParts"
 import { SkeletonList } from "../ui/Skeleton"
 import { StageChip } from "./WorkItemParts"
@@ -8,11 +8,16 @@ import { changePhotoScope, emptyPhotoScope, type PhotoScope } from "../../lib/ph
 import type { ItemStage } from "../../lib/workItemModel"
 
 // `short` is the filter chip label; `title` / `hint` head the section when all groups are shown.
-export type BoardGroup = { key: string; title: string; short: string; hint?: string; rows: WorkItemRow[] }
+export type BoardGroup = { key: string; title: string; short: string; hint?: string; always?: boolean; rows: WorkItemRow[] }
 // Other lists on the same page (NCRs outside work items, blocked work, recently completed...). They get their own chip, show
 // under All, and stay hidden while another chip is chosen, so every list is separate. `count` = entries in `content` that need
 // attention; a list appears when it has any, or always when `always` is set (e.g. a register whose history is still useful at 0).
-export type BoardExtra = { key: string; title: string; short: string; hint?: string; count: number; always?: boolean; content: ReactNode }
+export type BoardFilter = { scope: PhotoScope; query: string }
+export type BoardExtra = {
+  key: string; title: string; short: string; hint?: string; count: number; always?: boolean; content: ReactNode
+  filterPins?: FilterPin[]; filterItems?: FilterItem[]
+  filter?: (filters: BoardFilter) => { count: number; content: ReactNode; hasMatches: boolean }
+}
 
 const edge: Record<ItemStage, string> = {
   preparing: "border-l-slate-400", ready: "border-l-sky-500", requested: "border-l-fuchsia-600", inspecting: "border-l-fuchsia-600",
@@ -27,31 +32,34 @@ export default function WorkItemBoard({ groups, extras = [], loading, error, nam
   groups: BoardGroup[]; extras?: BoardExtra[]; loading: boolean; error: string; nameOf: (id: string | null) => string; sheetOf: (id: string) => string
   onOpen: (itemId: string) => void; emptyTitle: string; emptyText: string
 }) {
-  const [filter, setFilter] = useState("all")
+  const [filter, setFilter] = useState<string | null>(null)
   const [scope, setScope] = useState<PhotoScope>(emptyPhotoScope)
   const [query, setQuery] = useState("")
   const rows = useMemo(() => groups.flatMap((group) => group.rows), [groups])
-  // Filter choices come from the work items on this board, so every option has something behind it.
-  const pins = useMemo(() => [...new Map(rows.map((row) => [row.pin.id, row.pin])).values()], [rows])
+  // Extras can opt into the same location/search filters and supply their permanent pin/item ids.
+  const pins = useMemo(() => [...new Map([...rows.map(row => row.pin), ...extras.flatMap(extra => extra.filterPins ?? [])].map(pin => [pin.id, pin])).values()], [rows, extras])
   const sheets = useMemo(() => [...new Set(pins.map((pin) => pin.blueprint_id))].map((id) => ({ id, title: sheetOf(id) })).sort((a, b) => a.title.localeCompare(b.title)), [pins, sheetOf])
-  const items = useMemo(() => [...new Map(rows.map((row) => [row.item.id, row.item])).values()], [rows])
+  const items = useMemo(() => [...new Map([...rows.map(row => row.item), ...extras.flatMap(extra => extra.filterItems ?? [])].map(item => [item.id, item])).values()], [rows, extras])
   const sheetOfPin = useMemo(() => new Map(pins.map((pin) => [pin.id, pin.blueprint_id])), [pins])
 
   const text = query.trim().toLowerCase()
   const narrowed = Boolean(text || scope.sheet || scope.pin || scope.item)
   const matches = (row: WorkItemRow) => (!scope.sheet || row.pin.blueprint_id === scope.sheet) && (!scope.pin || row.pin.id === scope.pin) && (!scope.item || row.item.id === scope.item)
-    && (!text || `${row.pin.title} ${row.item.text} ${sheetOf(row.pin.blueprint_id)}`.toLowerCase().includes(text))
+    && (!text || `${row.pin.title} ${row.item.text} ${sheetOf(row.pin.blueprint_id)} ${row.current ? `IR-${String(row.current.number).padStart(4, "0")}` : ""} ${row.ncrs.map(ncr => `NCR-${String(ncr.number).padStart(4, "0")} ${ncr.title}`).join(" ")}`.toLowerCase().includes(text))
   const filtered = groups.map((group) => ({ ...group, rows: group.rows.filter(matches) }))
-  const present = filtered.filter((group) => groups.find((source) => source.key === group.key)?.rows.length)
-  const lists = extras.filter((extra) => extra.count > 0 || extra.always)
-  // A chip whose list emptied falls back to All.
-  const active = filter === "all" || present.some((group) => group.key === filter) || lists.some((extra) => extra.key === filter) ? filter : "all"
+  const present = filtered.filter(group => group.always || groups.find(source => source.key === group.key)?.rows.length)
+  const lists = extras.filter(extra => extra.count > 0 || extra.always).map(extra => ({ ...extra, ...(extra.filter?.({ scope, query }) ?? { hasMatches: extra.count > 0 || Boolean(extra.always) }) }))
+  // Start on the first relevant list, not All. When a list empties, select the next available list.
+  const active = filter === "all" || present.some(group => group.key === filter) || lists.some(extra => extra.key === filter)
+    ? filter : present.find(group => groups.find(source => source.key === group.key)?.rows.length)?.key ?? lists.find(extra => extra.count > 0)?.key ?? present[0]?.key ?? lists[0]?.key ?? "all"
   const activeExtra = lists.find((extra) => extra.key === active)
   const shown = activeExtra ? [] : active === "all" ? present.filter((group) => group.rows.length) : present.filter((group) => group.key === active)
-  // Search and the sheet / pin / item filters are for work items, so the other lists step aside while they are used.
-  const shownExtras = activeExtra ? [activeExtra] : active === "all" && !narrowed ? lists : []
+  // Legacy extras that cannot apply these filters step aside; filterable extras stay in sync with the work rows.
+  const shownExtras = activeExtra ? [activeExtra] : active === "all" ? lists.filter(extra => !narrowed || (extra.filter && extra.hasMatches)) : []
+  const canFilter = !activeExtra || Boolean(activeExtra.filter)
+  const hasFilters = pins.length > 0 || items.length > 0 || lists.some(extra => extra.filter)
   const shownCount = shown.reduce((sum, group) => sum + group.rows.length, 0)
-  const allCount = filtered.reduce((sum, group) => sum + group.rows.length, 0) + (narrowed ? 0 : lists.reduce((sum, extra) => sum + extra.count, 0))
+  const allCount = filtered.reduce((sum, group) => sum + group.rows.length, 0) + lists.reduce((sum, extra) => sum + (!narrowed || extra.filter ? extra.count : 0), 0)
   const responsible = (row: WorkItemRow) => row.view.owner === "Foreman" ? `Foreman: ${nameOf(row.pin.assigned_to)}`
     : row.view.owner === "Engineer" ? `Engineer: ${row.current?.inspector_id ? nameOf(row.current.inspector_id) : "Project Engineer"}`
     : row.view.stage === "completed" ? "Checklist completed" : "Blocked"
@@ -95,16 +103,16 @@ export default function WorkItemBoard({ groups, extras = [], loading, error, nam
             {lists.map((extra) => <button key={extra.key} type="button" aria-pressed={active === extra.key} title={extra.title} onClick={() => setFilter(extra.key)} className={chip(active === extra.key)}>{extra.short} <span className={active === extra.key ? "text-white/85" : "text-fg-muted"}>{extra.count}</span></button>)}
             <button type="button" aria-pressed={active === "all"} onClick={() => setFilter("all")} className={chip(active === "all")}>All <span className={active === "all" ? "text-white/85" : "text-fg-muted"}>{allCount}</span></button>
           </div>
-          {rows.length ? <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search work items" aria-label="Search work items" className={`${inputClass} !w-full !py-1.5 sm:!w-60`} /> : null}
+          {canFilter && hasFilters ? <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={extras.some(extra => extra.filter) ? "Search corrections, NCRs or issues" : "Search work items"} aria-label="Search work items" className={`${inputClass} !w-full !py-1.5 sm:!w-60`} /> : null}
         </div>
-        {rows.length ? <div className="border-t border-line pt-3">
+        {canFilter && hasFilters ? <div className="border-t border-line pt-3">
           <WorkFilters label="Filter work items" sheets={sheets} pins={pins} items={items} scope={scope}
-            onChange={(key, value) => setScope((current) => changePhotoScope(current, key, value, (id) => sheetOfPin.get(id)))} onClear={() => setScope(emptyPhotoScope)} />
+            onChange={(key, value) => setScope((current) => changePhotoScope(current, key, value, (id) => sheetOfPin.get(id)))} canClear={narrowed} onClear={() => { setScope(emptyPhotoScope); setQuery("") }} />
         </div> : null}
       </div>
-      {activeExtra ? null : rows.length ? <p className="text-xs text-fg-muted">Showing {shownCount} of {rows.length} work item{rows.length === 1 ? "" : "s"}. Open one to see its inspection, NCRs, photos and history.{narrowed && active === "all" && lists.length ? " The other lists come back when the search and filters are cleared." : ""}</p> : null}
-      {!rows.length && active === "all" ? <EmptyState title={emptyTitle}>{emptyText}</EmptyState>
-        : !activeExtra && !shownCount && !shownExtras.length ? <EmptyState title="Nothing matches" action={<button type="button" className={buttonSecondary} onClick={() => { setFilter("all"); setScope(emptyPhotoScope); setQuery("") }}>Show all work items</button>}>No work item matches these filters.</EmptyState>
+      {activeExtra ? null : rows.length ? <p className="text-xs text-fg-muted">Showing {shownCount} of {rows.length} work item{rows.length === 1 ? "" : "s"}. Open one to see its inspection, NCRs, photos and history.{narrowed && active === "all" && lists.some(extra => !extra.filter) ? " The other lists come back when the search and filters are cleared." : ""}</p> : null}
+      {!rows.length && active === "all" && !narrowed ? <EmptyState title={emptyTitle}>{emptyText}</EmptyState>
+        : !activeExtra && !shownCount && !shownExtras.length ? <EmptyState title={narrowed ? "Nothing matches" : "No records in this list"} action={narrowed ? <button type="button" className={buttonSecondary} onClick={() => { setScope(emptyPhotoScope); setQuery("") }}>Clear filters</button> : undefined}>{narrowed ? "No record matches these filters." : "Items will appear here when they reach this stage."}</EmptyState>
         : shown.map((group) => (
           <section key={group.key} aria-label={group.title} className="space-y-2">
             <div>

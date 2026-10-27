@@ -104,6 +104,20 @@ await measure("QA boards: submission index (paged)", "fore", () => paged("select
 await measure("Sheet history, newest 120 (get_sheet_history)", "eng", async () => (await db.query("select * from public.get_sheet_history($1, 120)", [sheets[0]])).rows.length)
 await measure("Pin timeline (get_pin_timeline)", "fore", async () => (await db.query("select * from public.get_pin_timeline($1)", [pins[2]])).rows.length)
 await measure("Evidence check (pin_has_evidence)", "fore", async () => ((await db.query("select public.pin_has_evidence($1) e", [pins[2]])).rows[0].e ? 1 : 0))
+// Pin panel (records of one pin, as usePinRecords / useWorkQaHistory read them).
+const panelPin = (await db.query("select pin_id from public.qa_defects where pin_id is not null order by number limit 1")).rows[0].pin_id
+await measure("Pin panel: NCRs of one pin (paged)", "eng", () => paged("select * from public.qa_defects where pin_id = $1 order by number desc", [panelPin]))
+await measure("Pin panel: inspections, submissions, attempts of one pin", "eng", async () => (await Promise.all([
+  db.query("select * from public.qa_inspections where pin_id = $1 order by number", [panelPin]),
+  db.query("select * from public.pin_qa_submissions where pin_id = $1 order by submitted_at, id", [panelPin]),
+  db.query("select * from public.qa_work_attempts where pin_id = $1 order by created_at, id", [panelPin]),
+])).reduce((sum, result) => sum + result.rows.length, 0))
+await measure("Pin panel: site issues, client reports, questions of one pin", "eng", async () => (await Promise.all([
+  db.query("select * from public.site_issue_reports where pin_id = $1 order by created_at desc, id", [panelPin]),
+  db.query("select * from public.client_snags where pin_id = $1 order by number desc", [panelPin]),
+  db.query("select * from public.project_questions where pin_id = $1 order by created_at desc, id", [panelPin]),
+])).reduce((sum, result) => sum + result.rows.length, 0))
+await measure("Pin panel: daily reports linking one pin (jsonb contains)", "client", () => paged("select * from public.daily_reports where project_id = $1 and linked_work @> $2::jsonb and status = 'submitted' order by report_date desc, id", [project, JSON.stringify([{ pin_id: panelPin }])]))
 await measure("Foreman dashboard: only my pins, selected project (paged)", "fore", () => paged("select * from public.pins where assigned_to = $1 and project_id = $2 and category <> 'note' order by id", [ids.fore, project]))
 await measure("Foreman dashboard: sent-back events on my pins (100-ID batches)", "fore", async () => {
   let total = 0

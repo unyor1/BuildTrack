@@ -19,6 +19,7 @@
     "test:biometric-access": "node scripts/test-biometric-access.mjs",
     "test:worker-camera": "node scripts/test-worker-camera.mjs",
     "test:worker-enrollment": "node scripts/test-worker-enrollment.mjs",
+    "test:scan-notices": "node scripts/test-scan-notices.mjs",
     "test:foreman-attendance": "node scripts/test-foreman-attendance.mjs",
     "test:admin-worker-profiles": "node scripts/test-admin-worker-profiles.mjs",
     "test:attendance-reports": "node scripts/test-attendance-reports.mjs",
@@ -33,8 +34,10 @@
     "test:date-filters": "node scripts/test-date-filters.mjs",
     "test:project-calendar": "node scripts/test-project-calendar.mjs",
     "test:assignments": "node scripts/test-assignments.mjs",
+    "test:pin-records": "node scripts/test-pin-records.mjs",
+    "test:qa-reinspection": "node scripts/test-qa-reinspection.mjs",
     "test:load": "node scripts/load-test.mjs",
-    "check": "tsc --noEmit && pnpm test:lib && pnpm test:comparison && pnpm test:issue-editor && pnpm test:attendance && pnpm test:biometric-access && pnpm test:worker-camera && pnpm test:worker-enrollment && pnpm test:foreman-attendance && pnpm test:admin-worker-profiles && pnpm test:attendance-reports && pnpm test:direct-qa && pnpm test:work-item-evidence && pnpm test:qa-board-layout && pnpm test:project-records && pnpm test:client-portal && pnpm test:valencia && pnpm test:public-navigation && pnpm test:qa-photo-markup && pnpm test:date-filters && pnpm test:project-calendar && pnpm test:assignments && pnpm test:sql && pnpm build"
+    "check": "tsc --noEmit && pnpm test:lib && pnpm test:comparison && pnpm test:issue-editor && pnpm test:attendance && pnpm test:biometric-access && pnpm test:worker-camera && pnpm test:worker-enrollment && pnpm test:scan-notices && pnpm test:foreman-attendance && pnpm test:admin-worker-profiles && pnpm test:attendance-reports && pnpm test:direct-qa && pnpm test:work-item-evidence && pnpm test:qa-board-layout && pnpm test:project-records && pnpm test:client-portal && pnpm test:valencia && pnpm test:public-navigation && pnpm test:qa-photo-markup && pnpm test:date-filters && pnpm test:project-calendar && pnpm test:assignments && pnpm test:pin-records && pnpm test:qa-reinspection && pnpm test:sql && pnpm build"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.117.3",

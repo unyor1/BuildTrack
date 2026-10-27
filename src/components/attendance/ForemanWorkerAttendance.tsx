@@ -5,6 +5,7 @@ import AttendanceReportButton from "./AttendanceReportButton"
 import { attendanceDate, attendanceDay, attendancePath, attendanceTime, workerInitials, type AttendanceEvent, type AttendanceWorker } from "../../lib/attendanceModel"
 import { useAttendanceWorkers, useDailyAttendance, useWorkerAttendance } from "../../lib/foremanAttendance"
 import { RECORD_PAGE_SIZE, WORKER_PAGE_SIZE, attendancePageLabel, validAttendanceDay } from "../../lib/foremanAttendanceModel"
+import { scheduleFlagLabel, scheduleFlagTone } from "../../lib/attendanceScheduleModel"
 
 const fieldClass = "min-h-11 w-full rounded-xl border border-border bg-surface px-3 text-sm text-fg"
 const secondary = "min-h-10 rounded-xl border border-border px-4 text-sm font-semibold disabled:opacity-40"
@@ -48,12 +49,13 @@ export function AttendanceRecordsTable({ events, onWorker }: { events: Attendanc
     <table className="w-full text-left text-sm">
       <thead className="bg-surface-muted text-xs text-fg-muted"><tr>
         {onWorker && <th scope="col" className="px-4 py-3">Worker</th>}
-        <th scope="col" className="px-4 py-3">Attendance</th><th scope="col" className="px-4 py-3">Scan time</th><th scope="col" className="px-4 py-3">Received</th><th scope="col" className="px-4 py-3">Terminal</th>
+        <th scope="col" className="px-4 py-3">Attendance</th><th scope="col" className="px-4 py-3">Scan time</th><th scope="col" className="px-4 py-3">Schedule</th><th scope="col" className="px-4 py-3">Received</th><th scope="col" className="px-4 py-3">Terminal</th>
       </tr></thead>
       <tbody>{events.map(event => <tr key={event.id} className="border-t border-border">
         {onWorker && <td className="px-4 py-3">{event.worker ? <button type="button" className="text-left font-bold text-brand hover:underline" onClick={() => onWorker(event.worker!)}>{event.worker.full_name}<span className="block text-xs font-normal text-fg-muted">{event.worker.worker_code}</span></button> : "Worker unavailable"}</td>}
         <td className="px-4 py-3"><span className={`whitespace-nowrap rounded-full px-3 py-1 text-xs font-bold ${event.direction === "in" ? "bg-emerald-100 text-emerald-900" : "bg-sky-100 text-sky-900"}`}>{event.direction === "in" ? "Clock in" : "Clock out"}</span></td>
         <td className="whitespace-nowrap px-4 py-3 font-mono text-xs">{attendanceTime(event.occurred_at)}</td>
+        <td className="whitespace-nowrap px-4 py-3 text-xs">{scheduleFlagLabel(event.schedule_flag, event.minutes_off) ? <span className={`rounded-full px-2.5 py-1 font-bold ${scheduleFlagTone(event.schedule_flag) === "warn" ? "bg-danger-soft text-danger-fg" : "bg-ok-soft text-ok-fg"}`}>{scheduleFlagLabel(event.schedule_flag, event.minutes_off)}</span> : <span className="text-fg-muted">—</span>}</td>
         <td className="whitespace-nowrap px-4 py-3 text-xs text-fg-muted">{attendanceDate(event.received_at)}<span className="block">{attendanceTime(event.received_at)}</span></td>
         <td className="max-w-44 break-words px-4 py-3 text-xs text-fg-muted">{event.device_id}</td>
       </tr>)}</tbody>

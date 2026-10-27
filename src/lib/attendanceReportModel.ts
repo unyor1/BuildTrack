@@ -1,5 +1,6 @@
 import { attendanceDay, attendanceTime } from "./attendanceModel.ts"
 import { validAttendanceDay } from "./foremanAttendanceModel.ts"
+import { scheduleFlagLabel } from "./attendanceScheduleModel.ts"
 
 export type AttendanceReportPeriod = "daily" | "weekly" | "monthly"
 export type AttendanceReportPerson = { id: string; full_name: string; worker_code: string; trade: string }
@@ -11,6 +12,8 @@ export type AttendanceReportEvent = {
   occurred_at: string
   received_at: string
   device_id: string
+  schedule_flag?: string | null
+  minutes_off?: number | null
   worker: AttendanceReportPerson | null
 }
 export type AttendanceReportRange = {
@@ -38,6 +41,9 @@ export type AttendanceDailyRow = {
   clockOuts: number
   firstIn: string | null
   lastOut: string | null
+  // How the first IN and the last OUT compared with the project schedule ("" when not recorded or no schedule).
+  arrival: string
+  departure: string
 }
 
 const isoDay = (date: Date) => date.toISOString().slice(0, 10)
@@ -64,19 +70,20 @@ export function attendanceReportSummary(events: AttendanceReportEvent[]) {
     const day = attendanceDay(new Date(event.occurred_at)), key = `${day}:${event.worker_id}`
     let row = groups.get(key)
     if (!row) {
-      row = { day, workerId: event.worker_id, name: event.worker?.full_name ?? "Worker unavailable", code: event.worker?.worker_code ?? event.worker_id, trade: event.worker?.trade || "Site worker", clockIns: 0, clockOuts: 0, firstIn: null, lastOut: null }
+      row = { day, workerId: event.worker_id, name: event.worker?.full_name ?? "Worker unavailable", code: event.worker?.worker_code ?? event.worker_id, trade: event.worker?.trade || "Site worker", clockIns: 0, clockOuts: 0, firstIn: null, lastOut: null, arrival: "", departure: "" }
       groups.set(key, row)
     }
     if (event.direction === "in") {
       clockIns++; row.clockIns++
-      if (!row.firstIn || Date.parse(event.occurred_at) < Date.parse(row.firstIn)) row.firstIn = event.occurred_at
+      if (!row.firstIn || Date.parse(event.occurred_at) < Date.parse(row.firstIn)) { row.firstIn = event.occurred_at; row.arrival = scheduleFlagLabel(event.schedule_flag, event.minutes_off) }
     } else {
       clockOuts++; row.clockOuts++
-      if (!row.lastOut || Date.parse(event.occurred_at) > Date.parse(row.lastOut)) row.lastOut = event.occurred_at
+      if (!row.lastOut || Date.parse(event.occurred_at) > Date.parse(row.lastOut)) { row.lastOut = event.occurred_at; row.departure = scheduleFlagLabel(event.schedule_flag, event.minutes_off) }
     }
   }
   return {
     scans: events.length, clockIns, clockOuts,
+    late: [...groups.values()].filter(row => row.arrival.startsWith("Late")).length,
     workers: new Set(events.map(event => event.worker_id)).size,
     days: new Set([...groups.values()].map(row => row.day)).size,
     rows: [...groups.values()].sort((a, b) => a.day.localeCompare(b.day) || a.name.localeCompare(b.name) || a.workerId.localeCompare(b.workerId)),

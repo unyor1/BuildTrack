@@ -103,7 +103,8 @@ export default async function ({ db, ids, as, asOwner, addUser, test, expectFail
     const wallTemplate = (await db.query("select qa_template_id from public.pin_checklist_items where id=$1", [wall])).rows[0].qa_template_id
     await db.query("select public.save_qa_template($1,$2,'Changed future library','general',null,'{}',$3::jsonb)", [wallTemplate, project, JSON.stringify(criteria("Later library check must not replace the failed request"))])
     await as("directFore")
-    const next = (await db.query("select public.submit_correction_package($1::uuid[]) id", [[wall]])).rows[0].id
+    const finding = (await db.query("select id from public.qa_defects where inspection_id=$1", [wallIr])).rows[0].id
+    const next = (await db.query("select public.submit_correction_package($1::uuid[],$2::uuid[]) id", [[wall],[finding]])).rows[0].id
     assert.equal((await db.query("select text from public.qa_inspection_items where inspection_id=$1", [next])).rows[0].text, "Synthetic wall-specific check")
     assert.equal((await db.query("select reinspection_of from public.qa_inspections where id=$1", [next])).rows[0].reinspection_of, wallIr)
     const snap = (await db.query("select photos_snapshot from public.pin_qa_submissions where inspection_id=$1", [next])).rows[0].photos_snapshot

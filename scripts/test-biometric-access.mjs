@@ -42,7 +42,11 @@ const camera = await compile("../src/components/attendance/WorkerCamera.tsx", {
 })
 const managementImports = {
   "../../lib/workerRegistrationModel": new URL("../src/lib/workerRegistrationModel.ts", import.meta.url).href,
-  "./WorkerFingerprint": (await compile("../src/components/attendance/WorkerFingerprint.tsx", { "../../lib/supabase": database })).url,
+  "./WorkerFingerprint": (await compile("../src/components/attendance/WorkerFingerprint.tsx", {
+    "../../lib/supabase": database,
+    "../../lib/confirm": moduleUrl("export const useConfirm=()=>async()=>false"),
+    "../../lib/enrollmentModel": new URL("../src/lib/enrollmentModel.ts", import.meta.url).href,
+  })).url,
   "./WorkerCamera": camera.url,
   "./ForemanWorkerAttendance": moduleUrl("export function WorkerDirectory(){return null};export function WorkerAttendanceDetails(){return null}"),
   "../../lib/supabase": database,
@@ -71,6 +75,7 @@ const page = await compile("../src/pages/Admin/BiometricsRegistration.tsx", {
   "../../components/AdminProjectSelect": projects,
   "../../components/attendance/WorkerManagement": workers.url,
   "../../components/attendance/DeviceManagement": devices.url,
+  "../../components/attendance/AttendanceSchedule": moduleUrl("export default function Schedule(){return null}"),
   "../../components/attendance/BiometricAdminGuard": guard.url,
   "./AdminShell": intro,
 })

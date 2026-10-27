@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useRef, useState, type ReactNode } from "react"
-import Modal from "../components/Modal"
+import Modal, { type ModalSize } from "../components/Modal"
 
 type ConfirmOptions = {
   title: string
@@ -7,6 +7,7 @@ type ConfirmOptions = {
   confirmLabel?: string
   cancelLabel?: string
   tone?: "default" | "danger"
+  size?: ModalSize
 }
 
 type Pending = ConfirmOptions & { resolve: (value: boolean) => void }
@@ -40,7 +41,7 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
       {pending ? (
         <Modal
           title={pending.title}
-          size="sm"
+          size={pending.size ?? "sm"}
           onClose={() => settle(false)}
           footer={
             <>

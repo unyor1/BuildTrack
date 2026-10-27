@@ -112,6 +112,8 @@ const { default: Board } = await compile(
     ).href,
 
     "./WorkerPortrait": portrait,
+
+    "./ScanNoticePopup": moduleUrl("export default function ScanNoticePopup(){return null}"),
   },
 )
 
@@ -618,10 +620,12 @@ const request = (body = scan, headers = {}) =>
 let receiverCalls = 0,
   receivedArgs
 
-const successfulRpc = async (args) => {
+let receivedFn
+const successfulRpc = async (fn, args) => {
   receiverCalls++
+  receivedFn = fn
   receivedArgs = args
-  return { data: "database-event-id", error: null }
+  return { data: { event_id: "database-event-id", status: "recorded", direction: "in", occurred_at: scan.occurred_at, schedule_flag: "late", minutes_off: 12 }, error: null }
 }
 
 assert.equal(scanPayloadProblem(scan), "")
@@ -629,6 +633,9 @@ assert.equal(scanPayloadProblem(scan), "")
 assert.ok(scanPayloadProblem({ ...scan, project_id: "foreign-project" }))
 
 assert.ok(scanPayloadProblem({ ...scan, direction: "toggle" }))
+assert.equal(scanPayloadProblem({ ...scan, direction: "auto" }), "")
+const { direction: _ignored, ...withoutDirection } = scan
+assert.equal(scanPayloadProblem(withoutDirection), "", "Direction is optional: the database decides IN/OUT")
 
 assert.ok(scanPayloadProblem({ ...scan, occurred_at: "2026-01-02 09:00:00" }))
 
@@ -686,10 +693,39 @@ assert.equal(
 const accepted = await receiveAttendance(request(), successfulRpc)
 
 assert.equal(accepted.status, 200)
+const acceptedText = await accepted.clone().text()
+assert.ok(acceptedText.startsWith('{"recorded":true,"event_id":"database-event-id"'), "Older firmware checks this prefix")
 assert.deepEqual(await accepted.json(), {
   recorded: true,
   event_id: "database-event-id",
+  status: "recorded",
+  direction: "in",
+  occurred_at: scan.occurred_at,
+  schedule_flag: "late",
+  minutes_off: 12,
 })
+assert.equal(Object.hasOwn(receivedArgs, "p_direction"), false, "A switch value never reaches the database decision")
+assert.equal(receivedFn, "ingest_biometric_scan")
+// Unknown finger: reported without a biometric ID, answered as handled but not attendance.
+const savedArgs = receivedArgs
+const { biometric_uid: _uid, ...unmatchedScan } = { ...scan, result: "no_match", event_id: "unmatched-1" }
+assert.equal(scanPayloadProblem(unmatchedScan), "")
+assert.ok(scanPayloadProblem({ ...unmatchedScan, biometric_uid: "3" }), "An unmatched scan never names a slot")
+assert.ok(scanPayloadProblem({ ...scan, result: "maybe" }))
+const unmatchedReply = await receiveAttendance(request(unmatchedScan), async (fn, args) => {
+  receivedFn = fn; receivedArgs = args
+  return { data: { event_id: null, status: "unregistered", reason: "no_match", occurred_at: scan.occurred_at }, error: null }
+})
+assert.equal(receivedFn, "report_unregistered_scan"); assert.equal(Object.hasOwn(receivedArgs, "p_biometric_uid"), false)
+assert.deepEqual(await unmatchedReply.json(), { recorded: false, event_id: null, status: "unregistered", reason: "no_match", occurred_at: scan.occurred_at })
+for (const reason of ["not_linked", "inactive", "other_device"])
+  assert.equal((await (await receiveAttendance(request(), async () => ({ data: { event_id: null, status: "unregistered", reason, occurred_at: scan.occurred_at }, error: null }))).json()).reason, reason)
+assert.equal((await receiveAttendance(request(), async () => ({ data: { event_id: null, status: "unregistered", reason: "mystery", occurred_at: scan.occurred_at }, error: null }))).status, 503)
+receivedArgs = savedArgs
+const repeat = await receiveAttendance(request({ ...scan, direction: "auto", event_id: "second" }), async () => ({ data: { event_id: "database-event-id", status: "repeat", direction: "in", occurred_at: scan.occurred_at, schedule_flag: null, minutes_off: null }, error: null }))
+assert.equal((await repeat.json()).status, "repeat")
+for (const data of ["database-event-id", null, { event_id: "x", status: "maybe", direction: "in" }, { event_id: "x", status: "recorded", direction: "sideways" }])
+  assert.equal((await receiveAttendance(request(), async () => ({ data, error: null }))).status, 503, "An unexpected database answer is never reported as recorded")
 
 assert.equal(receivedArgs.p_device, scan.device_id)
 assert.equal(receivedArgs.p_event, scan.event_id)
@@ -725,5 +761,5 @@ assert.equal(
 )
 
 console.log(
-  "ESP32 receiver method/token/size/JSON/scope validation, hashed credential forwarding, success and safe error/rate-limit responses passed",
+  "ESP32 receiver method/token/size/JSON/scope validation, hashed credential forwarding, server-decided IN/OUT (repeat / out-of-order / unregistered answers, unknown-finger reports), success and safe error/rate-limit responses passed",
 )

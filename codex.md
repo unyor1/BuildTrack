@@ -1,6 +1,6 @@
 # BuildTrack development handover
 
-Updated: 2026-10-24.
+Updated: 2026-10-26.
 
 Read this alongside `AGENTS.md`, `README.md` and the task-specific audit in `docs/audits/`. This file records current project decisions; it is not an application entrypoint or a database migration. Check the implementation and tests before treating an older document as current behavior. In particular, older handover text mentioning a required Ready tick or a separate Accept action is outdated.
 
@@ -17,7 +17,7 @@ Read this alongside `AGENTS.md`, `README.md` and the task-specific audit in `doc
 
 1. The Engineer creates checklist items and supplies their inspection criteria/tests. Requirements should describe the actual work item, not a broad trade label or invented standard clause.
 2. The assigned Foreman opens an item, adds its photos/remarks and submits that item directly for QA. No separate Ready tick is required.
-3. The Engineer inspects against the recorded criteria. Failed findings create linked NCRs; corrections and re-inspections remain attached to the same work item.
+3. The Engineer inspects against the recorded criteria. Failed findings create linked NCRs; corrections require a full reinspection of that same checklist, including previously passed checks, not the whole project or unrelated checklists. Earlier results/evidence stay attached to their original inspections.
 4. After QA passes and linked NCRs are closed, the Engineer explicitly chooses **Complete checklist**. Passing QA or closing an NCR must not automatically perform this manual action.
 5. The work pin completes only when all checklist items and the applicable pin-level QA/NCR prerequisites are clear.
 
@@ -30,10 +30,29 @@ Important constraints:
 - An **Away from site** photo still counts as evidence and the Engineer can open it (owner's decision, `20261023075351`; message follow-up `20261023075625`). It keeps its flag, distance and amber chip. Only a wrong phone clock (`clock_ahead`) or a photo more than 3 days old (`old_photo`) stays on record without counting and stays hidden from Engineers. SQL `photo_eligible` and TS `photoEligible` must stay identical.
 - Evidence and Corrections & NCRs tabs must show actual linked records, with explicit empty/loading/error states. Link by permanent item IDs, not just names.
 - Preserve the original-versus-latest comparison. Clicking for a larger view must not replace/remove comparison functionality or its details.
-- Engineer/Foreman boards put **All** last. Every list on the Review inbox is separate: besides the work-item chips (Inspect, NCRs, Complete checklist, Criteria missing) the other lists (Other NCRs, Blocked work, Older submissions, Recently completed) are `WorkItemBoard` `extras` with their own chips. The Foreman Corrections page does the same: To fix and In review, then Other NCRs (counts open NCRs assigned to them and stays available at 0 when they have older ones, since it is also where closed NCRs are looked up) and Site issues. Choosing a chip shows only that list; All shows every list. Search and the sheet / pin / item filters apply to work items only, so the other lists step aside while they are in use. Stage/hold-point request panels were removed from these boards, not from historical data or database completion checks. Existing blocked inspections remain accessible through the QA register.
+- Engineer/Foreman QA boards put **All** last and open on the first available nonempty list, not All. All remains an explicit choice. If a chosen list disappears, fall back to another available list; switching projects remounts the board to reset its filters/selection. Each Review inbox list remains separate: work-item chips (Inspect, NCRs, Complete checklist, Criteria missing) and `WorkItemBoard` extras (Other NCRs, Blocked work, Older submissions, Recently completed).
+- Foreman **Corrections** has To fix, In review, **Completed**, Other NCRs and Site issues. Completed stays available at zero and means Engineer-completed checklists, never merely Passed QA or a closed NCR. Correction resubmissions in Requested / In progress / Passed remain In review even without a For verification NCR. Mixed NCRs needing Foreman work stay in To fix, not two lists at once.
+- Foreman correction submission confirmation uses a medium dialog, **Submit correction?** title and compact **Submit request** action so Cancel and Submit align without the previous long, unevenly wrapped button. Keep the full-checklist reinspection/NCR explanation intact. Other confirmations retain their default small size.
+- Corrections Sheet / Pin / Checklist item / search filters apply to work rows **and** its Other NCRs / Site issues extras, using permanent ids. A new sheet clears pin/item; a pin chooses its parent sheet and clears item. Clear filters clears search too. Whole-pin or project-wide findings do not match a selected checklist item. Site-issue item + search must match the same observation. Counts and the Other NCR register/CSV follow the location filters; the register retains its own status/class/trade/assignment filters and closed history. Other NCRs counts open ones assigned to the Foreman and stays reachable at zero with older records. Detail dialogs/deep links live outside filtered lists; refresh reloads QA, pins/sheets, work items and issue history, with load errors shown. See `docs/audits/2026-10-26-foreman-corrections.md`.
+- Extras opt into shared work filtering via `BoardExtra.filter` and their filter-choice ids. Legacy non-filterable extras still step aside while shared filters/search are used. Stage/hold-point request panels were removed from these boards, not historical data or database completion checks; blocked inspections remain accessible in the QA register.
 - **For review** belongs to checklist QA presentation, not a displayed pin-level status. Keep underlying status/authorization logic intact.
+- Engineer checklist cleanup (2026-10-26): NCR rows in `WorkItemWorkspace` are summaries with **Open NCR record**, not inline verification forms. Do not restore the **Review NCR corrections** footer shortcut. Hide **Return [item]** once current QA is Passed, including a Return dialog already open when the status changes; retain the separate explicit **Reopen [item]** action for completed checklists. Manual Complete checklist and all NCR/completion blockers remain. See `docs/audits/2026-10-26-engineer-checklist-actions.md`.
+- Later NCR decision placement update (2026-10-26, supersedes the earlier opened-NCR-only form): a correction-package NCR's Verification section contains **Open inspection** only, not a verification textarea or Send back / Close NCR controls. It opens the exact linked correction inspection from the keyed readiness RPC, never the original failed request. Loading/missing/error states disable navigation; retry and a QA-register deep-link fallback remain. Engineer decisions live in `NcrInspectionVerification` **inside that linked `InspectionDetail`**. Match inspection + project + pin + correction attempt, require a note, explicit close confirmation and a signed-off finding-specific Pass; server RPC validation remains authoritative. A failed unrelated finding does not invalidate this finding's own valid Pass. Standalone NCRs with no correction inspection retain their existing explicit form so their closure path is not removed. See `docs/audits/2026-10-26-ncr-inspection-verification.md`.
 
 Relevant files: `src/lib/workItemModel.ts`, `src/lib/workItem.ts`, `src/components/qa/WorkItemWorkspace.tsx`, `WorkItemBoard.tsx`, `SubmittedEvidence.tsx` and `WorkSubmissionEvidence.tsx`.
+
+### Full-checklist corrections and reinspection (2026-10-25)
+
+- Deployment: migration `20261025141322_full_checklist_reinspection` applied and live-verified on BuildTrack Supabase. Matching frontend changes are local, tested, not committed/pushed. Original history fingerprints remained unchanged; see the audit for checks/security notices.
+
+- The owner replaced the earlier unapplied targeted-only proposal with **full checklist reinspection**. Wall corrections recheck every recorded Wall criterion at that pin, including earlier Pass/N/A checks. Unrelated Floor/Ceiling items are not silently resubmitted.
+- Foreman uses **Submit correction & request reinspection**: choose the NCRs actually corrected, describe the repairs and add fresh eligible evidence. NCR selection identifies corrective actions, **never narrows the inspection scope**. Requests from different previous inspections remain separate.
+- The new request contains all frozen criteria as fresh Pending checks. Required measurements, tests and per-check photos must be recorded again. Previous inspection results, photos, correction attempts and submission snapshots remain unchanged. The new `full_checklist_reinspection` flag identifies these requests; `origin_item_id` retains exact criterion lineage without rewriting older rows.
+- `qa_reinspection_context` supplies reference-only prior results with original-inspection links; no scope editor or automatic carry-forward Pass exists. Older selected findings without reliable lineage include their exact frozen source as well, rather than being silently dropped.
+- Repeated failures of the same linked open finding reuse its NCR with a rejection event. A newly failed or previously closed finding creates a new NCR. NCR closure requires its own signed-off Pass after the repair, not another finding's result. A newer pending/failed check of that same criterion invalidates an older Pass.
+- `qa_ncr_reinspection_state` is the authorized readiness read; responses are keyed by finding + correction attempt so late results cannot enable another NCR's closure. Server guards recheck on save. One finding may close after full-inspection sign-off even if another failed, but those remaining failures still block checklist completion.
+- Manual **Complete checklist** remains a separate Engineer action after QA passes and all linked NCRs close. This is not project acceptance or a substitute for the approved quality plan, required tests, specialist/design approvals and handover inspections.
+- Files: `src/lib/qaReinspection.ts`, `qaReinspectionModel.ts`, `components/qa/ReinspectionScope.tsx`, correction/inspection/NCR/work-item components and `qaPrint.ts`. `pnpm test:qa-reinspection` is in the full check. See `docs/audits/2026-10-25-full-checklist-reinspection.md` for deployment and verification status.
 
 ## Reports, progress, assignments and issues
 
@@ -58,6 +77,43 @@ Relevant files: `src/lib/projectWork.ts`, `reports.ts`, `siteReportsModel.ts`, `
 - Engineer sees project work deadlines, scheduled QA/reinspections, NCR deadlines and milestones. Foreman sees assigned work/NCRs and inspections requested by them or linked to assigned pins, plus milestones. Admin sees management work deadlines and milestones. Client sees work deadlines/milestones only, with no internal QA/NCR details, staff identities, private remarks or evidence. Admin/Client calendars never request the internal QA/NCR tables.
 - Reuses authenticated project reads, pagination, Realtime, reconnect/periodic reloads and existing RLS. Page checks actual active role; project IDs and canonical project objects are checked before deriving events. Loading/error states do not render stale events. Event links use permanent record IDs and the existing pin-panel deep links.
 - Files: `src/lib/projectCalendarModel.ts`, `projectCalendar.ts`, `src/pages/ProjectCalendarPage.tsx`; test `pnpm test:project-calendar` is in `pnpm check`. See `docs/audits/2026-10-24-project-calendar.md`.
+
+## Blueprint pin records
+
+- Every location record links its project and blueprint pin by permanent id, and a checklist item where it applies:
+  - site issues: pin required, item optional, name saved;
+  - NCRs: pin, or Project-wide; item optional, name saved since `20261024152151`;
+  - inspections: pin + `work_item_ids`;
+  - client reports and questions: pin, or Project-wide;
+  - daily reports: `linked_work`;
+  - checklist / correction photos: pin + item + `qa_attempt_id`.
+  The database validates that project, pin and item belong together. A renamed item shows its current name; a removed one keeps the saved name.
+- The pin panel (`editor/Inspector.tsx` side panel, `PinDetailsModal` full view with detailed columns) shows the sections allowed per role (`pinSectionsFor` in `lib/pinRecordsModel.ts`): Details, Checklist & QA, Issues & NCRs (client: My reports), **Next actions**, Daily reports, Photos, Activity, Communication. Next actions is available to Engineer/Foreman/Client with role-specific content, not Admin. Its `?pintab=actions` link works in the side panel and Full view.
+  - Clients never get Photos, Activity or any QA record; Admins read without actions.
+  - Records load once per pin (`lib/pinRecords.ts`: paged, live, stale answers dropped) and the tabs show counts of what needs attention.
+  - "For review" remains a checklist state.
+- Issues & NCRs reuse the existing detail views with the same rights:
+  - Engineer: verifies and closes NCRs, inspects, decides client reports, logs issues, raises NCRs.
+  - Foreman: corrects NCRs through the NCR or the work item correction package, and reports a field problem (`report_field_problem`: pin timeline + Engineer notification; it never creates an NCR).
+  - Client: follows own reports.
+  - Do not add new approval paths here; the manual Complete checklist stays in the work item record.
+- Issues & NCRs has a filter bar: Record type dropdown with counts, Status dropdown (All / Open / Closed), checklist item ("Whole work pin" included) and search. Creation/report buttons and the unfiltered Next actions list live **only in the separate Next actions tab**, not above the register. It reuses the same exact record dialogs and permissions; no action grants new rights.
+  - "Open" means still waiting for someone: an NCR not closed, an inspection requested or under way, a client report waiting or being fixed, a site issue until its work pin is completed.
+  - Rules live in `recordMatches` / `recordKindCounts`.
+  - The Engineer sees a short explanation of Log an issue (flags the pin, shows the Foreman what is wrong, no number or deadline) versus Raise NCR (numbered, class, deadline, responsible Foreman, Engineer verifies and closes, blocks completion).
+- Create forms opened from a pin start on its project, sheet and pin.
+  - From other pages they use the shared searchable picker `ui/PinLinkPicker.tsx` (rules in `lib/pinPickerModel.ts`): only this project's work pins, dependent choices cleared, "Project-wide" only where the record allows it, and saving waits for the chosen pin's checklist.
+- Panel refinements (2026-10-25):
+  - Docked desktop panels default to 480px, resize from their left edge (320–760px, constrained to preserve sheet space) and remember width in editor preferences. Floating inspectors resize from the right. Mobile remains a nearly full-width drawer. The section body scrolls vertically beneath the pin heading/tabs; the separator supports arrow keys and Home/End.
+  - Issues/NCR records use a **compact row-and-column summary table in both side panel and Full view**, not large cards or expanded details inside every row. Keep main fields only and limit summary text to two lines. Full descriptions, severity/raised/correction/closure notes and history belong in the opened record. Clicking a row, Enter/Space or View details opens its canonical dialog without duplicate events; existing operational permissions and own-open highlighting remain. Read-only summary-only records open a non-operational details dialog. Narrow tables scroll horizontally in a labelled keyboard-focusable region.
+  - The Engineer may log an issue while QA is pending, even if the pin's position is locked. Notes and completed pins are still ineligible. The issue form shows loading/errors instead of an invisible wait. Migration `20261025090858_site_issue_pending_review` keeps stored `for_review` status when logging an observation; it does not cancel an inspection, unlock evidence or bypass completion gates. Normal non-review pins still change to Issue.
+  - Pin Photos opens on today's **upload date in Asia/Manila** on each mount; `DateRangeFilter` allows older/custom/all dates. Bounds reach `useEvidencePhotos` before sorting/limiting. A filter change remounts the results/viewer to prevent stale photos or an old slideshow. Detailed cards show caption, item/remarks, uploader, capture/upload time and evidence kind; original and correction evidence remain separate. Global photo-documentation defaults and photo-editing tools are unchanged.
+  - See `docs/audits/2026-10-25-pin-panel-refinements.md`.
+- Every link to a pin uses `OpenOnBlueprint` / `pinPlanPath`, never a hand-built URL.
+  - The link opens the role's plan page with `?project=&sheet=&pin=&pintab=<section>`; the editor opens that section once.
+  - The assigned Foreman's "Add this pin to today's daily report" uses `?linkpin=` on Daily progress report, which never replaces an existing draft or changes a submitted one.
+  - Panel **Daily reports** opens on **Today (Asia/Manila report work date)** on each mount. Shared `DateRangeFilter` supports Today, Last 7 days, week/month, earlier month, custom and All dates. Filter linked reports by `report_date`, not submission/photo timestamps; clients still see only submitted reports for this pin/project. Invalid ranges hide results until corrected; a date change remounts report details/slideshows, and another pin/reopening the tab resets Today. Tab badge remains the whole linked history count. See `docs/audits/2026-10-26-pin-panel-tabs-and-report-dates.md`.
+- Tests: `pnpm test:pin-records`, pin sections and picker rules in `pnpm test:lib`, SQL in `99-zzzzzzzzzzzzzzzzzzz-pin-record-links`. See `docs/audits/2026-10-24-pin-record-connections.md`.
 
 ## Client portal
 
@@ -100,6 +156,10 @@ Relevant files: `src/pages/Client/`, `src/components/client/PinDailyReports.tsx`
 
 ## Workforce and biometric attendance
 
+- ESP32 setup (2026-10-27): the owner's board is a classic DevKit V1. Start hardware bring-up with `hardware/esp32-as608/connection_test/connection_test.ino` and `FIRST_UPLOAD.md` (RX16/TX17, 57600 sensor baud, 115200 monitor). This diagnostic only captures/searches locally; it must not enroll, delete templates or send attendance. Website-driven enrollment remains in `attendance/attendance.ino`, which needs a private `config.h` before operation. The example config permits compilation but must stop at boot with placeholders. See `docs/audits/2026-10-27-esp32-as608-setup.md` for actual toolchain/USB/verification findings; compilation is not physical verification.
+- Fingerprint registration (2026-10-27, [audit](docs/audits/2026-10-27-fingerprint-registration-steps.md)): the ESP32 trusts the three roots in `hardware/esp32-as608/tls-root-ca.pem` (GTS R4, GTS R1, GlobalSign Root CA). Check the chain the server really sends with `openssl s_client -CAfile`, not a Windows chain build. HTTP -1 on the device with an empty `last_seen_at` = TLS/root CA problem. Admin flow: scanner online badge, confirm the worker is present, live steps from the device (`worker_enrollment_requests.stage`, migration `20261027110000_enrollment_progress`, applied 2026-10-27, `biometric-enrollment` v2 deployed), a third confirmation scan before success. An unconfirmed template is removed by the device (it would otherwise match scans and block the terminal with 422). Rules in `lib/enrollmentModel.ts`.
+- Attendance scans (2026-10-27, [audit](docs/audits/2026-10-27-attendance-schedule-scans.md), migration `20261027130000_attendance_schedule_scans` applied 2026-10-27, `biometric-attendance` v2 deployed): the database decides Time IN / OUT (`record_biometric_scan`, worker row lock), never a scanner switch. First accepted scan of the Manila day = IN, then alternate. A scan within the project's repeat window (default 15 min) or older than the worker's last scan goes to `attendance_ignored_scans`, never to attendance. Admin sets time in / out, grace and the window in Biometric Registration → Attendance schedule (`set_attendance_schedule`). Events carry `schedule_flag` / `minutes_off` (late = first IN after grace, minutes from time in; early_out = OUT before time out; returned = later IN). Labels in `lib/attendanceScheduleModel.ts`. Deploy order: migration → `biometric-attendance` (calls `ingest_biometric_scan`) → firmware (`"direction":"auto"`). The standalone attendance page was not changed.
+- Scan pop-ups (2026-10-27, [audit](docs/audits/2026-10-27-attendance-scan-popups.md), migration `20261027152428_attendance_scan_notices` APPLIED; receiver v3 ACTIVE): the attendance screen (`AttendanceBoard` → `ScanNoticePopup`, hook `lib/scanNotices.ts`, texts `lib/scanNoticeModel.ts`) pops up "Time IN/OUT recorded", "Already timed IN/OUT … not recorded again" and "Fingerprint not registered / not linked / Worker inactive / Wrong scanner" for scans received after it opened, queued once each without replacing the visible message, closing after 6 s (warnings 10 s). This is an explicit request to change the standalone screen. Unregistered scans never raise: they are logged in `attendance_unregistered_scans`, so the scanner never stops on them.
 - Admin manages worker registration, profile changes and fingerprint enrollment. Do not add the previously rejected remote delegation/Foreman enrollment permission.
 - The hardware workflow uses an AS608 sensor connected to ESP32. Enrollment must be sensor-driven, not require a person to type an AS608 enrollment ID manually.
 - Registration includes worker names/contact fields and camera photo capture. Workers do not require website accounts.
@@ -148,6 +208,7 @@ Relevant files: `src/pages/Client/`, `src/components/client/PinDailyReports.tsx`
 
 ## Recent implementation records
 
+- `docs/audits/2026-10-26-engineer-checklist-actions.md`
 - `docs/audits/2026-10-22-valencia-opening-and-proprietor.md`
 - `docs/audits/2026-10-22-deployed-public-navigation.md`
 - `docs/audits/2026-10-22-shared-public-footer.md`
@@ -164,6 +225,10 @@ Relevant files: `src/pages/Client/`, `src/components/client/PinDailyReports.tsx`
 - `docs/audits/2026-10-23-qa-overview-calendar.md`
 - `docs/audits/2026-10-23-correction-photo-markup.md`
 - `docs/audits/2026-10-23-away-photos-count.md`
+- `docs/audits/2026-10-24-pin-record-connections.md`
+- `docs/audits/2026-10-25-pin-panel-refinements.md`
+- `docs/audits/2026-10-25-full-checklist-reinspection.md`
+- `docs/audits/2026-10-25-targeted-qa-reinspection.md` (superseded, never applied)
 - `docs/audits/2026-10-22-photo-markup-select-move-rotate.md`
 - `docs/audits/2026-10-21-photo-editor-toolbar-slideshow.md` (supersedes the Fill-first default and viewport heights above)
 

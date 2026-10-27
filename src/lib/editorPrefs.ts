@@ -1,4 +1,5 @@
 import { useCallback, useState } from "react"
+import { DEFAULT_PANEL_WIDTH, panelWidth } from "./panelSize"
 
 // How the workspace is laid out for this person. Stored in the browser only (a convenience, never needed for correctness).
 export type EditorPrefs = {
@@ -8,6 +9,7 @@ export type EditorPrefs = {
   tools: "bar" | "palette"
   palette: { x: number; y: number; collapsed: boolean }
   panel: { x: number; y: number }
+  panelWidth: number
   boxSelect: boolean // drag on empty space draws a selection box instead of panning
 }
 
@@ -19,6 +21,7 @@ export const defaultPrefs: EditorPrefs = {
   tools: "bar",
   palette: { x: 24, y: 150, collapsed: false },
   panel: { x: 120, y: 120 },
+  panelWidth: DEFAULT_PANEL_WIDTH,
   boxSelect: false,
 }
 
@@ -34,6 +37,7 @@ function load(): EditorPrefs {
       tools: parsed.tools === "palette" ? "palette" : "bar",
       palette: { ...defaultPrefs.palette, ...(parsed.palette ?? {}) },
       panel: { ...defaultPrefs.panel, ...(parsed.panel ?? {}) },
+      panelWidth: panelWidth(parsed.panelWidth ?? DEFAULT_PANEL_WIDTH),
       boxSelect: Boolean(parsed.boxSelect),
     }
   } catch {

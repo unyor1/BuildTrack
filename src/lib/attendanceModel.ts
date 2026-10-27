@@ -24,6 +24,9 @@ export type AttendanceEvent = {
   received_at: string
   device_id: string
   external_event_id: string
+  // Set by the database since 20261027130000 (null on older scans): see attendanceScheduleModel.
+  schedule_flag?: string | null
+  minutes_off?: number | null
   worker: AttendanceWorker | null
 }
 export type AttendanceSummary = {

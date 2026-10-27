@@ -3,6 +3,28 @@ import { readFileSync } from "node:fs"
 import ts from "typescript"
 import { attendanceReportRange, attendanceReportSummary } from "../src/lib/attendanceReportModel.ts"
 import { attendanceReportHtml, attendanceReportCsv, attendanceReportFilename } from "../src/lib/attendanceReportPrint.ts"
+import { defaultScheduleDraft, scheduleDraft, scheduleFlagLabel, scheduleProblem, scheduleSummary } from "../src/lib/attendanceScheduleModel.ts"
+
+// Attendance schedule form rules (same limits as set_attendance_schedule) and labels for the database's flags.
+assert.equal(scheduleProblem(defaultScheduleDraft), "")
+for (const [patch, pattern] of [
+  [{ timeIn: "" }, /time in/], [{ timeOut: "25:00" }, /time out/], [{ timeOut: "08:00" }, /later than time in/], [{ timeOut: "07:30" }, /later than time in/],
+  [{ grace: "121" }, /Grace/], [{ grace: "-1" }, /Grace/], [{ grace: "2.5" }, /Grace/], [{ repeat: "0" }, /Repeat/], [{ repeat: "" }, /Repeat/],
+]) assert.match(scheduleProblem({ ...defaultScheduleDraft, ...patch }), pattern)
+assert.deepEqual(scheduleDraft({ project_id: "p", time_in: "07:30:00", time_out: "16:30:00", grace_minutes: 10, repeat_guard_minutes: 5 }), { timeIn: "07:30", timeOut: "16:30", grace: "10", repeat: "5" })
+assert.equal(scheduleSummary({ timeIn: "07:30", timeOut: "16:30", grace: "40", repeat: "5" }), "Time in 07:30 (late after 08:10) · Time out 16:30 · repeat scans within 5 min ignored")
+assert.equal(scheduleFlagLabel("late", 75), "Late 1 h 15 min"); assert.equal(scheduleFlagLabel("early_out", 60), "Early out 1 h")
+assert.equal(scheduleFlagLabel("on_time", null), "On time"); assert.equal(scheduleFlagLabel("returned", null), "Back on site")
+assert.equal(scheduleFlagLabel("no_schedule", null), ""); assert.equal(scheduleFlagLabel(null, null), "", "Scans from before schedules show nothing")
+{
+  const person = { id: "w", full_name: "Ana", worker_code: "A-1", trade: "Mason" }
+  const ev = (id, direction, at, schedule_flag, minutes_off) => ({ id, project_id: "p", worker_id: "w", direction, occurred_at: at, received_at: at, device_id: "gate", schedule_flag, minutes_off, worker: person })
+  const day = attendanceReportSummary([
+    ev("1", "in", "2026-03-02T00:20:00Z", "late", 20), ev("2", "out", "2026-03-02T04:00:00Z", "early_out", 300),
+    ev("3", "in", "2026-03-02T05:00:00Z", "returned", null), ev("4", "out", "2026-03-02T09:05:00Z", "on_time", null),
+  ])
+  assert.deepEqual([day.rows[0].arrival, day.rows[0].departure, day.late], ["Late 20 min", "On time", 1], "Arrival = first IN, departure = last OUT")
+}
 
 const today = "2026-10-20"
 assert.deepEqual(attendanceReportRange("daily", today, today), { period: "daily", startDay: today, endDay: today, throughDay: today, start: "2026-10-19T16:00:00.000Z", endExclusive: "2026-10-20T16:00:00.000Z" })

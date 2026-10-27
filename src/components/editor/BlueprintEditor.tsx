@@ -10,6 +10,7 @@ import ContextBar, { type StylePatch } from "./ContextBar"
 import EditorToolbar, { Icon, ToolStrip, allowedTool, toolDefs, toolKeys, type ToolOptions } from "./EditorToolbar"
 import ExportDialog, { type ExportRequest } from "./ExportDialog"
 import FloatingPanel from "./FloatingPanel"
+import PanelResizeHandle from "./PanelResizeHandle"
 import Inspector, { type AnnotationPatch, type EditorRole, type InspectorProps, type LayerVisibility, type SelectionActions, type SheetTab } from "./Inspector"
 import LabelDialog, { labelKinds } from "./LabelDialog"
 import PinDetailsModal from "./PinDetailsModal"
@@ -48,6 +49,7 @@ import {
 import { useConfirm } from "../../lib/confirm"
 import { bbox, type Pt } from "../../lib/geometry"
 import { useEditorPrefs } from "../../lib/editorPrefs"
+import { dockedPanelMaximum, panelWidth } from "../../lib/panelSize"
 import { renderSheet, loadSheetImage } from "../../lib/exportSheet"
 import type { LayerAction } from "../../lib/layers"
 import { useProject, useProjectTeam } from "../../lib/projects"
@@ -92,6 +94,14 @@ export default function BlueprintEditor({ projectId, role, canEdit, canUpload = 
   const undoStack = useUndoStack()
   const { prefs, update: setPrefs, reset: resetPrefs } = useEditorPrefs()
   const desktop = useMediaQuery("(min-width: 1024px)")
+  const [viewportWidth, setViewportWidth] = useState(window.innerWidth)
+  useEffect(() => {
+    const resize = () => setViewportWidth(window.innerWidth)
+    window.addEventListener("resize", resize)
+    return () => window.removeEventListener("resize", resize)
+  }, [])
+  const panelMaximum = dockedPanelMaximum(viewportWidth)
+  const inspectorWidth = panelWidth(prefs.panelWidth, panelMaximum)
 
   const [blueprintId, setBlueprintId] = useState<string | null>(new URLSearchParams(window.location.search).get("sheet"))
   const [revisionId, setRevisionId] = useState<string | null>(null)
@@ -1353,7 +1363,8 @@ export default function BlueprintEditor({ projectId, role, canEdit, canUpload = 
         </div>
 
         {showDocked ? (
-          <div className={`min-h-0 min-w-0 flex-none ${desktop ? "static w-[22rem] xl:w-[25rem]" : "absolute inset-y-0 right-0 z-30 w-[92vw] max-w-md shadow-2xl"}`}>
+          <div className={`min-h-0 min-w-0 flex-none ${desktop ? "relative" : "absolute inset-y-0 right-0 z-30 w-[96vw] max-w-xl shadow-2xl"}`} style={desktop ? { width: inspectorWidth } : undefined}>
+            {desktop ? <PanelResizeHandle width={inspectorWidth} maximum={panelMaximum} onResize={(width) => setPrefs({ panelWidth: width })} /> : null}
             {inspector ? (
               <div className="flex h-full flex-col border-l border-line bg-surface">
                 {desktop ? (
@@ -1380,7 +1391,8 @@ export default function BlueprintEditor({ projectId, role, canEdit, canUpload = 
           label="Inspector"
           x={prefs.panel.x}
           y={prefs.panel.y}
-          width={340}
+          width={prefs.panelWidth}
+          onResize={(width) => setPrefs({ panelWidth: width })}
           onMove={(x, y) => setPrefs({ panel: { x, y } })}
           onClose={() => setPrefs({ inspector: "hidden" })}
           headerActions={<button type="button" onClick={() => setPrefs({ inspector: "docked" })} title="Dock this panel" aria-label="Dock the panel" className="flex h-6 w-6 items-center justify-center rounded-md text-fg-muted hover:bg-surface hover:text-fg"><Icon name="panel" size={14} /></button>}

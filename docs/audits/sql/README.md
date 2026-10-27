@@ -4,6 +4,12 @@ One document per SQL file in `supabase/`. Same sections every time so changes ar
 
 | Doc | SQL file | Status |
 |---|---|---|
+| [20261025141322_full_checklist_reinspection](20261025141322_full_checklist_reinspection.md) | `supabase/migrations/20261025141322_full_checklist_reinspection.sql` | Applied and verified; all same-checklist criteria need fresh results, retained history, NCR guards; 447 SQL cases and full check/build pass |
+| [20261025090858_site_issue_pending_review](20261025090858_site_issue_pending_review.md) | `supabase/migrations/20261025090858_site_issue_pending_review.sql` | Applied; issue logging retains pending QA status and evidence locks |
+| [20261027152428_attendance_scan_notices](20261027152428_attendance_scan_notices.md) | `supabase/migrations/20261027152428_attendance_scan_notices.sql` | Applied and verified; receiver v3 ACTIVE; unregistered / unlinked / inactive scans answered and logged, live pop-ups |
+| [20261027130000_attendance_schedule_scans](20261027130000_attendance_schedule_scans.md) | `supabase/migrations/20261027130000_attendance_schedule_scans.sql` | Applied 2026-10-27 (SQL Editor, verified); Admin attendance schedule, server-decided IN/OUT, repeat-scan protection, late / early flags |
+| [20261027110000_enrollment_progress](20261027110000_enrollment_progress.md) | `supabase/migrations/20261027110000_enrollment_progress.sql` | Applied 2026-10-27 (SQL Editor, verified); live fingerprint registration steps reported by the ESP32 |
+| [20261024152151_pin_record_links](20261024152151_pin_record_links.md) | `supabase/migrations/20261024152151_pin_record_links.sql` | Applied; NCR checklist item link + validation, 11-argument `raise_defect`, Foreman field problems |
 | [20261023075625_away_photo_message](20261023075625_away_photo_message.md) | `supabase/migrations/20261023075625_away_photo_message.sql` | Applied; `submit_checklist_qa` message no longer excludes away photos |
 | [20261023075351_away_photo_counts](20261023075351_away_photo_counts.md) | `supabase/migrations/20261023075351_away_photo_counts.sql` | Applied; away-from-site photos count as evidence, only untrusted times excluded |
 | [20261023073942_pin_photo_markup](20261023073942_pin_photo_markup.md) | `supabase/migrations/20261023073942_pin_photo_markup.sql` | Applied; markup overlay on work item / correction photos |
@@ -56,6 +62,7 @@ One document per SQL file in `supabase/`. Same sections every time so changes ar
 
 ## Latest workflow migrations
 
+- [`20261024152151_pin_record_links.sql`](20261024152151_pin_record_links.md): applied via connector; see [pin record connections audit](../2026-10-24-pin-record-connections.md). NCR `checklist_item_id` / `checklist_name` validated by `guard_defect_links`; `report_field_problem`.
 - [`20261023075625_away_photo_message.sql`](20261023075625_away_photo_message.md) and [`20261023075351_away_photo_counts.sql`](20261023075351_away_photo_counts.md): applied via connector; see [away photos count audit](../2026-10-23-away-photos-count.md). `photo_eligible` excludes only `clock_ahead` / `old_photo`.
 - [`20261023073942_pin_photo_markup.sql`](20261023073942_pin_photo_markup.md): applied via connector; see [correction photo markup audit](../2026-10-23-correction-photo-markup.md). `pin_photos.annotations`, no UPDATE policy.
 - [`20261021151557_markup_rotation.sql`](20261021151557_markup_rotation.md): applied via connector; see [photo markup select / move / rotate audit](../2026-10-22-photo-markup-select-move-rotate.md). `valid_issue_markup` accepts an optional `rotation`.

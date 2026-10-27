@@ -2,6 +2,8 @@ import { useEffect, useState } from "react"
 import Modal from "../Modal"
 import BeforeAfter from "../BeforeAfter"
 import { buttonPrimary, buttonSecondary, inputClass } from "../ui/PageParts"
+import { useCorrectionInspection } from "../../lib/qaReinspection"
+import { correctionCloseProblem } from "../../lib/qaReinspectionModel"
 import { Chip, EvidenceStrip, SeverityChip } from "./QaBits"
 import { useConfirm } from "../../lib/confirm"
 import { printHtml } from "../../lib/printReport"
@@ -59,6 +61,8 @@ export default function DefectDetail({
   const confirm = useConfirm()
   const { events, reload: reloadEvents } = useDefectEvents(defect.id)
   const { photos, reload: reloadPhotos } = useQaPhotos({ defectId: defect.id })
+  const correctionInspection = useCorrectionInspection(defect.id, defect.correction_attempt_id ?? null)
+  const closeProblem = correctionCloseProblem(defect.correction_attempt_id, correctionInspection?.status, correctionInspection?.error, correctionInspection?.loading, correctionInspection?.ready)
   // Before / after: the photo taken when the inspection found the problem (if any) against the latest photo of the fix.
   const [found, setFound] = useState<QaPhoto | null>(null)
   useEffect(() => {
@@ -131,6 +135,7 @@ export default function DefectDetail({
   const saveNotes = () => run(() => qaActions.updateDefect({ id: defect.id, status: "in_progress", rootCause: root, corrective, preventive }), "Not saved", "Notes saved")
   const send = () => run(() => qaActions.updateDefect({ id: defect.id, status: "for_verification", rootCause: root, corrective, preventive }), "Cannot send for verification yet", "Sent for verification", "The engineer is notified")
   const close = async () => {
+    if (closeProblem) return toast.error("NCR cannot be closed", closeProblem)
     if (!(await confirm({ title: `Close ${ref}?`, message: "Closing confirms you have seen the corrected work and it meets the requirement. It cannot be reopened.", confirmLabel: "Close NCR" }))) return
     await run(() => qaActions.verifyDefect(defect.id, true, note.trim()), "Not closed", `${ref} closed`)
   }
@@ -234,15 +239,28 @@ export default function DefectDetail({
           </div>
         </section>
 
-        {canVerify && defect.status === "for_verification" ? (
+        {canVerify && defect.status === "for_verification" && defect.correction_attempt_id ? (
+          <section aria-label="Verification" className="rounded-xl border border-brand p-3">
+            <button type="button" className={buttonPrimary} disabled={correctionInspection.loading || Boolean(correctionInspection.error) || !correctionInspection.id}
+              onClick={() => { if (correctionInspection.id) { if (onOpenInspection) onOpenInspection(correctionInspection.id); else followLink(`/engineer/qa?project=${encodeURIComponent(defect.project_id)}&tab=inspections&inspection=${encodeURIComponent(correctionInspection.id)}`, defect.project_id) } }}>
+              Open inspection{correctionInspection.number ? ` ${refNumber("ir", correctionInspection.number)}` : ""}
+            </button>
+            {correctionInspection.loading ? <p role="status" className="mt-2 text-xs text-fg-muted">Loading the linked inspection…</p> : null}
+            {correctionInspection.error ? <p role="alert" className="mt-2 text-xs text-danger-fg">{correctionInspection.error} <button type="button" className="font-bold underline" onClick={() => void correctionInspection.reload()}>Retry</button></p> : null}
+            {!correctionInspection.loading && !correctionInspection.error && !correctionInspection.id ? <p role="status" className="mt-2 text-xs text-fg-muted">No linked correction inspection is available.</p> : null}
+          </section>
+        ) : canVerify && defect.status === "for_verification" ? (
           <section aria-label="Verification" className="rounded-xl border border-brand p-3">
             <h3 className="text-sm font-extrabold">Verify the corrected work</h3>
             <p className="mt-1 text-xs text-fg-muted">Inspect the work and the photos. Close the NCR if it now meets the requirement, or send it back with what is still wrong.</p>
+            {closeProblem ? <p role="status" className="mt-2 text-xs font-semibold text-amber-800 dark:text-amber-300">{closeProblem}{correctionInspection?.error ? <button type="button" className="ml-1 underline" onClick={() => void correctionInspection.reload()}>Retry</button> : null}</p> : null}
+            {correctionInspection?.ready ? <p className="mt-2 text-xs text-fg-muted">This finding has a signed-off Pass. Other findings may still be unresolved; closing this NCR does not complete the checklist.</p> : null}
+            {correctionInspection?.id && onOpenInspection ? <button type="button" className="mt-2 text-xs font-bold text-brand-text underline" onClick={() => onOpenInspection(correctionInspection.id!)}>Open linked reinspection {refNumber("ir", correctionInspection.number ?? 0)}</button> : null}
             <label className="sr-only" htmlFor="d-note">Verification note</label>
             <textarea id="d-note" rows={2} maxLength={1000} className={`${inputClass} mt-2`} value={note} onChange={(event) => setNote(event.target.value)} placeholder="Verification note (at least 5 characters)" />
             <div className="mt-2 flex flex-wrap justify-end gap-2">
               <button type="button" className={buttonSecondary} disabled={busy || note.trim().length < 5} onClick={() => void sendBack()}>Send back</button>
-              <button type="button" className={buttonPrimary} disabled={busy || note.trim().length < 5} onClick={() => void close()}>Close NCR</button>
+              <button type="button" className={buttonPrimary} disabled={busy || note.trim().length < 5 || Boolean(closeProblem)} title={closeProblem || undefined} onClick={() => void close()}>Close NCR</button>
             </div>
           </section>
         ) : null}

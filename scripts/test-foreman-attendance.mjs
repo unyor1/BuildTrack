@@ -99,11 +99,14 @@ const mockData = url("export const useAttendanceWorkers=(...a)=>{globalThis.__fo
 const modal = url("export default function Modal(){return null}")
 const reportButton = url("export default function ReportButton(){return null}")
 const { default: ReportButton } = await import(reportButton)
-const { exports: UI, module: uiModule } = await compile("../src/components/attendance/ForemanWorkerAttendance.tsx", { react: hooks, "../../lib/attendanceModel": model, "../../lib/foremanAttendanceModel": helper, "../../lib/foremanAttendance": mockData, "../Modal": modal, "./WorkerPortrait": url("export default function Portrait(){return null}"), "./AttendanceReportButton": reportButton })
+const { exports: UI, module: uiModule } = await compile("../src/components/attendance/ForemanWorkerAttendance.tsx", { react: hooks, "../../lib/attendanceModel": model, "../../lib/foremanAttendanceModel": helper, "../../lib/attendanceScheduleModel": new URL("../src/lib/attendanceScheduleModel.ts", import.meta.url).href, "../../lib/foremanAttendance": mockData, "../Modal": modal, "./WorkerPortrait": url("export default function Portrait(){return null}"), "./AttendanceReportButton": reportButton })
 const originalWindow = globalThis.window
 globalThis.window = { setInterval: () => 1, clearInterval() {} }
 const all = node => Array.isArray(node) ? node.flatMap(all) : node && typeof node === "object" ? [node, ...all(node.props?.children)] : []
 const text = node => Array.isArray(node) ? node.map(text).join("") : node?.props ? text(node.props.children) : typeof node === "string" || typeof node === "number" ? String(node) : ""
+// Schedule column: the database's flag, never computed in the browser.
+const flagged = UI.AttendanceRecordsTable({ events: [{ ...scans[0], schedule_flag: "late", minutes_off: 80 }, { ...scans[1], schedule_flag: "early_out", minutes_off: 30 }, { ...scans[2], schedule_flag: null, minutes_off: null }] })
+assert.match(text(flagged), /Schedule/); assert.match(text(flagged), /Late 1 h 20 min/); assert.match(text(flagged), /Early out 30 min/)
 let tree
 const find = predicate => { const found = all(tree).find(predicate); assert.ok(found, "Expected Foreman attendance control"); return found }
 function render(Component, props) { for (let i = 0; i < 2; i++) { cursor = 0; tree = Component(props); const tasks = pending; pending = []; tasks.forEach(fn => fn()) } return tree }

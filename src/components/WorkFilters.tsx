@@ -11,9 +11,9 @@ export type FilterItem = { id: string; pin_id: string; text: string; position: n
 
 // One filter bar used everywhere (photo pages, pin panel, QA boards): Sheet → Pin → Checklist item, then Clear filters.
 // Narrower choices follow the wider ones (rules in changePhotoScope). Fields share a row when there is room and wrap otherwise.
-export default function WorkFilters({ sheets, pins, items, scope, onChange, onClear, label: groupLabel = "Filters" }: {
+export default function WorkFilters({ sheets, pins, items, scope, onChange, onClear, canClear, label: groupLabel = "Filters" }: {
   sheets: FilterSheet[]; pins: FilterPin[]; items: FilterItem[]; scope: PhotoScope
-  onChange: (key: keyof PhotoScope, value: string) => void; onClear: () => void; label?: string
+  onChange: (key: keyof PhotoScope, value: string) => void; onClear: () => void; canClear?: boolean; label?: string
 }) {
   const work = useMemo(() => pins.filter((pin) => pin.category !== "note"), [pins])
   const pinTitle = useMemo(() => new Map(work.map((pin) => [pin.id, pin.title])), [work])
@@ -41,7 +41,7 @@ export default function WorkFilters({ sheets, pins, items, scope, onChange, onCl
           {itemChoices.map((item) => <option key={item.id} value={item.id}>{scope.pin ? item.text : `${pinTitle.get(item.pin_id) ?? "Pin"} → ${item.text}`}</option>)}
         </select>
       </label>
-      <button type="button" className={buttonSecondary + " !py-1.5"} disabled={!(scope.sheet || scope.pin || scope.item)} onClick={onClear}>Clear filters</button>
+      <button type="button" className={buttonSecondary + " !py-1.5"} disabled={!(canClear ?? Boolean(scope.sheet || scope.pin || scope.item))} onClick={onClear}>Clear filters</button>
     </div>
   )
 }

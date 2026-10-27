@@ -40,6 +40,7 @@ export type Template = {
 }
 
 export type Inspection = {
+  full_checklist_reinspection?: boolean
   target_at?: string
   escalation_owner?: string | null
   id: string
@@ -66,6 +67,7 @@ export type Inspection = {
 }
 
 export type InspectionItem = {
+  origin_item_id?: string | null
   id: string
   inspection_id: string
   project_id: string

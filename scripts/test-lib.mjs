@@ -9,7 +9,7 @@ import { completionProblem, connectedHistory, headline as itemHeadline, itemAtte
 import { adjustPhotoZoom, changePhotoScope, defaultPhotoDates, emptyPhotoScope, photoDateBounds, photoRangeDates, photoRangeOf, readPhotoDates, readPhotoScope, validPhotoDate, photoTime } from "../src/lib/photoGalleryModel.ts"
 import { foremanTasks, manilaDayRange, reportStatusLabel, taskCounts, taskFilters } from "../src/lib/foremanDashboardModel.ts"
 import { fieldPagePath, fieldShellMode, projectPath, projectSections, readProjectRoute } from "../src/lib/projectRoutes.ts"
-import { checklistText, defectChecklist, inspectionChecklist, panelRole, pinNextActions, pinPlanPath, pinSectionCounts, pinSectionsFor, readPinSection, sectionLabel } from "../src/lib/pinRecordsModel.ts"
+import { WHOLE_PIN_ITEM, checklistText, defectChecklist, emptyRecordFilter, inspectionChecklist, inspectionOpen, issueOpen, panelRole, pinNextActions, pinPlanPath, pinSectionCounts, pinSectionsFor, readPinSection, recordFilterActive, recordKindCounts, recordKindsFor, recordMatches, sectionLabel } from "../src/lib/pinRecordsModel.ts"
 import { changePinLink, emptyPinLink, itemChoices, pinChoices, pinLinkProblem, startPinLink } from "../src/lib/pinPickerModel.ts"
 import { areaSquareMeters, asPoints, bbox, formatArea, lengthMeters, limitPoints, polygonAreaPx, polylineLengthPx, pointsToPath, simplify, translatePoints } from "../src/lib/geometry.ts"
 import { alignMoves, distributeMoves, fitImageBox, resizeFromCorner, resizedBox, inRectangle, isNoop, itemBox, shifted, shiftedTogether, withGroupMembers } from "../src/lib/arrange.ts"
@@ -1405,9 +1405,12 @@ test("Calendar filter: validation, wording and the address keep only real ranges
   assert.equal(rangeSearch("?project=p&from=2026-10-01&to=2026-10-31",allDates),"?project=p");assert.equal(rangeSearch("?from=2026-10-01",allDates),"")
 })
 test("Pin panel: each role gets its own sections; a link opens a section the role may see, otherwise Details", () => {
-  assert.deepEqual(pinSectionsFor("engineer"), ["details", "checklist", "issues", "reports", "photos", "activity", "communication"])
-  assert.deepEqual(pinSectionsFor("foreman"), ["details", "checklist", "issues", "reports", "photos", "activity"])
-  assert.deepEqual(pinSectionsFor("client"), ["details", "checklist", "issues", "reports", "communication"], "clients: no staff photos, no timeline")
+  assert.deepEqual(pinSectionsFor("engineer"), ["details", "checklist", "issues", "actions", "reports", "photos", "activity", "communication"])
+  assert.deepEqual(pinSectionsFor("foreman"), ["details", "checklist", "issues", "actions", "reports", "photos", "activity"])
+  assert.deepEqual(pinSectionsFor("client"), ["details", "checklist", "issues", "actions", "reports", "communication"], "clients: no staff photos, no timeline")
+  assert.ok(!pinSectionsFor("admin").includes("actions"), "admins have no operational actions tab")
+  assert.equal(readPinSection("?pintab=actions", "foreman"), "actions")
+  assert.equal(readPinSection("?pintab=actions", "admin"), "details")
   assert.ok(!pinSectionsFor("admin").includes("communication"), "admins read records but do not answer clients")
   assert.equal(sectionLabel("client", "issues"), "My reports"); assert.equal(sectionLabel("engineer", "issues"), "Issues & NCRs")
   assert.equal(readPinSection("?project=p&pin=x&pintab=issues", "foreman"), "issues")
@@ -1458,6 +1461,28 @@ test("Pin records: counts and next actions follow the role (Engineer acts, Forem
     ["Correct NCR-0001 Gap (4 days overdue)", "act"], ["NCR-0002 Crack: correction waiting for Engineer verification", "wait"], ["IR-0005 Floor check: waiting for the Engineer's inspection", "wait"]])
   assert.deepEqual(pinNextActions("client", "c", records, "2026-10-24").map((row) => row.text), ["SR-0007 Noise: waiting for the engineer"])
   assert.deepEqual(pinNextActions("admin", "a", records, "2026-10-24"), [], "admins get no actions")
+})
+test("Pin records filter: type, open or closed, checklist item (or whole pin) and search words; chips count under the other filters", () => {
+  const facts = [
+    { kind: "ncr", open: true, itemIds: ["floor"], text: "NCR-0001 Gap FLOOR Frank Foreman" },
+    { kind: "ncr", open: false, itemIds: [], text: "NCR-0002 Old stain" },
+    { kind: "inspection", open: true, itemIds: ["floor", "wall"], text: "IR-0003 Floor check" },
+    { kind: "issue", open: true, itemIds: [""], text: "Issue SKIRTING (historical)" },
+    { kind: "client", open: false, itemIds: [], text: "SR-0004 Loose tile" },
+  ]
+  const ids = (filter) => facts.filter((row) => recordMatches(row, { ...emptyRecordFilter, ...filter })).map((row) => row.text.split(" ")[0])
+  assert.deepEqual(ids({}), ["NCR-0001", "NCR-0002", "IR-0003", "Issue", "SR-0004"])
+  assert.deepEqual(ids({ kind: "ncr" }), ["NCR-0001", "NCR-0002"])
+  assert.deepEqual(ids({ state: "open" }), ["NCR-0001", "IR-0003", "Issue"]); assert.deepEqual(ids({ state: "closed" }), ["NCR-0002", "SR-0004"])
+  assert.deepEqual(ids({ item: "floor" }), ["NCR-0001", "IR-0003"]); assert.deepEqual(ids({ item: "wall" }), ["IR-0003"])
+  assert.deepEqual(ids({ item: WHOLE_PIN_ITEM }), ["NCR-0002", "SR-0004"], "A record on a removed item is not a whole-pin record")
+  assert.deepEqual(ids({ query: "floor" }), ["NCR-0001", "IR-0003"], "Search ignores case"); assert.deepEqual(ids({ query: "gap  frank" }), ["NCR-0001"], "Every word must match")
+  assert.deepEqual(ids({ query: "gap tile" }), []); assert.deepEqual(ids({ kind: "inspection", state: "closed" }), [])
+  assert.deepEqual(recordKindCounts(facts, { ...emptyRecordFilter, kind: "ncr", state: "open" }), { all: 3, ncr: 1, inspection: 1, issue: 1, client: 0 }, "Chip numbers ignore the chosen type")
+  assert.equal(recordFilterActive(emptyRecordFilter), false); assert.equal(recordFilterActive({ ...emptyRecordFilter, query: "  " }), false); assert.equal(recordFilterActive({ ...emptyRecordFilter, state: "open" }), true)
+  assert.deepEqual(recordKindsFor("client"), ["client"]); assert.deepEqual(recordKindsFor("foreman"), ["ncr", "inspection", "issue"]); assert.deepEqual(recordKindsFor("admin"), ["ncr", "inspection", "issue", "client"])
+  assert.equal(issueOpen("issue"), true); assert.equal(issueOpen("in_progress"), true, "Still being fixed after it was returned"); assert.equal(issueOpen("verified"), false, "Resolved once the work is completed, as in the issue register")
+  assert.equal(inspectionOpen("requested"), true); assert.equal(inspectionOpen("failed"), false)
 })
 test("Pin picker: project work pins only, search, and dependent choices clear when a wider one changes", () => {
   const pins = [

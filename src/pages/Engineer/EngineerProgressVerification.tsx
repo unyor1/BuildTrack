@@ -112,7 +112,7 @@ export default function EngineerProgressVerification({ onNavigate }: EngineerPag
             <StatCard label="Completed work" value={work.pins.filter((pin) => pin.status === "verified").length} tone="green" note={`of ${work.pins.filter((pin) => pin.category !== "note").length} work pins`} />
           </div>
 
-          <WorkItemBoard groups={groups} extras={extras} loading={items.loading || ws.loading} error={items.error || ws.error} nameOf={ws.nameOf} sheetOf={work.sheetOf} onOpen={setItemId}
+          <WorkItemBoard key={projectId} groups={groups} extras={extras} loading={items.loading || ws.loading} error={items.error || ws.error} nameOf={ws.nameOf} sheetOf={work.sheetOf} onOpen={setItemId}
             emptyTitle="All caught up" emptyText="When a Foreman submits a work item or a correction package, it appears here and you get a notification." />
 
           {selected ? <ReviewPanel key={selected.id} pin={selected} sheet={work.sheetOf(selected.blueprint_id)} foreman={work.nameOf(selected.assigned_to)} onClose={closeReview} onDecided={reload} /> : null}

@@ -9,6 +9,8 @@ vite.config.*.timestamp-*
 *-debug.log*
 logs/
 hardware/esp32-as608/attendance/config.h
+# Local single-file firmware contains private Wi-Fi/device credentials.
+hardware/esp32-as608/private_upload/
 *.log
 .claude-replay.*
 .tmp-*

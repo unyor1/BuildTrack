@@ -19,6 +19,7 @@ export function inspectionReportHtml(input: { inspection: Inspection; items: Ins
     meta: [
       ["Result", inspectionStatusLabels[ir.status]],
       ["Score", ir.score === null ? "-" : `${ir.score}% (pass mark ${ir.threshold ?? "-"}%)`],
+      ["Scope", ir.full_checklist_reinspection ? "Full checklist reinspection, including previously passed checks. All results belong to this inspection; earlier results/evidence remain unchanged. This is not whole-project acceptance." : "Full scope recorded in this inspection"],
       ["Trade", tradeLabels[ir.trade]],
       ["Completed", stamp(ir.completed_at)],
     ],
@@ -32,7 +33,7 @@ export function inspectionReportHtml(input: { inspection: Inspection; items: Ins
           ["Inspector", nameOf(ir.inspector_id)],
           ["Started", stamp(ir.started_at)],
           ["Standards cited", ir.standards.length ? ir.standards.join(", ") : "-"],
-          ["Re-inspection of", ir.reinspection_of ? "an earlier inspection (failed items only)" : "-"],
+          ["Re-inspection of", ir.reinspection_of ? "an earlier inspection (linked history retained)" : "-"],
         ],
       },
       { heading: "Engineer's summary", body: ir.summary ?? "No summary written." },

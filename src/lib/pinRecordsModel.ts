@@ -5,16 +5,16 @@ import { submittedChecklistItems, type ChecklistRecord } from "./qaChecklistMode
 import { dueText, refNumber, type DefectStatus, type InspectionStatus, type SnagStatus } from "./qaModel.ts"
 
 export type PanelRole = "engineer" | "foreman" | "client" | "admin"
-export type PinSection = "details" | "checklist" | "issues" | "reports" | "photos" | "activity" | "communication"
+export type PinSection = "details" | "checklist" | "issues" | "actions" | "reports" | "photos" | "activity" | "communication"
 
 export const pinSectionLabels: Record<PinSection, string> = {
-  details: "Details", checklist: "Checklist & QA", issues: "Issues & NCRs", reports: "Daily reports", photos: "Photos", activity: "Activity", communication: "Communication",
+  details: "Details", checklist: "Checklist & QA", issues: "Issues & NCRs", actions: "Next actions", reports: "Daily reports", photos: "Photos", activity: "Activity", communication: "Communication",
 }
 // Clients never see QA records, staff photos or the timeline; Admins read but never act (no inspection or NCR rights).
 const sections: Record<PanelRole, PinSection[]> = {
-  engineer: ["details", "checklist", "issues", "reports", "photos", "activity", "communication"],
-  foreman: ["details", "checklist", "issues", "reports", "photos", "activity"],
-  client: ["details", "checklist", "issues", "reports", "communication"],
+  engineer: ["details", "checklist", "issues", "actions", "reports", "photos", "activity", "communication"],
+  foreman: ["details", "checklist", "issues", "actions", "reports", "photos", "activity"],
+  client: ["details", "checklist", "issues", "actions", "reports", "communication"],
   admin: ["details", "checklist", "issues", "reports", "photos", "activity"],
 }
 export const pinSectionsFor = (role: PanelRole): PinSection[] => sections[role]
@@ -115,4 +115,38 @@ export function pinNextActions(role: PanelRole, meId: string, records: PinRecord
       out.push({ key: `snag-${row.id}`, text: `${refNumber("snag", row.number)} ${row.title}: ${row.status === "submitted" ? "waiting for the engineer" : row.fix_stage === "for_verification" ? "repair being checked" : "being fixed"}`, tone: "info", open: { kind: "snag", id: row.id } })
   }
   return out
+}
+
+// ---------- Filtering Issues & NCRs ----------
+// One filter for the pin's records: type, open / closed, checklist item and a free-text search. "Open" means still waiting for
+// someone: an NCR not closed, an inspection requested or under way, a site issue whose work is not completed yet (as the issue
+// register's Resolved), a client report waiting or being fixed.
+export type RecordKind = "ncr" | "inspection" | "issue" | "client"
+export type RecordState = "all" | "open" | "closed"
+export type RecordFilter = { kind: RecordKind | "all"; state: RecordState; item: string; query: string }
+export type RecordFacts = { kind: RecordKind; open: boolean; itemIds: string[]; text: string }
+export const emptyRecordFilter: RecordFilter = { kind: "all", state: "all", item: "", query: "" }
+export const WHOLE_PIN_ITEM = "__whole_pin__"
+export const recordKindLabels: Record<RecordKind, string> = { ncr: "NCRs", inspection: "Inspections", issue: "Site issues", client: "Client reports" }
+export const recordKindsFor = (role: PanelRole): RecordKind[] =>
+  role === "client" ? ["client"] : role === "foreman" ? ["ncr", "inspection", "issue"] : ["ncr", "inspection", "issue", "client"]
+export const defectOpen = (status: DefectStatus) => status !== "closed"
+export const inspectionOpen = (status: InspectionStatus) => status === "requested" || status === "in_progress"
+export const issueOpen = (pinStatus: string) => pinStatus !== "verified"
+export const snagOpen = (status: SnagStatus) => status === "submitted" || status === "accepted"
+export const recordFilterActive = (filter: RecordFilter) => filter.kind !== "all" || filter.state !== "all" || Boolean(filter.item) || Boolean(filter.query.trim())
+
+// itemIds: the checklist items a record concerns ([] = whole work pin; "" = an item since removed, kept by its saved name).
+export function recordMatches(facts: RecordFacts, filter: RecordFilter, ignoreKind = false): boolean {
+  if (!ignoreKind && filter.kind !== "all" && facts.kind !== filter.kind) return false
+  if (filter.state !== "all" && facts.open !== (filter.state === "open")) return false
+  if (filter.item === WHOLE_PIN_ITEM ? facts.itemIds.length > 0 : filter.item && !facts.itemIds.includes(filter.item)) return false
+  const text = facts.text.toLowerCase()
+  return filter.query.toLowerCase().split(/\s+/).filter(Boolean).every((word) => text.includes(word))
+}
+// Numbers on the type chips: what each type shows under the other filters.
+export function recordKindCounts(facts: RecordFacts[], filter: RecordFilter): Record<RecordKind | "all", number> {
+  const counts = { all: 0, ncr: 0, inspection: 0, issue: 0, client: 0 }
+  for (const row of facts) if (recordMatches(row, filter, true)) { counts[row.kind]++; counts.all++ }
+  return counts
 }

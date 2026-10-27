@@ -15,7 +15,8 @@ export async function loadAttendanceReport(projectId: string, period: Attendance
   let expected: number | null = null
   for (let from = 0; from < ROW_CAP; from += PAGE_SIZE) {
     let query = supabase.from("biometric_attendance_events")
-      .select("id,project_id,worker_id,direction,occurred_at,received_at,device_id,worker:attendance_workers(id,full_name,worker_code,trade)", { count: "exact" })
+      // All event columns: schedule_flag / minutes_off exist only after 20261027130000; older databases still work.
+      .select("*,worker:attendance_workers(id,full_name,worker_code,trade)", { count: "exact" })
       .eq("project_id", projectId).gte("occurred_at", range.start).lt("occurred_at", range.endExclusive)
       .order("occurred_at").order("id")
     if (workerId) query = query.eq("worker_id", workerId)

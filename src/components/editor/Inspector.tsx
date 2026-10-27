@@ -3,7 +3,7 @@ import { Icon } from "./EditorToolbar"
 import LayerStack, { EyeButton, describe } from "./LayerStack"
 import { ChecklistProgress, PinChecklist, PinTimeline, ProgressTracker, field } from "./PinParts"
 import ChecklistPhotos from "../ChecklistPhotos"
-import { PinCommunicationSection, PinIssuesSection, PinReportsSection, usePinPanelData, type PinPanelData } from "./PinRecordSections"
+import { PinActionsSection, PinCommunicationSection, PinIssuesSection, PinReportsSection, usePinPanelData, type PinPanelData } from "./PinRecordSections"
 import { clientActionPath, clientPinStatus, openClientPath } from "../../lib/clientPortalModel"
 import { pinSectionsFor, readPinSection, sectionLabel, type PinSection } from "../../lib/pinRecordsModel"
 import { useToast } from "../../lib/toast"
@@ -182,7 +182,7 @@ export default function Inspector(props: InspectorProps) {
 export const startSection = (props: Pick<InspectorProps, "role" | "pinLink">, pinId: string): PinSection =>
   props.pinLink?.pinId === pinId ? readPinSection(props.pinLink.search, props.role) : "details"
 
-// One pin beside the sheet: Details and assignment, Checklist & QA, Issues & NCRs, Daily reports, Photos, Activity and
+// One pin beside the sheet: Details and assignment, Checklist & QA, Issues & NCRs, Next actions, Daily reports, Photos, Activity and
 // Communication, as the role allows (pinSectionsFor). Counts mark what still needs attention. "For review" stays a checklist
 // state: the pin header shows the work status only.
 function PinPanel(props: InspectorProps & { pin: Pin }) {
@@ -203,7 +203,7 @@ function PinPanel(props: InspectorProps & { pin: Pin }) {
         <button type="button" onClick={() => props.onOpenDetails(active)} className="flex-none rounded-lg border border-line px-2 py-1 text-[11px] font-bold hover:bg-surface-muted" title="Open this section in the full pin view with detailed columns">Full view</button>
       </div>
       <Tabs tabs={tabs} value={active} onChange={setPinTab} label="Pin sections" />
-      <div className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain p-4 [overflow-wrap:anywhere]">
+      <div className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain p-4 [overflow-wrap:anywhere] [scrollbar-gutter:stable]" aria-label="Pin section content" tabIndex={0}>
         <PinSectionBody {...props} pin={pin} section={active} data={data} />
       </div>
     </aside>
@@ -213,12 +213,13 @@ function PinPanel(props: InspectorProps & { pin: Pin }) {
 // The body of one pin section, shared by the side panel (compact cards) and the full pin view (wide = detailed columns).
 export function PinSectionBody(props: InspectorProps & { pin: Pin; section: PinSection; data: PinPanelData; wide?: boolean; refreshKey?: number; onChanged?: () => void }) {
   const { pin, section, data } = props
-  const shared = { pin, role: props.role, meId: props.meId, team: props.team, canEdit: props.canEdit, canWork: canWorkOn(props, pin), data, wide: props.wide }
+  const shared = { pin, role: props.role, meId: props.meId, team: props.team, canEdit: props.canEdit, canWork: canWorkOn(props, pin), data, wide: props.wide, onPinChanged: props.onChanged ?? props.onPinChanged }
   if (section === "details") return props.wide ? null : <PinDetailsTab {...props} pin={pin} />
   if (section === "checklist") return <PinChecklist pin={pin} canEdit={props.canEdit} canTick={canWorkOn(props, pin)} notice={checklistNotice(props, pin, pin.assigned_to ? props.team.find((member) => member.user_id === pin.assigned_to)?.full_name : undefined)} onPinChanged={props.onChanged ?? props.onPinChanged} />
-  if (section === "issues") return <PinIssuesSection {...shared} />
-  if (section === "reports") return <PinReportsSection {...shared} />
-  if (section === "photos") return props.role === "client" ? null : <ChecklistPhotos pin={pin} />
+  if (section === "issues") return <PinIssuesSection key={pin.id} {...shared} />
+  if (section === "actions") return props.role === "admin" ? null : <PinActionsSection key={pin.id} {...shared} />
+  if (section === "reports") return <PinReportsSection key={pin.id} {...shared} />
+  if (section === "photos") return props.role === "client" ? null : <ChecklistPhotos key={`${pin.project_id}:${pin.id}`} pin={pin} />
   if (section === "activity") return props.role === "client" ? null : <PinTimeline pinId={pin.id} canComment={props.canReport} refreshKey={props.refreshKey} />
   return <PinCommunicationSection {...shared} />
 }

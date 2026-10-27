@@ -63,6 +63,9 @@ export default function WorkItemWorkspace({ itemId, onClose, onChanged, fromPlan
   const foreman = Boolean(pin && profile?.role === "foreman" && profile.status === "active" && pin.assigned_to === profile.id)
   const view = stage?.view ?? null
   const current = stage?.current ?? null
+  const showReturnAction = engineer && !stage?.open && (item?.review_status === "verified"
+    || (item?.review_status === "for_review" && current?.status !== "passed"))
+  useEffect(() => { if (!showReturnAction) setReturning(false) }, [showReturnAction])
   const submissions = history.submissions as unknown as SubmissionRef[]
   const ncrs = stage?.ncrs ?? []
   const otherNcrs = pin ? pinLevelDefects(pin.id, submissions, defects) : []
@@ -137,13 +140,12 @@ export default function WorkItemWorkspace({ itemId, onClose, onChanged, fromPlan
       if (view.action === "submit") return <button type="button" className={buttonPrimary} disabled={busy} onClick={() => void submitFirst()}>Submit {name} for QA</button>
       if (view.action === "start_correction") return <button type="button" className={buttonPrimary} disabled={busy} onClick={() => void startCorrection()}>Start correction</button>
       if (view.action === "submit_correction") return tab === "corrections"
-        ? <button type="submit" form={formId} className={buttonPrimary} disabled={busy}>{busy ? "Sending…" : "Submit correction package"}</button>
+        ? <button type="submit" form={formId} className={buttonPrimary} disabled={busy}>{busy ? "Sending…" : "Submit correction & request reinspection"}</button>
         : <button type="button" className={buttonPrimary} onClick={() => setTab("corrections")}>Open correction form</button>
       if (view.action === "open_ncr" && firstToFix) return <button type="button" className={buttonPrimary} onClick={() => setDefectOpen(firstToFix.id)}>Correct {ncrRef(firstToFix.number)}</button>
     }
     if (engineer) {
       if (view.action === "inspect" && current) return <button type="button" className={buttonPrimary} onClick={() => setInspectionOpen(current.id)}>{current.status === "requested" ? "Start inspection" : "Record results"}</button>
-      if (view.action === "review_ncrs") return <button type="button" className={buttonPrimary} onClick={() => setTab("corrections")}>Review NCR corrections</button>
     }
     return null
   })()
@@ -151,7 +153,7 @@ export default function WorkItemWorkspace({ itemId, onClose, onChanged, fromPlan
   const footer = <>
     <button type="button" className={buttonSecondary} onClick={onClose}>Close</button>
     {!fromPlan ? <OpenOnBlueprint projectId={pin.project_id} pinId={pin.id} sheetId={pin.blueprint_id} section="checklist" /> : null}
-    {engineer && (item.review_status === "for_review" || item.review_status === "verified") && !stage.open ? <button type="button" className={buttonSecondary} disabled={busy} onClick={() => setReturning(true)}>{item.review_status === "verified" ? `Reopen ${name}` : `Return ${name}`}</button> : null}
+    {showReturnAction ? <button type="button" className={buttonSecondary} disabled={busy} onClick={() => setReturning(true)}>{item.review_status === "verified" ? `Reopen ${name}` : `Return ${name}`}</button> : null}
     {primary}
     {engineer && item.review_status === "for_review" && current?.status === "passed" ? <button type="button" className={buttonPrimary} disabled={busy || Boolean(completionBlock)} title={completionBlock || undefined} onClick={() => void complete()}>Complete checklist</button> : null}
   </>
@@ -187,7 +189,7 @@ export default function WorkItemWorkspace({ itemId, onClose, onChanged, fromPlan
               <p className="text-fg-muted">{current?.status === "passed" && view.stage !== "correction" ? "The current inspection passed without a linked NCR. No NCR correction is required." : "NCRs appear here when a failed inspection criterion or a recorded defect is linked to this item."}</p>
             </div> : <>
               <p className="mb-2 text-xs text-fg-muted">{openNcrs} open · {ncrs.length - openNcrs} closed. Closed NCRs remain in this record.</p>
-              <ul className="space-y-2">{ncrs.map((row) => <NcrRow key={row.id} defect={row} today={manilaToday()} canDecide={engineer && row.status === "for_verification"} onOpen={() => setDefectOpen(row.id)} onDecided={reload} />)}</ul>
+              <ul className="space-y-2">{ncrs.map((row) => <NcrRow key={row.id} defect={row} today={manilaToday()} onOpen={() => setDefectOpen(row.id)} />)}</ul>
             </>}
           </div>
           {foreman && view.stage === "correction" ? (
@@ -225,7 +227,7 @@ export default function WorkItemWorkspace({ itemId, onClose, onChanged, fromPlan
         return defect ? <DefectDetail key={defect.id} defect={defect} project={project} foremen={team.filter((member) => member.role === "foreman")} today={manilaToday()} canWork={!engineer} canVerify={engineer}
           nameOf={nameOf} onClose={() => setDefectOpen(null)} onChanged={reload} onOpenInspection={(id) => { setDefectOpen(null); setInspectionOpen(id) }} /> : null
       })() : null}
-      {returning ? <ReturnDialog name={name} reopen={item.review_status === "verified"} busy={busy} onClose={() => setReturning(false)} onSubmit={async (reason) => { if (await run(() => qaActions.reviewItem(item.id, false, reason), "Not returned", `${name} returned for correction`)) setReturning(false) }} /> : null}
+      {returning && showReturnAction ? <ReturnDialog name={name} reopen={item.review_status === "verified"} busy={busy} onClose={() => setReturning(false)} onSubmit={async (reason) => { if (await run(() => qaActions.reviewItem(item.id, false, reason), "Not returned", `${name} returned for correction`)) setReturning(false) }} /> : null}
       {editingCriteria ? <WorkChecklistEditor pin={pin} item={item} onClose={() => setEditingCriteria(false)} onSaved={reload} /> : null}
     </Modal>
   )
@@ -262,22 +264,8 @@ function CurrentInspection({ inspection, attemptLabel, nameOf, onOpen }: { inspe
   )
 }
 
-function NcrRow({ defect, today, canDecide, onOpen, onDecided }: { defect: Defect; today: string; canDecide: boolean; onOpen: () => void; onDecided: () => Promise<void> }) {
-  const toast = useToast()
-  const confirm = useConfirm()
-  const [note, setNote] = useState("")
-  const [busy, setBusy] = useState(false)
-  const decide = async (close: boolean) => {
-    if (note.trim().length < 5) return toast.error("Write a verification note", "At least 5 characters.")
-    if (close && !(await confirm({ title: `Close ${ncrRef(defect.number)}?`, message: "Closing confirms the corrected work meets the requirement. It cannot be reopened.", confirmLabel: "Close NCR" }))) return
-    setBusy(true)
-    const outcome = await qaActions.verifyDefect(defect.id, close, note.trim())
-    setBusy(false)
-    if (!outcome.ok) return toast.error(close ? "Not closed" : "Not sent back", outcome.message)
-    toast.success(close ? `${ncrRef(defect.number)} closed` : `${ncrRef(defect.number)} sent back`, close ? undefined : "The work item returns to the Foreman's correction form.")
-    setNote("")
-    await onDecided()
-  }
+// Summary only. Package NCRs open their linked inspection for verification; standalone NCRs keep their own decision form.
+function NcrRow({ defect, today, onOpen }: { defect: Defect; today: string; onOpen: () => void }) {
   return (
     <li className="space-y-2 rounded-xl border border-line p-3">
       <div className="flex flex-wrap items-center gap-2 text-sm">
@@ -289,14 +277,6 @@ function NcrRow({ defect, today, canDecide, onOpen, onDecided }: { defect: Defec
         <button type="button" className="text-xs font-bold text-brand-text underline" onClick={onOpen}>Open NCR record</button>
       </div>
       {defect.corrective_action ? <p className="text-sm"><span className="font-bold">Corrective action{defect.correction_attempt_id ? " (from the correction package)" : ""}:</span> {defect.corrective_action}</p> : null}
-      {canDecide ? <div className="space-y-2 rounded-lg border border-brand/50 p-2">
-        <label className="block text-xs font-bold" htmlFor={`note-${defect.id}`}>Your decision on the correction</label>
-        <textarea id={`note-${defect.id}`} rows={2} maxLength={1000} className={inputClass} value={note} onChange={(event) => setNote(event.target.value)} placeholder="Verification note (at least 5 characters)" />
-        <div className="flex flex-wrap justify-end gap-2">
-          <button type="button" className={buttonSecondary + " !py-1 !text-xs"} disabled={busy || note.trim().length < 5} onClick={() => void decide(false)}>Send back</button>
-          <button type="button" className={buttonPrimary + " !py-1 !text-xs"} disabled={busy || note.trim().length < 5} onClick={() => void decide(true)}>Close NCR</button>
-        </div>
-      </div> : null}
     </li>
   )
 }

@@ -4,6 +4,7 @@ import AdminProjectSelect, {
 } from "../../components/AdminProjectSelect"
 import WorkerManagement from "../../components/attendance/WorkerManagement"
 import DeviceManagement from "../../components/attendance/DeviceManagement"
+import AttendanceSchedule from "../../components/attendance/AttendanceSchedule"
 import BiometricAdminGuard from "../../components/attendance/BiometricAdminGuard"
 import { PageIntro } from "./AdminShell"
 import type { AdminPageProps } from "./types"
@@ -18,7 +19,7 @@ export default function BiometricsRegistration(_: AdminPageProps) {
 
 function AdminRegistration() {
   const { projects, project, projectId, error, choose } = useAdminProject()
-  const [tab, setTab] = useState<"register" | "profiles" | "devices">(
+  const [tab, setTab] = useState<"register" | "profiles" | "devices" | "schedule">(
     "register",
   )
   return (
@@ -45,6 +46,7 @@ function AdminRegistration() {
               ["register", "Register worker"],
               ["profiles", "Worker profiles"],
               ["devices", "Devices"],
+              ["schedule", "Attendance schedule"],
             ] as const).map(([key, label]) => (
               <button
                 key={key}
@@ -71,6 +73,8 @@ function AdminRegistration() {
           >
             {tab === "devices" ? (
               <DeviceManagement projectId={projectId} />
+            ) : tab === "schedule" ? (
+              <AttendanceSchedule projectId={projectId} />
             ) : (
               <WorkerManagement
                 projectId={projectId}
@@ -101,8 +105,13 @@ function AdminRegistration() {
               </li>
               <li>
                 Have the worker place, lift and scan the same finger again on
-                the AS608. Wait for Fingerprint registered; saving the form
-                alone does not enroll a fingerprint.
+                the AS608, then once more to confirm. Wait for Fingerprint
+                registered and confirmed; saving the form alone does not enroll
+                a fingerprint.
+              </li>
+              <li>
+                Set the project's time in, time out, grace period and repeat-scan
+                window in the Attendance schedule tab.
               </li>
               <li>
                 Register the project’s ESP32 in the Devices tab, configure it
@@ -123,9 +132,9 @@ function AdminRegistration() {
         </p>
       )}
       <div className="mt-5 rounded-xl border border-border bg-surface p-5 text-sm text-fg-muted">
-        Device integration required: the scanner or its trusted server bridge
-        must send successful IN/OUT events to the database. No raw fingerprint
-        images or biometric templates are stored by this page.
+        Device integration required: the scanner sends each matched scan to the
+        database, which decides Time IN or Time OUT and ignores repeat scans. No
+        raw fingerprint images or biometric templates are stored by this page.
       </div>
     </div>
   )

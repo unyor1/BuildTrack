@@ -11,7 +11,7 @@ import IssuePhotoPicker from "./IssuePhotoPicker"
 // A site issue always belongs to one work pin (and optionally one of its checklist items). From a pin panel the pin is chosen
 // already; from the issue register the Engineer picks the sheet, searches the pin and picks the item.
 export default function LogIssueModal({pins,sheets,sheetOf,initialPinId,initialItemId,onClose,onDone}:{pins:Pin[];sheets?:PickSheet[];sheetOf:(id:string)=>string;initialPinId?:string;initialItemId?:string;onClose:()=>void;onDone:()=>Promise<void>}) {
-  const candidates=pins.filter(pin=>!["verified","for_review"].includes(pin.status) && pin.category!=="note")
+  const candidates=pins.filter(pin=>pin.status!=="verified" && pin.category!=="note")
   const projectId=candidates[0]?.project_id ?? pins[0]?.project_id ?? ""
   const sheetList:PickSheet[]=sheets ?? [...new Set(candidates.map(pin=>pin.blueprint_id))].map(id=>({id,title:sheetOf(id)}))
   const [link,setLink]=useState<PinLink>(()=>startPinLink(candidates,initialPinId,initialItemId))
@@ -34,7 +34,7 @@ export default function LogIssueModal({pins,sheets,sheetOf,initialPinId,initialI
     try{await logSiteIssue({id:requestId.current,projectId:pin.project_id,pinId:pin.id,checklistItemId:link.itemId || null,severity,description:reason.trim(),photos});await onDone()}catch(e){setError((e as Error).message)}finally{pending.current=false;setBusy(false)}
   }
   return <Modal title="Log an issue" size="xl" description="Linked to a work pin and optionally one of its checklist items. Visible to the assigned Foreman. Original photos and all saved markup versions are preserved." onClose={close} footer={<><button type="button" className={buttonSecondary} disabled={busy} onClick={close}>Cancel</button><button type="submit" form="log-site-issue" className={buttonDanger} disabled={busy || !candidates.length || Boolean(linkProblem)}>{busy ? "Uploading and saving…" : "Log issue"}</button></>}>
-    {!candidates.length ? <p className="text-sm text-fg-muted">No available work pins. Add a pin on the plan, or finish/reopen its current review first.</p> : <form id="log-site-issue" className="space-y-4" onSubmit={event=>void submit(event)}>
+    {!candidates.length ? <p className="text-sm text-fg-muted">No available work pins. Add a work pin on the plan, or reopen completed work first.</p> : <form id="log-site-issue" className="space-y-4" onSubmit={event=>void submit(event)}>
       <PinLinkPicker projectId={projectId} sheets={sheetList} pins={candidates} value={link} disabled={busy} checklist={checklist} onChange={next=>{setLink(next);setError("")}}/>
       {linkProblem && link.pinId ? <p role="status" className="text-xs text-fg-muted">{linkProblem}</p> : null}
       <label className="block text-sm font-bold">Severity<select className={`${inputClass} mt-1`} disabled={busy} value={severity} onChange={e=>setSeverity(e.target.value as PinSeverity)}>{severityOrder.slice().reverse().map(value=><option key={value} value={value}>{severityLabels[value]}</option>)}</select></label>

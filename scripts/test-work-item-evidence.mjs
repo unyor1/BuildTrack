@@ -1,12 +1,13 @@
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import ts from "typescript"
-import { itemAttempts, pinLevelDefects, irRef, ncrRef } from "../src/lib/workItemModel.ts"
+import { itemAttempts, pinLevelDefects, irRef, ncrRef, completionProblem } from "../src/lib/workItemModel.ts"
+import { correctionCloseProblem } from "../src/lib/qaReinspectionModel.ts"
 import { submittedChecklistItems } from "../src/lib/qaChecklistModel.ts"
 import { photoPreviewBlocked } from "../src/lib/photoStamp.ts"
 
 const url = source => "data:text/javascript;base64," + Buffer.from(source).toString("base64")
-let values = [], cursor = 0, tree
+let values = [], cursor = 0, tree, testProject = null, testRole = "engineer"
 globalThis.__evidenceHooks = {
   useState(initial) { const n = cursor++; if (!(n in values)) values[n] = typeof initial === "function" ? initial() : initial; return [values[n], value => { values[n] = typeof value === "function" ? value(values[n]) : value }] },
   useRef(initial) { const n = cursor++; return values[n] ??= { current: initial } },
@@ -16,10 +17,10 @@ globalThis.__evidenceDeps = {
   itemAttempts, submittedChecklistItems, pinLevelDefects, irRef, ncrRef, photoPreviewBlocked,
   formatStamp: value => value, inputClass: "input", inspectionTone: { passed: "good", failed: "bad" },
   inspectionStatusLabels: { passed: "Passed", failed: "Failed" }, defectTone: { closed: "good" }, defectStatusLabels: { closed: "Closed" },
-  useAuth: () => ({ profile: { id: "engineer", role: "engineer", status: "active" } }),
-  useToast: () => ({}), useConfirm: () => () => false, useProject: () => ({ project: null }),
+  useAuth: () => ({ profile: { id: testRole, role: testRole, status: "active" } }),
+  useToast: () => ({}), useConfirm: () => () => false, useProject: () => ({ project: testProject }),
   useProjectTeam: () => ({ team: [{ user_id: "foreman", full_name: "Test Foreman" }] }), useSettings: () => ({ settings: {} }),
-  useTemplates: () => ({ templates: [] }), completionProblem: () => "", manilaToday: () => "2026-10-21",
+  useTemplates: () => ({ templates: [] }), completionProblem, manilaToday: () => "2026-10-26",
 }
 async function compile(path) {
   const source = readFileSync(new URL(path, import.meta.url), "utf8")
@@ -34,7 +35,7 @@ async function compile(path) {
       const key = binding.propertyName?.text ?? binding.name.text
       exports.push(`export const ${key}=globalThis.${name === "react" ? "__evidenceHooks" : "__evidenceDeps"}.${key} ?? function Stub(){return null}`)
     }
-    output = output.replaceAll(`from "${name}"`, `from ${JSON.stringify(url(exports.join(";")))}`)
+    output = output.replaceAll(`from "${name}"`, `from ${JSON.stringify(url(exports.join(";") + `\n// isolated bindings for ${path}`))}`)
   }
   output = output.replaceAll('from "react/jsx-runtime"', `from ${JSON.stringify(import.meta.resolve("react/jsx-runtime"))}`)
   return (await import(url(output))).default
@@ -107,5 +108,127 @@ data.error = ""; data.stage.ncrs = [{ id: "closed", number: 3, status: "closed",
 render(Workspace, { itemId: "floor", onClose() {} })
 assert.match(text(tree), /0 open · 1 closed/)
 assert.ok(all(tree).some(node => node.props?.defect?.id === "closed"), "Closed NCRs remain available")
+// Engineer NCR decisions live only inside the opened record, never on the checklist summary.
+const finding = { id: "ncr-9", project_id: "project", pin_id: "pin", number: 9, status: "for_verification", title: "Repair to verify", severity: "major", trade: "general", category: "workmanship", corrective_action: "Corrected and measured", correction_attempt_id: "correction-1" }
+data.stage.ncrs = [finding]; data.defects = [finding]
+data.stage.view = { stage: "passed", action: "review_ncrs" }
+testProject = { id: "project", name: "Test project", code: "T" }
+reset(); render(Workspace, { itemId: "floor", onClose() {} })
+assert.doesNotMatch(text(tree.props.footer), /Review NCR corrections|Return FLOOR/)
+assert.ok(all(tree.props.footer).find(node => node.type === "button" && text(node) === "Complete checklist")?.props.disabled, "Open NCR still blocks checklist completion")
+let row = find(node => node.props?.defect?.id === finding.id && typeof node.props.onOpen === "function")
+tree = row.type(row.props)
+assert.ok(!all(tree).some(node => node.type === "textarea" || node.type === "form"), "No inline correction-decision textbox")
+assert.doesNotMatch(text(tree), /Your decision on the correction|Send back|Close NCR/)
+find(node => node.type === "button" && text(node) === "Open NCR record").props.onClick()
+render(Workspace, { itemId: "floor", onClose() {} })
+const opened = find(node => node.props?.defect?.id === finding.id && node.props.canVerify === true)
+assert.equal(opened.props.defect, finding, "Opens the exact selected NCR with Engineer verification rights")
+
+// Package NCR details are navigation-only; guarded decisions now live inside the exact linked inspection.
+let readiness = { id: "ir-2", number: 2, status: "passed", ready: true, loading: false, error: "", reload: async () => {} }
+let inspectionOpened = "", verificationCalls = [], verifiedRefreshes = 0, confirmDecision = true, verificationError = ""
+Object.assign(globalThis.__evidenceDeps, {
+  correctionCloseProblem, useCorrectionInspection: () => readiness,
+  useDefectEvents: () => ({ events: [], reload: async () => {} }),
+  useQaPhotos: () => ({ photos: [], reload: async () => {} }),
+  dueState: () => ({ state: "ok" }), dueText: () => "Due in 2 days",
+  refNumber: (kind, number) => kind === "ncr" ? ncrRef(number) : irRef(number),
+  tradeLabels: { general: "General" }, categoryLabels: { workmanship: "Workmanship" },
+  useConfirm: () => async () => confirmDecision, useToast: () => ({ success() {}, error() {} }),
+  qaActions: { verifyDefect: async (...args) => { verificationCalls.push(args); return verificationError ? { ok: false, message: verificationError } : { ok: true } } },
+  followLink: path => { inspectionOpened = path },
+})
+const Detail = await compile("../src/components/qa/DefectDetail.tsx")
+const detailProps = { ...opened.props, onOpenInspection: id => { inspectionOpened = id } }
+reset(); render(Detail, detailProps)
+assert.ok(!all(tree).some(node => node.type === "textarea" && node.props.id === "d-note"))
+assert.doesNotMatch(text(tree), /Verify the corrected work|Verification note|Send back|Close NCR/)
+find(node => node.type === "button" && text(node) === "Open inspection IR-0002").props.onClick()
+assert.equal(inspectionOpened, "ir-2", "Open inspection uses the correction reinspection, not the original failed request")
+assert.equal(verificationCalls.length, 0, "Opening is read-only")
+render(Detail, { ...detailProps, onOpenInspection: undefined })
+find(node => node.type === "button" && text(node) === "Open inspection IR-0002").props.onClick()
+assert.match(inspectionOpened, /\/engineer\/qa\?project=project&tab=inspections&inspection=ir-2/)
+readiness = { ...readiness, id: null, loading: true }; render(Detail, detailProps)
+assert.ok(find(node => node.type === "button" && text(node).startsWith("Open inspection")).props.disabled, "Never navigate to stale inspection data while loading")
+readiness = { ...readiness, id: "ir-2", loading: false, ready: false }
+
+const VerifyInInspection = await compile("../src/components/qa/NcrInspectionVerification.tsx")
+const verificationProps = { defect: finding, inspection: { id: "ir-2", project_id: finding.project_id, pin_id: finding.pin_id, status: "passed" }, canVerify: true, onChanged: async () => { verifiedRefreshes++ } }
+const actionButton = label => find(node => node.type === "button" && text(node) === label)
+const clickDecision = async label => { actionButton(label).props.onClick(); await new Promise(resolve => setImmediate(resolve)) }
+reset(); render(VerifyInInspection, verificationProps)
+assert.ok(actionButton("Close NCR").props.disabled, "The inspection still requires a verification note")
+find(node => node.type === "textarea").props.onChange({ target: { value: "Verified the corrected work" } }); render(VerifyInInspection, verificationProps)
+assert.ok(actionButton("Close NCR").props.disabled, "Finding-specific Pass is required even when the overall inspection passed")
+assert.equal(actionButton("Send back").props.disabled, false)
+await clickDecision("Close NCR"); assert.equal(verificationCalls.length, 0, "Handler also guards a missing finding Pass")
+readiness = { ...readiness, ready: true }; render(VerifyInInspection, { ...verificationProps, inspection: { ...verificationProps.inspection, status: "requested" } })
+assert.ok(actionButton("Close NCR").props.disabled, "An unfinished inspection cannot use a stale ready state")
+render(VerifyInInspection, verificationProps); assert.equal(actionButton("Close NCR").props.disabled, false)
+confirmDecision = false; await clickDecision("Close NCR"); assert.equal(verificationCalls.length, 0)
+confirmDecision = true; await clickDecision("Close NCR")
+assert.deepEqual(verificationCalls, [[finding.id, true, "Verified the corrected work"]]); assert.equal(verifiedRefreshes, 1)
+readiness = { ...readiness, id: "another-inspection" }; reset(); assert.equal(render(VerifyInInspection, verificationProps), null, "Never show another inspection's NCR decision")
+readiness = { ...readiness, id: "ir-2", ready: false }; reset(); render(VerifyInInspection, verificationProps)
+find(node => node.type === "textarea").props.onChange({ target: { value: "Still needs a proper repair" } }); render(VerifyInInspection, verificationProps)
+await clickDecision("Send back"); assert.deepEqual(verificationCalls.at(-1), [finding.id, false, "Still needs a proper repair"])
+let readinessRetries = 0
+readiness = { ...readiness, error: "Readiness unavailable", reload: async () => { readinessRetries++ } }; reset(); render(VerifyInInspection, verificationProps)
+assert.ok(!all(tree).some(node => node.type === "textarea"))
+await actionButton("Retry").props.onClick(); assert.equal(readinessRetries, 1)
+readiness = { ...readiness, error: "", loading: true }; reset(); render(VerifyInInspection, verificationProps)
+assert.ok(!all(tree).some(node => node.type === "textarea"))
+readiness = { ...readiness, loading: false, ready: true }; reset(); render(VerifyInInspection, verificationProps)
+find(node => node.type === "textarea").props.onChange({ target: { value: "Verification checked once more" } }); render(VerifyInInspection, verificationProps)
+const refreshBeforeDenied = verifiedRefreshes; verificationError = "A newer check has failed"; await clickDecision("Close NCR")
+assert.equal(verifiedRefreshes, refreshBeforeDenied, "Server rejection is not treated as successful closure")
+verificationError = ""
+for (const role of ["foreman", "admin", "client"]) { testRole = role; reset(); assert.equal(render(VerifyInInspection, verificationProps), null, "Only Engineers can decide corrections") }
+testRole = "engineer"; reset(); assert.equal(render(VerifyInInspection, { ...verificationProps, canVerify: false }), null)
+reset(); assert.equal(render(VerifyInInspection, { ...verificationProps, inspection: { ...verificationProps.inspection, project_id: "foreign" } }), null)
+// Standalone NCRs have no linked correction inspection; their existing explicit closure path remains.
+reset(); render(Detail, { ...detailProps, defect: { ...finding, correction_attempt_id: null } })
+assert.ok(find(node => node.type === "textarea" && node.props.id === "d-note"))
+assert.ok(actionButton("Close NCR").props.disabled)
+
+// The real inspection screen mounts the decision component for this project's pin only, and never for other roles.
+Object.assign(globalThis.__evidenceDeps, {
+  useInspectionItems: () => ({ items: [], loading: false, error: "", setItems() {}, reload: async () => {} }),
+  useReinspectionContext: () => ({ rows: [], loading: false, error: "", reload: async () => {} }),
+  useWorkSubmission: () => ({ submission: null, loading: false, error: "" }),
+  usePinQa: () => ({ state: null, error: "" }), useInspectionTimeline: () => ({ events: [], error: "" }),
+  previewScore: () => ({ score: 0, passed: 0, failed: 0, na: 0, pending: 0 }),
+})
+const InspectionDetail = await compile("../src/components/qa/InspectionDetail.tsx")
+const inspectionProps = { inspection: { ...verificationProps.inspection, title: "Reinspection", number: 2, trade: "general", standards: [] }, project: testProject, weights: {}, threshold: 75,
+  defects: [finding, { ...finding, id: "wrong-project", project_id: "foreign" }, { ...finding, id: "wrong-pin", pin_id: "another-pin" }, { ...finding, id: "closed", status: "closed" }],
+  canInspect: true, canRequest: true, nameOf: () => "Engineer", onClose() {}, onChanged: async () => {} }
+reset(); render(InspectionDetail, inspectionProps)
+assert.deepEqual(all(tree).filter(node => node.props?.defect && node.props?.inspection).map(node => node.props.defect.id), [finding.id])
+for (const role of ["foreman", "admin", "client"]) { testRole = role; reset(); render(InspectionDetail, inspectionProps); assert.ok(!all(tree).some(node => node.props?.defect && node.props?.inspection)) }
+testRole = "engineer"
+
+// Hide Return after Pass, including a dialog opened before status changes; retain explicit Reopen for completed work.
+data.stage.current = { ...inspections[1], status: "conditional" }
+reset(); render(Workspace, { itemId: "floor", onClose() {} })
+all(tree.props.footer).find(node => node.type === "button" && text(node) === "Return FLOOR").props.onClick()
+render(Workspace, { itemId: "floor", onClose() {} })
+assert.ok(all(tree).some(node => node.props?.name === "FLOOR" && typeof node.props.onSubmit === "function"))
+data.stage.current = inspections[1]
+render(Workspace, { itemId: "floor", onClose() {} })
+assert.doesNotMatch(text(tree.props.footer), /Return FLOOR|Review NCR corrections/)
+assert.ok(!all(tree).some(node => node.props?.name === "FLOOR" && typeof node.props.onSubmit === "function"), "Stale Return dialog disappears once Passed")
+data.item.review_status = "verified"
+reset(); render(Workspace, { itemId: "floor", onClose() {} })
+assert.match(text(tree.props.footer), /Reopen FLOOR/)
+for (const role of ["foreman", "admin", "client"]) {
+  testRole = role
+  reset(); render(Workspace, { itemId: "floor", onClose() {} })
+  assert.doesNotMatch(text(tree.props.footer), /Return FLOOR|Reopen FLOOR|Complete checklist|Review NCR corrections/)
+}
+
 delete globalThis.__evidenceHooks; delete globalThis.__evidenceDeps; delete globalThis.__submittedEvidenceUI
 console.log("Saved single-photo evidence/remarks, request selection, item/pin isolation, snapshots, empty/error states, NCR closure visibility and retained comparison/access guards passed")
+console.log("Correction NCRs open the exact inspection without inline decisions; inspection-only note/close/send-back controls retain finding Pass, sign-off, confirmation, role/project and manual-completion guards; standalone NCR flow retained")

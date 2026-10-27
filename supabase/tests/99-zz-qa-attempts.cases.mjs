@@ -21,10 +21,7 @@ export default async function ({ db, ids, as, asOwner, addUser, test, expectFail
     await db.query("select public.complete_inspection($1,'Synthetic inspection findings')",[ir])
   }
   const closeNcr=async(ir)=>{
-    await as("attemptFore")
     const ncr=(await db.query("select id from public.qa_defects where inspection_id=$1",[ir])).rows[0].id
-    await db.query("select public.update_defect($1,'in_progress')",[ncr])
-    await db.query("select public.update_defect($1,'for_verification','Synthetic defect corrected against test criteria')",[ncr])
     await as("attemptEng")
     await db.query("select public.verify_defect($1,true,'Synthetic correction independently checked')",[ncr])
   }
@@ -92,14 +89,16 @@ export default async function ({ db, ids, as, asOwner, addUser, test, expectFail
     assert.notEqual(thirdDraft,draft)
     await db.query("select public.save_checklist_attempt($1,'Second correction, fresh evidence for third request')",[thirdDraft])
     const ph=await photo('correction-2',thirdDraft)
-    third=await submit()
+    const finding=(await db.query("select id from public.qa_defects where inspection_id=$1",[first])).rows[0].id
+    third=(await db.query("select public.submit_correction_package($1::uuid[],$2::uuid[]) id",[[item],[finding]])).rows[0].id
     assert.equal((await db.query("select reinspection_of from public.qa_inspections where id=$1",[third])).rows[0].reinspection_of,second)
     const fresh=(await db.query("select * from public.pin_qa_submissions where inspection_id=$1",[third])).rows[0]
     assert.deepEqual(fresh.photos_snapshot.map(p=>p.id),[ph.id])
     assert.equal(await count("select count(*) n from public.qa_work_attempts where pin_id=$1",[pin]),2)
     await finish(third,'pass')
     await expectFail("select public.review_checklist_item($1,true)",[item],/open NCRs/)
-    await closeNcr(first); await closeNcr(second)
+    await closeNcr(first)
+    assert.equal(await count("select count(*) n from public.qa_defects where inspection_id=$1",[second]),0,"A repeated failed finding reuses its original NCR")
     await db.query("select public.review_checklist_item($1,true)",[item])
     assert.equal((await db.query("select status from public.pins where id=$1",[pin])).rows[0].status,'verified')
     assert.deepEqual((await db.query("select * from public.pin_qa_submissions where inspection_id=$1",[first])).rows[0],original)

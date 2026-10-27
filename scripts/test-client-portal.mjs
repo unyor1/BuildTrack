@@ -3,6 +3,9 @@ import { readFileSync } from "node:fs"
 import ts from "typescript"
 import { clientPinStatus, reportsForPin, clientActionPath, clientPinPath } from "../src/lib/clientPortalModel.ts"
 import { issuePhotoProblem, markupProblem } from "../src/lib/issueMarkup.ts"
+import { pinSectionsFor, readPinSection, sectionLabel } from "../src/lib/pinRecordsModel.ts"
+import { pinLinkProblem, startPinLink } from "../src/lib/pinPickerModel.ts"
+import { inRange, isFiltered, rangeText } from "../src/lib/dateRangeModel.ts"
 
 const report = (id, project_id = "A", status = "submitted", links = [{ pin_id: "pin", item_id: "floor" }]) => ({ id, project_id, status, linked_work: links, report_date: "2026-10-21", work_done: id, author_id: "foreman", workers_count: 4, weather: "sunny" })
 const records = [report("visible"), report("draft", "A", "draft"), report("foreign", "B"), report("unlinked", "A", "submitted", [])]
@@ -55,7 +58,7 @@ globalThis.PopStateEvent ??= class { constructor(type) { this.type = type } }
 const pin = { id: "pin", project_id: "A", blueprint_id: "sheet", title: "Kitchen", status: "for_review", category: "progress" }
 const deps = globalThis.__portalDeps
 Object.assign(deps, {
-  clientPinStatus, reportsForPin, clientActionPath, clientPinPath, openClientPath: path => { lastPath = path }, issuePhotoProblem, markupProblem,
+  clientPinStatus, reportsForPin, clientActionPath, clientPinPath, openClientPath: path => { lastPath = path }, issuePhotoProblem, markupProblem, inRange, isFiltered, rangeText,
   getSelectedProjectId: () => selected, rememberProject: id => { selected = id },
   useProjects: () => ({ projects, loading: false, error: "", reload: async () => {} }), phaseLabels: { plan_review: "Plan review" },
   useProjectWork: () => ({ pins: [pin], loading: false, error: "", sheetOf: () => "Plan", nameOf: () => "Engineer", reload: async () => {} }),
@@ -67,6 +70,7 @@ Object.assign(deps, {
   useSignedUrl: () => ({ url: "private-signed-url" }), photoPreviewBlocked: () => false,
   adjustPhotoZoom: (value, change) => Math.max(100, Math.min(300, value + change)), reportDateLong: date => date, weatherLabels: { sunny: "Sunny" },
   useToast: () => ({ success() {}, error() {} }), useConfirm: () => async () => true,
+  pinSectionsFor, readPinSection, sectionLabel, pinLinkProblem, startPinLink,
 })
 
 const Shell = (await compile("../src/pages/Client/ClientShell.tsx")).default
@@ -88,6 +92,28 @@ render(Reports.default, { pin })
 assert.deepEqual(all(tree).filter(node => node.type === "li").map(node => node.key), ["visible"])
 find(node => node.props?.["aria-label"] === "Report details for 2026-10-21").props.onClick()
 render(Reports.default, { pin }); assert.match(text(tree), /FLOOR/)
+const datedReports = [
+  { ...report("today"), report_date: "2026-10-26", submitted_at: "2026-10-27T01:00:00Z" },
+  report("earlier"),
+  { ...report("today-draft", "A", "draft"), report_date: "2026-10-26" },
+  { ...report("today-foreign", "B"), report_date: "2026-10-26" },
+  { ...report("other-pin", "A", "submitted", [{ pin_id: "another-pin" }]), report_date: "2026-10-26" },
+]
+const todayReports = { pin, reports: datedReports, dates: { from: "2026-10-26", to: "2026-10-26" } }
+const reportIds = () => all(tree).filter(node => node.type === "li").map(node => node.key)
+reset(); render(Reports.default, todayReports)
+assert.deepEqual(reportIds(), ["today"], "Calendar filters use report_date, not submitted/upload timestamps, and preserve client privacy")
+find(node => node.props?.["aria-label"] === "Report details for 2026-10-26").props.onClick(); render(Reports.default, todayReports)
+assert.ok(all(tree).some(node => node.props?.title?.includes("Daily progress")))
+render(Reports.default, { ...todayReports, dates: { from: "2026-10-21", to: "2026-10-21" } })
+assert.deepEqual(reportIds(), ["earlier"])
+assert.ok(!all(tree).some(node => node.props?.title?.includes("Daily progress")), "A date change cannot leave the previous report's details open")
+reset(); render(Reports.default, { ...todayReports, staff: true })
+assert.deepEqual(reportIds(), ["today-draft", "today"], "Staff retain permitted drafts, still scoped to this pin, project and work date")
+reset(); render(Reports.default, { ...todayReports, dates: { from: "2026-10-25", to: "2026-10-25" } })
+assert.deepEqual(reportIds(), []); assert.match(text(tree), /No submitted daily report.*25 Oct 2026.*Choose another date/)
+reset(); render(Reports.default, { ...todayReports, dates: { from: "", to: "" } })
+assert.deepEqual(reportIds(), ["today", "earlier"], "All dates restores linked submitted history, newest report date first")
 reset(); render(Reports.ReportSlideshow, { report: records[0], authorName: "Test Foreman" })
 assert.match(text(tree), /1 \/ 2/)
 find(node => node.props?.["aria-label"] === "Next report photo").props.onClick()
@@ -108,13 +134,22 @@ reset(); Object.assign(deps, {
   statusLabels: { not_started: "Not started", in_progress: "In progress", for_review: "For review", verified: "Completed", issue: "Issue" },
   statusDot: { in_progress: "#F18B00" }, statusChip: { in_progress: "progress-chip" },
 })
+deps.usePinPanelData = () => ({ counts: { issues: 1, reports: 1 }, records: { defects: [], snags: [], issues: [], reports: records, questions: [] }, loading: false, error: "", reload: async () => {} })
 const Inspector = (await compile("../src/components/editor/Inspector.tsx")).default
-const panelProps = { role: "client", selectedPin: pin, selectedAnnotation: null, selectedAnnotations: [], numberOf: () => 1 }
-render(Inspector, panelProps); assert.match(text(tree), /In progress/); assert.doesNotMatch(text(tree), /For review/)
+const panelProps = { role: "client", selectedPin: pin, selectedAnnotation: null, selectedAnnotations: [], numberOf: () => 1, team: [] }
+const panel = () => { render(Inspector, panelProps); const node = find(row => row.type?.name === "PinPanel"); cursor = 0; tree = node.type(node.props); const jobs = pending; pending = []; jobs.forEach(fn => fn()); return tree }
+panel(); assert.match(text(tree), /In progress/); assert.doesNotMatch(text(tree), /For review/, "For review stays a checklist state, never the pin status")
 const tabs = find(node => node.type?.name === "Tabs")
+assert.deepEqual(tabs.props.tabs.map(tab => tab.label), ["Details", "Checklist & QA", "My reports", "Next actions", "Daily reports", "Communication"], "Clients never get staff photos or the timeline")
+assert.equal(tabs.props.tabs.find(tab => tab.key === "issues").count, 1)
 tree = tabs.type(tabs.props)
-find(node => node.props?.role === "tab" && text(node) === "Daily reports").props.onClick()
-render(Inspector, panelProps); assert.ok(all(tree).some(node => node.type?.name === "PinDailyReports"))
+find(node => node.props?.role === "tab" && /^Daily reports/.test(text(node))).props.onClick()
+panel(); const body = find(node => node.type?.name === "PinSectionBody"); assert.equal(body.props.section, "reports")
+tree = body.type(body.props); assert.ok(all(tree).some(node => node.type?.name === "PinReportsSection"))
+reset(); panelProps.pinLink = { pinId: "pin", search: "?pintab=issues" }
+panel(); assert.equal(find(node => node.type?.name === "PinSectionBody").props.section, "issues", "A link opens the section it names")
+reset(); panelProps.pinLink = { pinId: "pin", search: "?pintab=activity" }
+panel(); assert.equal(find(node => node.type?.name === "PinSectionBody").props.section, "details", "A client link cannot open the staff timeline")
 
 reset(); let inserted
 Object.assign(deps, {

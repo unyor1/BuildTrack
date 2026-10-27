@@ -23,6 +23,9 @@ import { followLink } from "../../lib/notifications"
 import OpenOnBlueprint from "../OpenOnBlueprint"
 import LimitedTimeline from "../ui/LimitedTimeline"
 import { usePinQa } from "../../lib/pinQa"
+import { useReinspectionContext } from "../../lib/qaReinspection"
+import ReinspectionScope from "./ReinspectionScope"
+import NcrInspectionVerification from "./NcrInspectionVerification"
 
 const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString("en-PH", { timeZone: "Asia/Manila", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }) : "-")
 
@@ -234,6 +237,8 @@ export default function InspectionDetail({
   const toast = useToast()
   const confirm = useConfirm()
   const { items, setItems, loading, error, reload: reloadItems } = useInspectionItems(inspection.id)
+  const scope = useReinspectionContext(inspection.full_checklist_reinspection ? inspection.id : null)
+  const reloadScope = async () => { await Promise.all([reloadItems(), scope.reload(), onChanged()]) }
   const { photos, reload: reloadPhotos } = useQaPhotos({ inspectionId: inspection.id })
   const [summary, setSummary] = useState("")
   const [busy, setBusy] = useState(false)
@@ -268,6 +273,7 @@ export default function InspectionDetail({
   }
 
   const start = async () => {
+    if (inspection.full_checklist_reinspection && (scope.loading || scope.error)) return toast.error("Reinspection history unavailable", scope.error || "Wait for the earlier checks to load.")
     setBusy(true)
     const outcome = await qaActions.start(inspection.id)
     setBusy(false)
@@ -282,7 +288,7 @@ export default function InspectionDetail({
     const expected = preview.result === "passed" ? "PASSED" : preview.result === "conditional" ? "CONDITIONAL (items to fix, work may continue)" : "FAILED"
     const ok = await confirm({
       title: `Sign off ${ref}?`,
-      message: `Result: ${expected} with ${preview.score ?? 0}%. ${preview.failed ? `${preview.failed} non-conformance report${preview.failed === 1 ? "" : "s"} will be raised for the contractor. ` : ""}Results cannot be changed after sign-off.`,
+      message: `Result: ${expected} with ${preview.score ?? 0}%. ${preview.failed ? `${preview.failed} failed check${preview.failed === 1 ? "" : "s"} will create new NCRs or update the same open findings. ` : ""}Results cannot be changed after sign-off.`,
       confirmLabel: "Complete inspection",
     })
     if (!ok) return
@@ -321,7 +327,7 @@ export default function InspectionDetail({
       {(inspection.status === "failed" || inspection.status === "conditional") && canRequest ? workItems.length ? <button type="button" className={buttonPrimary} onClick={() => openItem(workItems[0].id)}>{canInspect ? "Open the work item" : "Open the correction form"}</button> : <button type="button" className={buttonSecondary} disabled={workSubmission.loading || Boolean(workSubmission.error)} onClick={() => setAsking("reinspect")}>Request re-inspection</button> : null}
       {inspection.pin_id && !workItems.length && !onPlan ? <OpenOnBlueprint projectId={inspection.project_id} pinId={inspection.pin_id} section="issues" /> : null}
       {(inspection.status === "requested" || inspection.status === "in_progress") && canRequest && !workSubmission.loading && !workSubmission.error && (!workSubmission.submission || canInspect) ? <button type="button" className={buttonSecondary} onClick={() => setAsking("cancel")}>Cancel inspection</button> : null}
-      {inspection.status === "requested" && canInspect ? <button type="button" className={buttonPrimary} disabled={busy} onClick={() => void start()}>{busy ? "Starting..." : "Start inspection"}</button> : null}
+      {inspection.status === "requested" && canInspect ? <button type="button" className={buttonPrimary} disabled={busy || Boolean(inspection.full_checklist_reinspection && (scope.loading || scope.error))} onClick={() => void start()}>{busy ? "Starting..." : "Start inspection"}</button> : null}
       {isInspector ? <button type="button" className={buttonPrimary} disabled={busy || loading} onClick={() => void complete()}>{busy ? "Signing off..." : "Complete inspection"}</button> : null}
       <button type="button" className={buttonSecondary} onClick={onClose}>Close</button>
     </>
@@ -342,6 +348,7 @@ export default function InspectionDetail({
         {inspection.request_note ? <p className="rounded-lg bg-surface-muted px-3 py-2 text-sm"><strong>Note from the requester:</strong> {inspection.request_note}</p> : null}
         {workItems.length ? <p className="flex flex-wrap items-center gap-2 text-sm"><span className="font-bold">Work item{workItems.length === 1 ? "" : "s"} in this request:</span>{workItems.map((row) => <button key={row.id} type="button" className={buttonSecondary + " !py-1 !text-xs"} onClick={() => openItem(row.id)}>{inspection.title} → {row.text}</button>)}<span className="text-xs text-fg-muted">Earlier attempts, corrections and NCRs are in the work item record.</span></p> : null}
         <WorkSubmissionEvidence record={workSubmission} />
+        {inspection.full_checklist_reinspection ? <ReinspectionScope rows={scope.rows} loading={scope.loading} error={scope.error} onChanged={reloadScope} onOpenInspection={onOpenInspection} /> : null}
         <section className="rounded-xl border border-line p-3" aria-label="Inspection timeline"><h3 className="text-sm font-bold">This request's timeline</h3>
           <LimitedTimeline entries={[...timeline.events].reverse()} resetKey={inspection.id} label="Inspection timeline" entryKey={e => e.id} renderEntry={e => <><strong className="text-xs">{when(e.created_at)} · {nameOf(e.actor_id)}</strong><p className="whitespace-pre-wrap text-xs">{e.note}</p></>} />
           {timeline.error ? <p role="alert" className="text-xs text-danger-fg">{timeline.error}</p> : null}
@@ -403,6 +410,10 @@ export default function InspectionDetail({
             </ul>
           </div>
         ) : null}
+
+        {canInspect && profile?.role === "engineer" ? defects.filter(defect => defect.project_id === inspection.project_id && defect.pin_id === inspection.pin_id && defect.status === "for_verification" && defect.correction_attempt_id).map(defect => (
+          <NcrInspectionVerification key={`${inspection.id}:${defect.id}:${defect.correction_attempt_id}`} defect={defect} inspection={inspection} canVerify={canInspect} onChanged={onChanged} />
+        )) : null}
 
         {asking ? (
           <div className="rounded-xl border border-brand bg-surface p-3">
